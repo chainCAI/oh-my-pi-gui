@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **Collapsible providers in the model picker**: each provider is now a dropdown. The current model's provider opens with the picker, and providers you expand stay open across opens. While you search, every matching provider is open and can be collapsed for that query. A collapsed provider that holds the current model shows a check mark.
+- **Collapsible providers in the model picker**: each provider is now a dropdown. The current model's provider opens with the picker, and providers you expand stay open across opens. While you search, every matching provider is open and can be collapsed for that query. A collapsed provider that holds the current model shows a check mark. — thanks [@jtmano](https://github.com/jtmano) ([#18](https://github.com/nornzach/oh-my-pi-gui/pull/18))
 
 ## [0.9.23] - 2026-10-19
 
