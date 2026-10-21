@@ -3,6 +3,17 @@
 // overlay opened from Settings owns Escape even when Settings is later in DOM.
 const dialogLayers: HTMLElement[] = [];
 
+/**
+ * The one z-index tier every blocking dialog overlay shares. App surfaces
+ * (Settings, PR Center) sit at z-50, floaters at z-70…z-100; a same-z surface
+ * portaled to body after a dialog paints over it and makes the prompt
+ * invisible and unclickable — dialogs must outrank all of them. Floaters open
+ * while a dialog is up end up under its backdrop, which is correct: the modal
+ * owns the interaction, and the floater's outside-pointerdown listener still
+ * fires through the document.
+ */
+export const DIALOG_OVERLAY_Z = "z-[120]";
+
 /** Register a visible dialog as the newest interaction layer. */
 export function registerDialogLayer(dialog: HTMLElement | null): () => void {
 	if (!dialog) return () => {};

@@ -50,7 +50,7 @@ import { useActiveTabKind } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
 import { Spinner } from "../common";
-import { isTopmostDialog, registerDialogLayer } from "../common/dialog-layer";
+import { DIALOG_OVERLAY_Z, isTopmostDialog, registerDialogLayer } from "../common/dialog-layer";
 
 const RECENT_KEY = "omp.palette.recent";
 const RECENT_LIMIT = 5;
@@ -682,7 +682,7 @@ export function CommandPalette() {
 
 	return (
 		<div
-			className="omp-dialog-overlay omp-fade-in fixed inset-0 z-50 flex items-start justify-center bg-[var(--omp-overlay-bg)] p-4 pt-[12dvh]"
+			className={`omp-dialog-overlay omp-fade-in fixed inset-0 ${DIALOG_OVERLAY_Z} flex items-start justify-center bg-[var(--omp-overlay-bg)] p-4 pt-[12dvh]`}
 			onMouseDown={event => {
 				if (event.target === event.currentTarget) close();
 			}}

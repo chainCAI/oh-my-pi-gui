@@ -29,7 +29,7 @@ import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { useUiStore } from "../../stores/ui";
 import { Spinner } from "../common";
-import { isTopmostDialog, registerDialogLayer } from "../common/dialog-layer";
+import { DIALOG_OVERLAY_Z, isTopmostDialog, registerDialogLayer } from "../common/dialog-layer";
 
 type Scope = "project" | "all";
 
@@ -358,7 +358,7 @@ function SearchPanel() {
 	const shortcutMod = isMac ? "⌘" : "Ctrl";
 	return (
 		<div
-			className="omp-dialog-overlay omp-fade-in fixed inset-0 z-50 flex items-start justify-center bg-[var(--omp-overlay-bg)] p-4 pt-[12dvh]"
+			className={`omp-dialog-overlay omp-fade-in fixed inset-0 ${DIALOG_OVERLAY_Z} flex items-start justify-center bg-[var(--omp-overlay-bg)] p-4 pt-[12dvh]`}
 			onMouseDown={event => {
 				if (event.target === event.currentTarget) close();
 			}}

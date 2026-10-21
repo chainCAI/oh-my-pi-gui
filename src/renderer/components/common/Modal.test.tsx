@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OVERLAY_EXIT_MS } from "../../hooks/use-overlay-presence";
 import { I18nProvider } from "../../lib/i18n";
 import { ApprovalDialog, isApprovalRequest } from "../dialogs/ApprovalDialog";
+import { DIALOG_OVERLAY_Z } from "./dialog-layer";
 import { Modal } from "./Modal";
 
 const { document, window, Event, HTMLElement, Node } = parseHTML("<html><body></body></html>");
@@ -297,6 +298,17 @@ describe("Modal", () => {
 		fullscreen.remove();
 		await pressEscape();
 		expect(onClose).toHaveBeenCalledTimes(1);
+	});
+
+	it("renders its overlay on the shared dialog tier above app surfaces and floaters", async () => {
+		await mount(
+			<Modal onClose={() => {}} open title="Layered">
+				<span>body</span>
+			</Modal>,
+		);
+		// Fullscreen windows (z-50) and composer menus (z-[100]) must never paint
+		// over a pending prompt — the overlay carries the shared DIALOG_OVERLAY_Z.
+		expect(document.querySelector(".omp-dialog-overlay")?.className).toContain(DIALOG_OVERLAY_Z);
 	});
 
 	it("fades out with the content it had while open, then unmounts", async () => {

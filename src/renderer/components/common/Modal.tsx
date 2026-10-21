@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { useOverlayPresence } from "../../hooks/use-overlay-presence";
 import { useT } from "../../lib/i18n";
 import { isImeKeyEvent } from "../../lib/ime";
-import { isTopmostDialog, registerDialogLayer } from "./dialog-layer";
+import { DIALOG_OVERLAY_Z, isTopmostDialog, registerDialogLayer } from "./dialog-layer";
 
 export type ModalSize = "sm" | "md" | "lg" | "full" | "picker";
 
@@ -148,7 +148,7 @@ export function Modal({
 
 	return createPortal(
 		<div
-			className={`omp-dialog-overlay ${closing ? "omp-fade-out" : "omp-fade-in"} fixed inset-0 z-50 flex justify-center bg-(--omp-overlay-bg) p-4 ${placement === "top" ? "items-start pt-[12dvh]" : "items-center"}`}
+			className={`omp-dialog-overlay ${closing ? "omp-fade-out" : "omp-fade-in"} fixed inset-0 ${DIALOG_OVERLAY_Z} flex justify-center bg-(--omp-overlay-bg) p-4 ${placement === "top" ? "items-start pt-[12dvh]" : "items-center"}`}
 			inert={closing}
 			onMouseDown={event => {
 				if (closing) return;
