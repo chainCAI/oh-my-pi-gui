@@ -388,6 +388,61 @@ export interface RpcForceToolState {
 	tool: string | null;
 }
 
+/** Tone slot of a job-widget item; maps to theme colors (neutral/muted→dim, pending→warning). */
+export type RpcWidgetTone =
+	| "neutral"
+	| "accent"
+	| "info"
+	| "success"
+	| "warning"
+	| "error"
+	| "pending"
+	| "muted"
+	| "user";
+
+/** A formatted number with the direction it moved (`▲ 15%`). */
+export interface RpcJobWidgetTrend {
+	text: string;
+	tone: "success" | "error" | "muted";
+}
+
+/** Block of a job widget; mirrors JobWidgetBlock from the sidecar's job-widgets. */
+export type RpcJobWidgetBlock =
+	| {
+			kind: "spark";
+			label: string;
+			values: number[];
+			min: number;
+			max: number;
+			marks?: { value: number; label: string; tone?: RpcWidgetTone }[];
+			last: string;
+			tips?: string[];
+			tone?: RpcWidgetTone;
+	  }
+	| {
+			kind: "bars";
+			label: string;
+			items: { label: string; value: number; text: string; tone?: RpcWidgetTone }[];
+			max: number;
+	  }
+	| { kind: "meter"; label: string; value: number; text: string; tone?: RpcWidgetTone }
+	| {
+			kind: "stat";
+			items: { label: string; text: string; tone?: RpcWidgetTone; trend?: RpcJobWidgetTrend }[];
+	  }
+	| { kind: "grid"; label: string; items: { label: string; text: string; tone: RpcWidgetTone }[] }
+	| { kind: "text"; text: string };
+
+/** A job's live widget authored by the `widget` model role (frozen once the job settles). */
+export interface RpcJobWidgetView {
+	title: string;
+	headline?: { text: string; label?: string; trend?: RpcJobWidgetTrend };
+	stage?: string;
+	blocks: RpcJobWidgetBlock[];
+	state: "authoring" | "live" | "fallback";
+	updatedAt: number;
+}
+
 /** One async background job, as carried by the agent's job snapshot. */
 export interface RpcAsyncJobItem {
 	id: string;
@@ -405,6 +460,8 @@ export interface RpcAsyncJobItem {
 	resultPreview?: string;
 	errorPreview?: string;
 	previewTruncated?: boolean;
+	/** Live widget authored for this job (omp ≥18.12.5 sidecars). */
+	widget?: RpcJobWidgetView;
 }
 
 /** One get_jobs tree row: a job (a task job also heads its subagent), or a header for a subagent with no listed task job. */

@@ -8,6 +8,7 @@ import { PREVIEW_SCROLL_LG } from "../../lib/preview";
 import { useTabRpc } from "../../lib/tab-rpc";
 import { useUiStore } from "../../stores/ui";
 import { Badge, Modal, Spinner } from "../common";
+import { JobWidgetCard } from "./JobWidgetCard";
 
 type JobStatusVariant = "success" | "default" | "error" | "warning";
 
@@ -106,6 +107,7 @@ export function JobsDialog() {
 				</span>
 			</div>
 			<div className="mt-0.5 break-words whitespace-pre-wrap text-xs text-(--omp-dim)">{job.label}</div>
+			{job.widget ? <JobWidgetCard widget={job.widget} /> : null}
 			{(job.resultPreview || job.errorPreview) && (
 				<details className="mt-2 text-omp-sm">
 					<summary className="cursor-pointer">{t("jobs.result")}</summary>

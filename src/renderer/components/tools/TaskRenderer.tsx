@@ -334,7 +334,11 @@ function ProgressAgentRow({ row, depth, ctx }: { row: Record<string, unknown>; d
 	const retryState = asRecord(row.retryState);
 	const retryFailure = asRecord(row.retryFailure);
 	const currentTool = asString(row.currentTool);
-	const toolDetail = asString(row.lastIntent) ?? asString(row.currentToolArgs);
+	// The subagent's self-reported step (stage, ≤80 chars, from the completion
+	// probe) is fresher than lastIntent — running rows prefer it, as the TUI does.
+	const stage = asString(row.stage);
+	const toolDetail = stage ?? asString(row.lastIntent) ?? asString(row.currentToolArgs);
+	const completionPercent = asNumber(row.completionPercent);
 	const currentToolStartMs = asNumber(row.currentToolStartMs);
 	const recentTool = asRecord(asArray(row.recentTools)[0]);
 	const assignment = asString(row.assignment) ?? asString(row.task);
@@ -386,6 +390,14 @@ function ProgressAgentRow({ row, depth, ctx }: { row: Record<string, unknown>; d
 							resolvedModel: asString(row.resolvedModel),
 						}}
 					/>
+				)}
+				{status === "running" && completionPercent != null && (
+					<span
+						className="shrink-0 text-omp-xxs tabular-nums text-[var(--omp-dim)]"
+						title={t("tools.task.completion")}
+					>
+						{completionPercent}%
+					</span>
 				)}
 			</div>
 

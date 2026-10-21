@@ -17,7 +17,7 @@ import { isImeKeyEvent } from "../../lib/ime";
 import { type ApprovalMode, useSettingsStore } from "../../stores/settings";
 import { ConfirmDialog } from "../common";
 
-const MODES: ApprovalMode[] = ["yolo", "write", "always-ask"];
+const MODES: ApprovalMode[] = ["yolo", "write", "always-ask", "always-ask-cached"];
 
 export function ApprovalControl() {
 	const t = useT();

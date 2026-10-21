@@ -338,7 +338,7 @@ export type DeepLinkPayload = { action: "new-session" } | { action: "switch-sess
 
 /** Optional payload carried alongside a MenuAction (approval mode / project cwd). */
 export interface MenuActionPayload {
-	approvalMode?: "always-ask" | "write" | "yolo";
+	approvalMode?: "always-ask" | "always-ask-cached" | "write" | "yolo";
 	cwd?: string;
 }
 
@@ -402,7 +402,7 @@ export interface TrayState {
 	modelId: string | null;
 	thinkingLevel: string;
 	fastMode: boolean;
-	approvalMode: "always-ask" | "write" | "yolo";
+	approvalMode: "always-ask" | "always-ask-cached" | "write" | "yolo";
 	contextPercent: number | null;
 	contextTokens: number | null;
 	workspaces: { cwd: string; name: string; current: boolean }[];

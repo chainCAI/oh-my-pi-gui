@@ -32,6 +32,7 @@ export const TRAY_LABELS = {
 	approvalYolo: { zh: "完全访问", en: "Full access" },
 	approvalWrite: { zh: "自动编辑", en: "Auto-edit" },
 	approvalAsk: { zh: "每次询问", en: "Ask every time" },
+	approvalAskCached: { zh: "询问并记住", en: "Ask and remember" },
 	context: { zh: "上下文", en: "Context" },
 	tokens: { zh: "tokens", en: "tokens" },
 	noModel: { zh: "未选模型", en: "No model" },
@@ -72,6 +73,7 @@ export function aggregateTrayStatus(states: Iterable<TrayState>): TrayStatus {
 export function approvalLabel(lang: TrayLang, mode: TrayApprovalMode): string {
 	if (mode === "yolo") return t(lang, "approvalYolo");
 	if (mode === "write") return t(lang, "approvalWrite");
+	if (mode === "always-ask-cached") return t(lang, "approvalAskCached");
 	return t(lang, "approvalAsk");
 }
 

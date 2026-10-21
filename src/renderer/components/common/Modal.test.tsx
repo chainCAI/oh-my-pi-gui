@@ -127,7 +127,11 @@ describe("Modal", () => {
 			options: ["Approve", "Approve `git status` for this session", "Deny"],
 		};
 		expect(isApprovalRequest(request)).toBe(true);
-		expect(isApprovalRequest({ ...request, options: ["Approve", "Maybe", "Deny"] })).toBe(false);
+		// A select titled like an approval but missing "Approve" or "Deny" is not one.
+		expect(isApprovalRequest({ ...request, options: ["Maybe", "Deny"] })).toBe(false);
+		expect(isApprovalRequest({ ...request, options: ["Approve", "Maybe"] })).toBe(false);
+		// Without the "Allow tool:" title an Approve/Deny select is a plain extension dialog.
+		expect(isApprovalRequest({ ...request, title: "Pick one" })).toBe(false);
 		const respond = vi.fn();
 		await mount(<ApprovalDialog request={request} onRespond={respond} />);
 		const button = [...document.querySelectorAll("button")].find(b => b.textContent?.includes("for this session"));
@@ -135,6 +139,27 @@ describe("Modal", () => {
 			button?.dispatchEvent(new Event("click", { bubbles: true }));
 		});
 		expect(respond).toHaveBeenCalledWith({ value: "Approve `git status` for this session" });
+	});
+
+	it("renders always-ask-cached grant options and answers with the picked label", async () => {
+		const request = {
+			type: "extension_ui_request" as const,
+			id: "approval",
+			method: "select" as const,
+			title: "Allow tool: read\ncat secret.txt",
+			options: ["Allow reads in /tmp/work for this session", "Always allow reads in /tmp/work", "Approve", "Deny"],
+		};
+		expect(isApprovalRequest(request)).toBe(true);
+		const respond = vi.fn();
+		await mount(<ApprovalDialog request={request} onRespond={respond} />);
+		const grant = [...document.querySelectorAll("button")].find(b =>
+			b.textContent?.includes("Always allow reads in /tmp/work"),
+		);
+		expect(grant).toBeTruthy();
+		await act(async () => {
+			grant?.dispatchEvent(new Event("click", { bubbles: true }));
+		});
+		expect(respond).toHaveBeenCalledWith({ value: "Always allow reads in /tmp/work" });
 	});
 	it("focuses the dialog on open and restores the trigger on close", async () => {
 		const trigger = document.createElement("button");

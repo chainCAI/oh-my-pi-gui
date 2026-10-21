@@ -1,11 +1,12 @@
 /**
  * Tool-approval dialog. The sidecar routes tool approval through a plain
- * `select` extension-UI request with ["Approve", "Deny"] options — plus
- * "Approve <subject> for this session" between them when the call can be
- * approved for the rest of the session — and a title of the form
- * "Allow tool: <name>\n<details>". This component gives that prompt a
- * dedicated surface: tool name, capability tier badge, and a monospace args
- * preview. Deny (or closing the dialog) answers with the "Deny" option.
+ * `select` extension-UI request ending in ["Approve"?, <session>?, "Deny"] —
+ * under `always-ask-cached` the same request also leads with grant options
+ * ("remember this file/folder" choices, rendered here as extra rows) — and a
+ * title of the form "Allow tool: <name>\n<details>". This component gives that
+ * prompt a dedicated surface: tool name, capability tier badge, and a
+ * monospace args preview. Deny (or closing the dialog) answers with the
+ * "Deny" option.
  */
 
 import { ShieldAlert, ShieldCheck } from "lucide-react";
@@ -24,15 +25,23 @@ export type ApprovalResponse = { value: string } | { confirmed: boolean } | { ca
 export function isApprovalRequest(request: ExtensionUIRequest): request is ApprovalSelect {
 	if (request.method !== "select" || !request.title.startsWith(APPROVAL_TITLE_PREFIX)) return false;
 	const { options } = request;
-	if (options[0] !== "Approve" || options.at(-1) !== "Deny") return false;
-	return options.length === 2 || (options.length === 3 && SESSION_OPTION.test(options[1]!));
+	// Grants shift "Approve" off index 0; its presence anywhere plus a "Deny"
+	// tail is the approval shape.
+	return options.includes("Approve") && options.at(-1) === "Deny";
 }
 
 /** The "approve for this session" option and the subject it names, when the prompt offers one. */
 function sessionOption(request: ApprovalSelect): { value: string; subject: string } | undefined {
-	const value = request.options.length === 3 ? request.options[1] : undefined;
-	const subject = value === undefined ? undefined : SESSION_OPTION.exec(value)?.[1];
-	return value !== undefined && subject !== undefined ? { value, subject } : undefined;
+	for (const option of request.options) {
+		const subject = SESSION_OPTION.exec(option)?.[1];
+		if (subject !== undefined) return { value: option, subject };
+	}
+	return undefined;
+}
+
+/** Grant ("remember") options: every option that is not Approve/session/Deny. */
+function grantOptions(request: ApprovalSelect, sessionValue: string | undefined): string[] {
+	return request.options.filter(option => option !== "Approve" && option !== "Deny" && option !== sessionValue);
 }
 
 const READ_TOOLS = new Set([
@@ -88,6 +97,7 @@ export function ApprovalDialog({
 
 	const tier = tierFor(toolName);
 	const session = sessionOption(request);
+	const grants = grantOptions(request, session?.value);
 	const deny = () => onRespond({ value: "Deny" });
 
 	return (
@@ -111,6 +121,21 @@ export function ApprovalDialog({
 						<span className="text-omp-sm text-(--omp-dim) italic">{t("approval.noArgs")}</span>
 					)}
 				</div>
+				{grants.length > 0 && (
+					<div className="mt-3 flex flex-col gap-1.5">
+						<span className="text-omp-xs font-medium text-(--omp-dim)">{t("approval.remember")}</span>
+						{grants.map(option => (
+							<button
+								className="rounded-md border border-(--omp-border-muted) px-3 py-1.5 text-left text-omp-xs text-(--omp-text-secondary) transition-colors hover:border-(--omp-border-accent) hover:bg-(--omp-selected-bg)"
+								key={option}
+								onClick={() => onRespond({ value: option })}
+								type="button"
+							>
+								{option}
+							</button>
+						))}
+					</div>
+				)}
 				<div className="mt-4 flex items-center justify-between gap-2">
 					<span className="text-omp-xs text-(--omp-dim)">{t("approval.waiting")}</span>
 					<div className="flex gap-2">

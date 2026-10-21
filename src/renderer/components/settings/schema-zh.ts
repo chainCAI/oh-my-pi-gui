@@ -449,7 +449,7 @@ export const ZH_SETTINGS: Record<string, { label: string; description?: string }
 	"tools.approvalMode": {
 		label: "工具审批",
 		description:
-			"工具调用的默认审批行为。'总是询问' 仅自动批准只读工具；'写入' 自动批准读取和工作区写入工具；'Yolo' 自动批准所有层级，但用户策略仍可提示或阻止。",
+			"工具调用的默认审批行为。'总是询问' 仅自动批准只读工具；'询问并记住' 读取前也询问，且授权可按文件或文件夹记住；'写入' 自动批准读取和工作区写入工具；'Yolo' 自动批准所有层级，但用户策略仍可提示或阻止。",
 	},
 	"features.unexpectedStopDetection": {
 		label: "检测意外停止",
@@ -886,6 +886,11 @@ export const ZH_SETTINGS: Record<string, { label: string; description?: string }
 	},
 	"tools.maxTimeout": { label: "工具超时上限", description: "Agent 可为任何工具设置的最大超时秒数（0 = 不限制）" },
 	"async.enabled": { label: "异步执行", description: "启用异步 bash 命令和后台任务执行" },
+	"async.widgets": {
+		label: "后台任务实时组件",
+		description:
+			"为每个运行中的后台任务绘制实时组件（由输出推导的图表、进度条、状态格），显示在等待卡片、任务胶囊和任务面板中。`widget` 模型角色（默认走 smol）为每个任务生成一次展示规则，此后更新不再消耗模型调用。",
+	},
 	"async.pollWaitDuration": {
 		label: "最大轮询时间",
 		description:

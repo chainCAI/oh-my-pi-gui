@@ -4,8 +4,8 @@ import { translate } from "../lib/i18n";
 import { activeTabCommand, createScopedStoreHook, type TabCommand } from "./session-runtime-context";
 import { toast } from "./toast";
 
-export type ApprovalMode = "always-ask" | "write" | "yolo";
-const APPROVAL_MODES = new Set<string>(["always-ask", "write", "yolo"]);
+export type ApprovalMode = "always-ask" | "always-ask-cached" | "write" | "yolo";
+const APPROVAL_MODES = new Set<string>(["always-ask", "always-ask-cached", "write", "yolo"]);
 export interface SettingsStore {
 	approvalMode: ApprovalMode;
 	steeringMode: "all" | "one-at-a-time";

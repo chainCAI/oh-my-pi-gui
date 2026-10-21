@@ -101,6 +101,7 @@ export const RU_TRAY_TEXT: Record<TrayLabelKey, string> = {
 	approvalYolo: "Полный доступ",
 	approvalWrite: "Автоматическое редактирование",
 	approvalAsk: "Спрашивать каждый раз",
+	approvalAskCached: "Спросить и запомнить",
 	context: "Контекст",
 	tokens: "токены",
 	noModel: "Нет модели",

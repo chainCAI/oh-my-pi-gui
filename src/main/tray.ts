@@ -155,7 +155,7 @@ function buildContextMenu(windowManager: WindowManager, state: TrayState | null)
 			},
 			{
 				label: t(lang, "approval"),
-				submenu: (["yolo", "write", "always-ask"] as const).map(mode => ({
+				submenu: (["yolo", "write", "always-ask", "always-ask-cached"] as const).map(mode => ({
 					label: approvalLabel(lang, mode),
 					type: "radio" as const,
 					checked: state?.approvalMode === mode,
