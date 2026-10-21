@@ -982,6 +982,46 @@ describe("SidecarPool request-origin routing (F-UI-ORIGIN)", () => {
 		expect(pool.routeSideChannel("req-1", response, true)).toBe(false);
 	});
 
+	it("still forwards request channels raised while the tab is in the background", () => {
+		const { pool, sidecars } = fakePool();
+		const fw = fakeWindow(1);
+		pool.acquire("/a", fw.win, "tab-a");
+		pool.acquire("/b", fw.win, "tab-b");
+		const [a] = sidecars;
+
+		pool.setActiveTab(fw.win, "tab-b");
+		const before = fw.sentTo(IPC_EVENTS.EXTENSION_UI).length;
+
+		// A background tab's sidecar keeps running; an approval raised while it
+		// is parked must still reach the renderer or the agent blocks forever.
+		a?.emitExtensionUi("req-bg");
+		expect(
+			fw
+				.sentTo(IPC_EVENTS.EXTENSION_UI)
+				.slice(before)
+				.map(item => item.data),
+		).toEqual([
+			{
+				tabId: "tab-a",
+				request: {
+					type: "extension_ui_request",
+					id: "req-bg",
+					method: "confirm",
+					title: "Proceed?",
+					message: "ok?",
+				},
+			},
+		]);
+		a?.emitHostUriRequest("uri-bg");
+		expect(fw.sentTo(IPC_EVENTS.HOST_URI_REQUEST).map(item => item.data)).toEqual([
+			{ request: { type: "host_uri_request", id: "uri-bg", operation: "read", uri: "https://example.com" } },
+		]);
+		// The response route registered even though the tab was parked.
+		const response = { type: "extension_ui_response", id: "req-bg", confirmed: true };
+		expect(pool.routeSideChannel("req-bg", response, true)).toBe(true);
+		expect(a?.sentFrames).toContainEqual(response);
+	});
+
 	it("routes host-uri results to the origin sidecar", () => {
 		const { pool, sidecars } = fakePool();
 		const fw = fakeWindow(1);

@@ -1,6 +1,13 @@
-import { createStore } from "zustand/vanilla";
+import { useSyncExternalStore } from "react";
+import { createStore, type StoreApi } from "zustand/vanilla";
 import type { ExtensionUIRequest } from "../../shared/rpc-types";
-import { createScopedStoreHook } from "./session-runtime-context";
+import {
+	allSessionRuntimes,
+	createScopedStoreHook,
+	focusedRuntimeTabId,
+	onFocusedSessionRuntimeChange,
+	onSessionRuntimeListChange,
+} from "./session-runtime-context";
 
 export interface ExtensionUiSnapshot {
 	pendingRequests: ExtensionUIRequest[];
@@ -69,3 +76,88 @@ export const createExtensionUiStore = () =>
 
 const defaultExtensionUiStore = createExtensionUiStore();
 export const useExtensionUiStore = createScopedStoreHook("extensionUi", defaultExtensionUiStore);
+
+/**
+ * Cross-tab view of pendingRequests. Requests live in per-tab stores, but the
+ * dialog surface is global — a request parked in a background tab's store was
+ * previously invisible (and the agent behind it blocked forever). Responses
+ * already route back by request id to the owning sidecar, so the queue can be
+ * shown from anywhere: focused tab's items first, then the others.
+ */
+
+function runtimeExtensionStores(): { tabId: string | null; store: StoreApi<ExtensionUiStore> }[] {
+	const entries = allSessionRuntimes().map(runtime => ({
+		tabId: runtime.tabId,
+		store: runtime.stores.get("extensionUi") as StoreApi<ExtensionUiStore> | undefined,
+	}));
+	return entries.filter((entry): entry is { tabId: string; store: StoreApi<ExtensionUiStore> } =>
+		Boolean(entry.store),
+	);
+}
+
+let pendingCache: ExtensionUIRequest[] = [];
+const aggregateListeners = new Set<() => void>();
+const perStoreUnsubs = new Map<StoreApi<ExtensionUiStore>, () => void>();
+
+function recomputePendingCache(): void {
+	const focusedTab = focusedRuntimeTabId();
+	const stores = runtimeExtensionStores();
+	stores.sort((a, b) => (a.tabId === focusedTab ? -1 : b.tabId === focusedTab ? 1 : 0));
+	const next: ExtensionUIRequest[] = [];
+	for (const { store } of stores) next.push(...store.getState().pendingRequests);
+	next.push(...defaultExtensionUiStore.getState().pendingRequests);
+	pendingCache = next;
+}
+
+function notifyAggregate(): void {
+	recomputePendingCache();
+	for (const listener of aggregateListeners) listener();
+}
+
+function attachStoreSubscriptions(): void {
+	const wanted = new Set<StoreApi<ExtensionUiStore>>([defaultExtensionUiStore]);
+	for (const { store } of runtimeExtensionStores()) wanted.add(store);
+	for (const [store, unsubscribe] of perStoreUnsubs) {
+		if (!wanted.has(store)) {
+			unsubscribe();
+			perStoreUnsubs.delete(store);
+		}
+	}
+	for (const store of wanted) {
+		if (!perStoreUnsubs.has(store)) perStoreUnsubs.set(store, store.subscribe(notifyAggregate));
+	}
+}
+
+function subscribeAggregate(onChange: () => void): () => void {
+	aggregateListeners.add(onChange);
+	attachStoreSubscriptions();
+	recomputePendingCache();
+	const unFocus = onFocusedSessionRuntimeChange(notifyAggregate);
+	const unRuntimeList = onSessionRuntimeListChange(() => {
+		attachStoreSubscriptions();
+		notifyAggregate();
+	});
+	return () => {
+		aggregateListeners.delete(onChange);
+		unFocus();
+		unRuntimeList();
+		if (aggregateListeners.size === 0) {
+			for (const unsubscribe of perStoreUnsubs.values()) unsubscribe();
+			perStoreUnsubs.clear();
+		}
+	};
+}
+
+/** Pending extension-UI requests across every tab (focused tab first). */
+export function useAllPendingRequests(): ExtensionUIRequest[] {
+	return useSyncExternalStore(subscribeAggregate, () => pendingCache);
+}
+
+/**
+ * Drop a request from whichever store holds it — required now that the dialog
+ * renders the cross-tab aggregate: the focused store may not own the request.
+ */
+export function removeExtensionRequest(id: string): void {
+	defaultExtensionUiStore.getState().removeRequest(id);
+	for (const { store } of runtimeExtensionStores()) store.getState().removeRequest(id);
+}

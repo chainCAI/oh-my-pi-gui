@@ -2,9 +2,15 @@ import { parseHTML } from "linkedom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { ExtensionUIResponse } from "../../../shared/rpc-types";
+import type { ExtensionUIResponse, RpcCommand, RpcResponse } from "../../../shared/rpc-types";
 import { I18nProvider } from "../../lib/i18n";
-import { useExtensionUiStore } from "../../stores/extension-ui";
+import { type ExtensionUiStore, useExtensionUiStore } from "../../stores/extension-ui";
+import {
+	deleteSessionRuntime,
+	sessionRuntimeStore,
+	setFocusedSessionRuntime,
+} from "../../stores/session-runtime-context";
+import { createTabRuntime } from "../../stores/tab-runtime";
 import { ExtensionDialog } from "./ExtensionDialog";
 
 const { document, window, Event, CustomEvent, HTMLElement, Node } = parseHTML("<html><body></body></html>");
@@ -41,8 +47,25 @@ async function flush(): Promise<void> {
 
 async function mount(): Promise<void> {
 	respondExtensionUi = vi.fn();
-	const ompWindow = window as unknown as { omp: { ui: { respondExtensionUi: typeof respondExtensionUi } } };
-	ompWindow.omp = { ui: { respondExtensionUi } };
+	const ompWindow = window as unknown as {
+		omp: {
+			ui: { respondExtensionUi: typeof respondExtensionUi };
+			rpc: { commandForTab: (tabId: string, command: RpcCommand) => Promise<RpcResponse> };
+		};
+	};
+	ompWindow.omp = {
+		ui: { respondExtensionUi },
+		rpc: {
+			commandForTab: vi.fn(
+				async (_tabId: string, command: RpcCommand): Promise<RpcResponse> => ({
+					type: "response",
+					command: command.type,
+					success: true,
+					data: {},
+				}),
+			),
+		},
+	};
 	container = document.createElement("div") as unknown as TestElement;
 	document.body.appendChild(container as never);
 	root = createRoot(container as unknown as Element);
@@ -94,6 +117,9 @@ afterEach(async () => {
 	}
 	container?.remove();
 	useExtensionUiStore.getState().clearAll();
+	deleteSessionRuntime("tab-bg");
+	deleteSessionRuntime("tab-fg");
+	setFocusedSessionRuntime(null);
 	vi.restoreAllMocks();
 	document.title = "";
 });
@@ -237,5 +263,70 @@ describe("ExtensionDialog non-dialog mutations", () => {
 		});
 		expect(document.title).toBe("Extension task");
 		expect(useExtensionUiStore.getState().pendingRequests).toEqual([]);
+	});
+});
+
+describe("ExtensionDialog cross-tab requests", () => {
+	it("surfaces a blocking request queued in a background tab and clears it from the owning store", async () => {
+		createTabRuntime("tab-fg");
+		createTabRuntime("tab-bg");
+		setFocusedSessionRuntime("tab-fg");
+		const bgStore = sessionRuntimeStore<ExtensionUiStore>("tab-bg", "extensionUi");
+		if (!bgStore) throw new Error("missing background extensionUi store");
+
+		await mount();
+		await act(async () => {
+			bgStore.getState().pushRequest({
+				type: "extension_ui_request",
+				id: "bg-confirm",
+				method: "confirm",
+				title: "Background approval",
+				message: "Allow the background agent?",
+			});
+		});
+		await flush();
+
+		// The dialog renders globally even though the request lives in the
+		// non-focused tab's store.
+		expect(document.body.textContent).toContain("Allow the background agent?");
+		const approve = buttonWithText("Approve");
+		if (!approve) throw new Error("missing Approve button");
+		await click(approve);
+
+		expect(respondExtensionUi).toHaveBeenCalledWith({
+			type: "extension_ui_response",
+			id: "bg-confirm",
+			confirmed: true,
+		});
+		expect(bgStore.getState().pendingRequests).toEqual([]);
+	});
+
+	it("does not fill the focused composer for a background tab's set_editor_text", async () => {
+		createTabRuntime("tab-fg");
+		createTabRuntime("tab-bg");
+		setFocusedSessionRuntime("tab-fg");
+		const bgStore = sessionRuntimeStore<ExtensionUiStore>("tab-bg", "extensionUi");
+		if (!bgStore) throw new Error("missing background extensionUi store");
+
+		await mount();
+		let editorFired = false;
+		window.addEventListener("omp:fill-composer", () => {
+			editorFired = true;
+		});
+
+		await act(async () => {
+			bgStore.getState().pushRequest({
+				type: "extension_ui_request",
+				id: "bg-editor",
+				method: "set_editor_text",
+				text: "dropped prompt from background tab",
+			});
+		});
+		await flush();
+
+		// The request stays queued in its own tab until that tab is focused —
+		// consuming it here would drop the text into the wrong composer.
+		expect(editorFired).toBe(false);
+		expect(bgStore.getState().pendingRequests.map(request => request.id)).toEqual(["bg-editor"]);
 	});
 });

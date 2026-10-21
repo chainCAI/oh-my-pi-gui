@@ -290,6 +290,13 @@ export class SidecarPool {
 				entry.compacting = undefined;
 				entry.retry = undefined;
 				if (entry.attention === "retrying") entry.attention = undefined;
+				// Pending request-id routes belong to the dead process — the
+				// renderer cleared its dialog queue too, so a late response has
+				// no owner left. Drop them rather than write a stray
+				// extension_ui_response into the fresh process's stdin.
+				for (const [id, owner] of this.#requestOwners) {
+					if (owner === entry) this.#requestOwners.delete(id);
+				}
 			}
 			forwardToWindow(win, IPC_EVENTS.TAB_STATUS, tabStatusPayload(entry));
 		});
@@ -336,6 +343,11 @@ export class SidecarPool {
 			const wasPlaceholder = entry.placeholder;
 			const wasAttention = entry.attention;
 			const wasRetry = entry.retry;
+			// plan_proposal blocks the agent on a host decision — it must reach
+			// the renderer even while this tab's full stream is parked, or the
+			// dialog can never appear and the turn waits forever. Visible tabs
+			// already get it inside their normal events batch.
+			const parkedProposals: AgentSessionEvent[] = [];
 			for (const event of events) {
 				if (event.type === "agent_start") {
 					entry.running = true;
@@ -364,6 +376,10 @@ export class SidecarPool {
 					entry.retry = undefined;
 				} else if (event.type === "auto_compaction_start") entry.compacting = true;
 				else if (event.type === "auto_compaction_end") entry.compacting = false;
+				if (event.type === "plan_proposal" && !entry.detachFull) parkedProposals.push(event);
+			}
+			if (parkedProposals.length > 0) {
+				forwardToWindow(win, IPC_EVENTS.EVENTS_BATCH, { tabId: entry.tabId, payload: parkedProposals });
 			}
 			const busy = entry.running || entry.compacting === true;
 			if (
@@ -375,6 +391,27 @@ export class SidecarPool {
 				forwardToWindow(win, IPC_EVENTS.TAB_STATUS, tabStatusPayload(entry));
 			}
 			if (entry.placeholder !== wasPlaceholder) this.#notifyWindowTabsChanged(win);
+		});
+		// Request/response channels live on the light wiring: a sidecar parked
+		// in a background tab still emits these, and an emitted request with no
+		// listener is DROPPED — the agent would block on a reply to a dialog
+		// the renderer never saw. The renderer queues by owning tabId, so the
+		// request resurfaces with the tab (or in the global dialog surface).
+		sidecar.on("extensionUi", (request: ExtensionUIRequest) => {
+			// Only response-bearing requests need an origin route. Fire-and-forget
+			// UI updates never reply, so retaining them here leaks the owning tab.
+			if (BLOCKING_UI_METHODS[request.method]) this.#requestOwners.set(request.id, entry);
+			forwardToWindow(win, IPC_EVENTS.EXTENSION_UI, { tabId: entry.tabId, request });
+		});
+		sidecar.on("hostToolCall", (request: HostToolCallRequest) => {
+			// Answered-inline tools never reach the renderer, so only forwarded
+			// calls need id → origin tracking for the result/update route.
+			const answeredInline = this.hostToolExecutor ? this.hostToolExecutor(sidecar, request, win) : true;
+			if (!answeredInline) this.#requestOwners.set(request.id, entry);
+		});
+		sidecar.on("hostUriRequest", (request: HostUriRequest) => {
+			this.#requestOwners.set(request.id, entry);
+			forwardToWindow(win, IPC_EVENTS.HOST_URI_REQUEST, { request });
 		});
 	}
 
@@ -405,22 +442,6 @@ export class SidecarPool {
 		});
 		wire("status", (payload: SidecarStatusPayload) => {
 			forwardActive(IPC_EVENTS.SIDECAR_STATUS, { ...payload, cwd: sidecar.cwd });
-		});
-		wire("extensionUi", (request: ExtensionUIRequest) => {
-			// Only response-bearing requests need an origin route. Fire-and-forget
-			// UI updates never reply, so retaining them here leaks the owning tab.
-			if (BLOCKING_UI_METHODS[request.method]) this.#requestOwners.set(request.id, entry);
-			forwardToWindow(win, IPC_EVENTS.EXTENSION_UI, { tabId: entry.tabId, request });
-		});
-		wire("hostToolCall", (request: HostToolCallRequest) => {
-			// Answered-inline tools never reach the renderer, so only forwarded
-			// calls need id → origin tracking for the result/update route.
-			const answeredInline = this.hostToolExecutor ? this.hostToolExecutor(sidecar, request, win) : true;
-			if (!answeredInline) this.#requestOwners.set(request.id, entry);
-		});
-		wire("hostUriRequest", (request: HostUriRequest) => {
-			this.#requestOwners.set(request.id, entry);
-			forwardToWindow(win, IPC_EVENTS.HOST_URI_REQUEST, { request });
 		});
 		wire("subagentFrame", (frame: SubagentFrame) => {
 			forwardActive(IPC_EVENTS.SUBAGENT_FRAME, frame);

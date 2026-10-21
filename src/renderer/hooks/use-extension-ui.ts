@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import type { ExtensionUIRequest, ExtensionUIResponse } from "../../shared/rpc-types";
-import { useExtensionUiStore } from "../stores/extension-ui";
+import { removeExtensionRequest, useExtensionUiStore } from "../stores/extension-ui";
 import { pushTabExtensionUiRequest } from "../stores/tabs";
 
 interface ExtensionUiResult {
@@ -14,7 +14,6 @@ interface ExtensionUiResult {
  */
 export function useExtensionUi(): ExtensionUiResult {
 	const pendingRequests = useExtensionUiStore(s => s.pendingRequests);
-	const removeRequest = useExtensionUiStore(s => s.removeRequest);
 
 	useEffect(() => {
 		const unsubscribe = window.omp.events.onExtensionUi((request, tabId) => {
@@ -23,21 +22,15 @@ export function useExtensionUi(): ExtensionUiResult {
 		return unsubscribe;
 	}, []);
 
-	const respond = useCallback(
-		(response: ExtensionUIResponse) => {
-			window.omp.ui.respondExtensionUi(response);
-			removeRequest(response.id);
-		},
-		[removeRequest],
-	);
+	const respond = useCallback((response: ExtensionUIResponse) => {
+		window.omp.ui.respondExtensionUi(response);
+		removeExtensionRequest(response.id);
+	}, []);
 
-	const cancel = useCallback(
-		(id: string) => {
-			window.omp.ui.respondExtensionUi({ type: "extension_ui_response", id, cancelled: true });
-			removeRequest(id);
-		},
-		[removeRequest],
-	);
+	const cancel = useCallback((id: string) => {
+		window.omp.ui.respondExtensionUi({ type: "extension_ui_response", id, cancelled: true });
+		removeExtensionRequest(id);
+	}, []);
 
 	return {
 		currentRequest: pendingRequests.length > 0 ? pendingRequests[0] : null,

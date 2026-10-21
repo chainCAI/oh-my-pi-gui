@@ -75,11 +75,17 @@ export interface SessionRuntime {
 const SessionRuntimeContext = createContext<SessionRuntime | null>(null);
 const runtimes = new Map<string, SessionRuntime>();
 const focusedListeners = new Set<() => void>();
+const runtimeListListeners = new Set<() => void>();
 let focusedTabId: string | null = null;
 let executionTabId: string | null = null;
 
+function notifyRuntimeListChanged(): void {
+	for (const listener of runtimeListListeners) listener();
+}
+
 export function registerSessionRuntime(runtime: SessionRuntime): SessionRuntime {
 	runtimes.set(runtime.tabId, runtime);
+	notifyRuntimeListChanged();
 	return runtime;
 }
 
@@ -93,6 +99,7 @@ export function sessionRuntimeStore<T>(tabId: string | null, key: RuntimeStoreKe
 
 export function deleteSessionRuntime(tabId: string): void {
 	runtimes.delete(tabId);
+	notifyRuntimeListChanged();
 	if (focusedTabId === tabId) setFocusedSessionRuntime(null);
 }
 
@@ -125,6 +132,17 @@ export function withSessionRuntime<T>(tabId: string, run: () => T): T {
 export function onFocusedSessionRuntimeChange(listener: () => void): () => void {
 	focusedListeners.add(listener);
 	return () => focusedListeners.delete(listener);
+}
+
+/** Fire when a runtime is registered or deleted (tab opened/closed/replaced). */
+export function onSessionRuntimeListChange(listener: () => void): () => void {
+	runtimeListListeners.add(listener);
+	return () => runtimeListListeners.delete(listener);
+}
+
+/** Every live runtime, in registration order. */
+export function allSessionRuntimes(): SessionRuntime[] {
+	return [...runtimes.values()];
 }
 
 export function SessionRuntimeProvider({ runtime, children }: { runtime: SessionRuntime; children: ReactNode }) {

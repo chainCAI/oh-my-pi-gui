@@ -20,7 +20,7 @@ import { AnsiText } from "../../lib/ansi";
 import { cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { MarkdownRenderer } from "../../lib/markdown";
-import { useExtensionUiStore } from "../../stores/extension-ui";
+import { removeExtensionRequest, useAllPendingRequests, useExtensionUiStore } from "../../stores/extension-ui";
 import { toast } from "../../stores/toast";
 import { Button, Input, Modal } from "../common";
 import { ApprovalDialog, isApprovalRequest } from "./ApprovalDialog";
@@ -552,8 +552,6 @@ function OpenUrlDialog({
 }
 
 function ActiveDialog({ request, remaining }: { request: ExtensionUIRequest; remaining: number | null }) {
-	const removeRequest = useExtensionUiStore(state => state.removeRequest);
-
 	const respond = (
 		response:
 			| { value: string }
@@ -563,7 +561,7 @@ function ActiveDialog({ request, remaining }: { request: ExtensionUIRequest; rem
 			| { cancelled: true },
 	) => {
 		window.omp.ui.respondExtensionUi({ type: "extension_ui_response", id: request.id, ...response });
-		removeRequest(request.id);
+		removeExtensionRequest(request.id);
 	};
 	const cancel = () => respond({ cancelled: true });
 
@@ -656,8 +654,12 @@ function ActiveDialog({ request, remaining }: { request: ExtensionUIRequest; rem
 }
 
 export function ExtensionDialog() {
-	const pending = useExtensionUiStore(state => state.pendingRequests);
-	const removeRequest = useExtensionUiStore(state => state.removeRequest);
+	// Dialog surface is global: a blocking request parked in a background tab's
+	// queue still pops here (its agent waits). Side-effect requests do NOT
+	// aggregate — set_editor_text must fill the OWNING tab's composer, so they
+	// stay scoped to the focused tab and fire when that tab is on screen.
+	const pending = useAllPendingRequests();
+	const focusedPending = useExtensionUiStore(state => state.pendingRequests);
 
 	const request = useMemo(() => pending.find(req => !NON_DIALOG_METHODS.has(req.method)) ?? null, [pending]);
 	const remaining = useCountdown(request);
@@ -665,7 +667,7 @@ export function ExtensionDialog() {
 	// Consume non-dialog requests in place. Editor/title mutations must target
 	// real GUI surfaces directly; dispatching listenerless events drops them.
 	useEffect(() => {
-		for (const req of pending) {
+		for (const req of focusedPending) {
 			if (req.method === "notify") {
 				// Suppress xdev mount notifications — they are startup-time
 				// informational messages that don't need user attention.
@@ -676,22 +678,22 @@ export function ExtensionDialog() {
 						durationMs: 6000,
 					});
 				}
-				removeRequest(req.id);
+				removeExtensionRequest(req.id);
 			} else if (req.method === "set_editor_text") {
 				window.dispatchEvent(
 					new CustomEvent("omp:fill-composer", {
 						detail: { text: req.text, images: req.images, prepend: req.prepend },
 					}),
 				);
-				removeRequest(req.id);
+				removeExtensionRequest(req.id);
 			} else if (req.method === "setTitle") {
 				document.title = req.title;
-				removeRequest(req.id);
+				removeExtensionRequest(req.id);
 			} else if (NON_DIALOG_METHODS.has(req.method)) {
-				removeRequest(req.id);
+				removeExtensionRequest(req.id);
 			}
 		}
-	}, [pending, removeRequest]);
+	}, [focusedPending]);
 
 	// Timeout: auto-cancel with timedOut marker.
 	useEffect(() => {
@@ -702,8 +704,8 @@ export function ExtensionDialog() {
 			cancelled: true,
 			timedOut: true,
 		});
-		removeRequest(request.id);
-	}, [request, remaining, removeRequest]);
+		removeExtensionRequest(request.id);
+	}, [request, remaining]);
 
 	return (
 		<>
