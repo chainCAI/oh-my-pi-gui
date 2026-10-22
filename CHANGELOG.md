@@ -2,9 +2,24 @@
 
 ## [Unreleased]
 
+## [0.9.24] - 2026-10-22
+
+### Added
+
+- **Ask and remember approvals**: a fourth approval mode. Permission prompts can remember a file or folder grant for this session or across sessions, shown as their own rows in the dialog; `/forget-approvals` clears remembered grants.
+- **Live job widgets**: background jobs render a live card in the Jobs window — sparklines with reference lines, progress meters, stage text and stat blocks, driven by the agent's `widget` model role.
+- Subagent task rows show the step the subagent reports working on plus a self-estimated completion percentage.
+- **Collapsible providers in the model picker**: each provider is now a dropdown. The current model's provider opens with the picker, and providers you expand stay open across opens. While you search, every matching provider is open and can be collapsed for that query. A collapsed provider that holds the current model shows a check mark. — thanks [@jtmano](https://github.com/jtmano) ([#18](https://github.com/nornzach/oh-my-pi-gui/pull/18))
+
+### Fixed
+
+- **Blocking prompts raised in a background tab are no longer lost**: approvals, confirmations, host-tool calls and plan proposals emitted while a tab is parked now reach the app — previously the request was dropped in the main process and the agent waited forever on a dialog nobody saw. Blocking dialogs from any tab now surface globally; editor-text and title mutations still apply to their owning tab.
+- **Dialogs can no longer hide under full-screen surfaces**: modal overlays (approvals, command palette, conversation search) now sit on a dedicated z tier above settings and PR-center windows — a confirmation could pop beneath an opaque page and look like it never appeared.
+- A stale response can no longer be routed into a restarted sidecar that never asked for it.
+
 ### Changed
 
-- **Collapsible providers in the model picker**: each provider is now a dropdown. The current model's provider opens with the picker, and providers you expand stay open across opens. While you search, every matching provider is open and can be collapsed for that query. A collapsed provider that holds the current model shows a check mark. — thanks [@jtmano](https://github.com/jtmano) ([#18](https://github.com/nornzach/oh-my-pi-gui/pull/18))
+- Bundled agent rebuilt from upstream through **v18.12.6** (monorepo `566a0d96`): Esc no longer revives the agent when a background job completes; in-flight tool results survive compaction and session switches; `set_todos` persists across restore and compaction; MCP tools can no longer run twice after a reconnect; `/mcp reauth` works over RPC so a broken OAuth server can be repaired without restart; startup defers tool-only extensions so the composer accepts input sooner; killed and timed-out subagents can be revived by messaging them; mistyped slash commands no longer trigger similar ones; GitLab merge requests work with `/review` and `/annotate`; and `providers.cacheRetention` can extend the OpenAI prompt cache to 12 hours.
 
 ## [0.9.23] - 2026-10-19
 

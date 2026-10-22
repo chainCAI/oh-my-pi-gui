@@ -24,8 +24,8 @@ Keep the conversation, code changes, and agent activity in one place. Review a d
 
 Built on [omp](https://github.com/can1357/oh-my-pi), this Electron desktop app bundles its own agent: **users of the DMG, NSIS, and portable packages do not need to install omp, Bun, or Node separately.** It complements the TUI and shares the usual `~/.omp` configuration and sessions.
 
-[Features](#en-features) · [What's new in 0.9.23](#en-recent) · [Gallery](#en-gallery) · [Install](#en-install) · [Shortcuts](#en-shortcuts) · [Development](#en-development) · [Help](#en-help) · [Releasing](#en-release)
-> **v0.9.23 release.** The improvements below are included in v0.9.23, with the bundled agent rebuilt from upstream through v18.12.2 (monorepo `72ca21f9`). The gallery screenshots may show earlier GUI surfaces; [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) is authoritative for available downloads and release contents.
+[Features](#en-features) · [What's new in 0.9.24](#en-recent) · [Gallery](#en-gallery) · [Install](#en-install) · [Shortcuts](#en-shortcuts) · [Development](#en-development) · [Help](#en-help) · [Releasing](#en-release)
+> **v0.9.24 release.** The improvements below are included in v0.9.24, with the bundled agent rebuilt from upstream through v18.12.6 (monorepo `566a0d96`). The gallery screenshots may show earlier GUI surfaces; [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) is authoritative for available downloads and release contents.
 
 <img src="docs/screenshots/en/01-conversation.png" alt="English omp GUI conversation in the synthetic aurora-web project" width="100%">
 
@@ -62,21 +62,18 @@ The distinctive part is not just a chat window: it is being able to **separate p
 Model requests still go to the providers you configure. The bundled agent removes the separate runtime install, not the need to configure credentials, project dependencies, external Git/OpenSSH/MCP tools, or optional services. Only connect tools and services you trust.
 
 <a id="en-recent"></a>
-### What's new in 0.9.23
+### What's new in 0.9.24
 
-v0.9.23 brings the GUI to feature parity with the terminal app and adds a third interface language:
+v0.9.24 adds remembered approvals and live job cards, and fixes prompts that could silently die in background tabs:
 
 | In daily use | What has improved |
 |---|---|
-| **Русский интерфейс** | A third UI language joins English and 中文, from contributor [@AG-albino](https://github.com/AG-albino) — including settings labels and native menus. |
-| **Config warnings visible** | `settings.json` problems the terminal shows as a banner now surface in the app instead of failing silently. |
-| **Drag files into the composer** | Dropping files on the input area inserts them as `@`-mentions; paths with spaces are quoted. |
-| **Edit & resend from a message** | User message bubbles offer an edit action that restores the text and continues the session from that point. |
-| **Fuller command palette** | `/effort`, `/slow`, `/pin`, `/wt`, `/seance`, `/cleanse`, `/trace`, `/open`, `/ratchet`, `/modelpreset`, `/skillful`, `/extended-context`, `/record`, plus MCP / marketplace / advisor / git subcommands. |
-| **`/record` window capture** | Records the window to a WebM video — the desktop counterpart of the terminal's session recording. |
-| **Extension screens work** | Extensions that open interactive screens now run in a terminal overlay instead of doing nothing. |
-| **Advisor badge & reset credits** | A status eye shows when the advisor is watching (with live cost), and banked usage resets are redeemable from the usage window. |
-| **Bundled agent** | Rebuilt from upstream through v18.12.2 (monorepo `72ca21f9`). |
+| **Ask and remember approvals** | A fourth approval mode: permission prompts can remember a file or folder grant for this session or across sessions, with `/forget-approvals` to clear them. |
+| **Live job widgets** | Background jobs render a live card in the Jobs window — sparklines, progress meters, stage text and stats from the agent's widget model role. |
+| **Subagent progress detail** | Task rows show the step the subagent reports plus a self-estimated completion percentage. |
+| **Collapsible model picker** | Providers are dropdowns — the current provider opens with the picker, your expanded set persists, and search opens every match. — thanks [@jtmano](https://github.com/jtmano) |
+| **No more invisible prompts** | Approvals, confirms and plan proposals raised while a tab sits in the background now surface instead of being dropped — the agent no longer waits on a dialog nobody can see. Blocking dialogs also got their own layer above full-screen windows. |
+| **Bundled agent** | Rebuilt from upstream through v18.12.6 (monorepo `566a0d96`): Esc no longer revives a stopped run, tool results survive compaction, MCP tools can't run twice after a reconnect, `/mcp reauth` works in-app, and mistyped slash commands stop firing similar ones. |
 <a id="en-gallery"></a>
 ### Explore the interface
 
@@ -149,22 +146,22 @@ Search with `⌘K`. Supported commands lead to native controls; pass-through and
 <a id="en-install"></a>
 ### Install & start
 
-**Documented install baseline: [v0.9.23](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.23).** Check [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) for authoritative current downloads and release notes.
+**Documented install baseline: [v0.9.24](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.24).** Check [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) for authoritative current downloads and release notes.
 
-| Mac | v0.9.23 download |
+| Mac | v0.9.24 download |
 |---|---|
-| Apple Silicon | [omp-0.9.23-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-arm64.dmg) |
-| Intel | [omp-0.9.23.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23.dmg) |
+| Apple Silicon | [omp-0.9.24-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-arm64.dmg) |
+| Intel | [omp-0.9.24.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24.dmg) |
 
-| Windows x64 | v0.9.23 download |
+| Windows x64 | v0.9.24 download |
 |---|---|
-| Installer | [omp-0.9.23-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-setup.exe) |
-| Portable | [omp-0.9.23-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-portable.exe) |
+| Installer | [omp-0.9.24-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-setup.exe) |
+| Portable | [omp-0.9.24-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-portable.exe) |
 
-| Linux x64 | v0.9.23 download |
+| Linux x64 | v0.9.24 download |
 |---|---|
-| AppImage | [omp-0.9.23.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23.AppImage) |
-| Debian/Ubuntu | [omp_0.9.23_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp_0.9.23_amd64.deb) |
+| AppImage | [omp-0.9.24.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24.AppImage) |
+| Debian/Ubuntu | [omp_0.9.24_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp_0.9.24_amd64.deb) |
 
 Open the DMG and drag **omp** into **Applications**. The app and bundled macOS sidecar are ad-hoc signed but not notarized. If macOS blocks the first launch, use **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**, after confirming the download's source.
 
@@ -290,7 +287,7 @@ The capture script renders the actual Electron GUI using a fresh temporary HOME,
 |---|---|
 | macOS blocks the first launch | Confirm the download came from the release page, then right-click → Open or use Privacy & Security → Open Anyway. The app and bundled sidecar are ad-hoc signed, not notarized. |
 | Windows SmartScreen blocks the first launch | Confirm the download came from the release page, then choose More info → Run anyway. The Windows package is currently unsigned. |
-| A screenshot shows something absent from the installed app | The showcase accompanies v0.9.23, but screenshots may show earlier GUI surfaces. Check the installed version and its release notes; earlier releases may not include these improvements. |
+| A screenshot shows something absent from the installed app | The showcase accompanies v0.9.24, but screenshots may show earlier GUI surfaces. Check the installed version and its release notes; earlier releases may not include these improvements. |
 | `Built-in omp not found` | In a source checkout, build the sidecar or supply a compatible prebuilt one. In an installed app, reinstall the correct official DMG; a separate system `omp` will not fix a missing bundle resource. |
 | `build:omp` cannot find the monorepo | Put the GUI checkout at the monorepo's `packages/gui/`, alongside `packages/coding-agent/` and `packages/natives/`. |
 | `replacing stale addon … version sentinel ≠ …` | Informational: the builder detected and replaced a mismatched native addon. |
@@ -318,9 +315,9 @@ Releases belong only to [`nornzach/oh-my-pi-gui`](https://github.com/nornzach/oh
 
 这是基于 [omp](https://github.com/can1357/oh-my-pi) 的 Electron 桌面应用，内置 Agent 二进制：**通过 DMG、NSIS 或便携版安装的用户无需另装 omp、Bun 或 Node。** GUI 与 TUI 互补，共享常规的 `~/.omp` 配置与会话。
 
-[功能全览](#zh-features) · [0.9.23 更新内容](#zh-recent) · [界面导览](#zh-gallery) · [安装](#zh-install) · [快捷键](#zh-shortcuts) · [开发](#zh-development) · [常见问题](#zh-help) · [发布](#zh-release)
+[功能全览](#zh-features) · [0.9.24 更新内容](#zh-recent) · [界面导览](#zh-gallery) · [安装](#zh-install) · [快捷键](#zh-shortcuts) · [开发](#zh-development) · [常见问题](#zh-help) · [发布](#zh-release)
 
-> **v0.9.23 功能展示。** 下文改进均纳入 v0.9.23，内置 Agent 基于上游重建至 v18.12.2（monorepo `72ca21f9`）。截图可能展示较早的 GUI 界面；可用下载及实际发布内容以 [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
+> **v0.9.24 功能展示。** 下文改进均纳入 v0.9.24，内置 Agent 基于上游重建至 v18.12.6（monorepo `566a0d96`）。截图可能展示较早的 GUI 界面；可用下载及实际发布内容以 [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
 
 <img src="docs/screenshots/zh/01-conversation.png" alt="中文 omp GUI 中的合成 aurora-web 项目对话" width="100%">
 
@@ -357,21 +354,18 @@ Releases belong only to [`nornzach/oh-my-pi-gui`](https://github.com/nornzach/oh
 模型请求仍会发送到你配置的 Provider。内置 Agent 省去了单独安装运行时的步骤，但不替你配置凭据、项目依赖、外部 Git/OpenSSH/MCP 工具或可选服务。请只连接你信任的工具与服务。
 
 <a id="zh-recent"></a>
-### 0.9.23 更新内容
+### 0.9.24 更新内容
 
-v0.9.23 让 GUI 与终端版功能对齐，并新增第三种界面语言：
+v0.9.24 新增可记忆的授权与实时任务卡片，并修复了后台标签页里会静默丢失的确认弹窗：
 
 | 日常场景 | 改进内容 |
 |---|---|
-| **Русский интерфейс** | 第三种界面语言（与 English/中文并列），来自贡献者 [@AG-albino](https://github.com/AG-albino)——含设置标签与原生菜单。 |
-| **配置告警可见** | `settings.json` 的问题在终端版会显示为横幅，现在 GUI 同样提示，不再静默失败。 |
-| **拖文件进输入框** | 文件拖放到输入区即转为 `@` 提及；带空格路径自动加引号。 |
-| **消息级编辑重发** | 用户消息气泡提供编辑操作：回填输入框并从该点接续会话。 |
-| **命令面板补全** | `/effort`、`/slow`、`/pin`、`/wt`、`/seance`、`/cleanse`、`/trace`、`/open`、`/ratchet`、`/modelpreset`、`/skillful`、`/extended-context`、`/record`，以及 MCP / 市场 / advisor / git 子命令。 |
-| **`/record` 窗口录屏** | 把窗口录成 WebM 视频——终端版会话录制的桌面等价物。 |
-| **扩展交互界面可用** | 打开自定义界面的扩展现在跑在终端浮层里，不再无响应。 |
-| **Advisor 徽标与额度兑换** | 状态眼睛实时显示顾问状态与花费；用量窗口可直接兑换已存的重置额度。 |
-| **内置代理** | 基于上游重建至 v18.12.2（monorepo `72ca21f9`）。 |
+| **授权可记忆** | 第四种审批模式：文件/文件夹授权可选择本次会话记住或跨会话记住，`/forget-approvals` 一键清除。 |
+| **实时任务卡片** | 后台任务在 Jobs 窗口渲染实时卡片——吞吐图、进度条、阶段文本与统计，由 agent 的 widget 模型角色驱动。 |
+| **子代理进度细节** | 任务行展示子代理自报的当前步骤与预估完成度百分比。 |
+| **可折叠模型选择器** | Provider 分组折叠为下拉——当前 Provider 随选择器自动展开，展开状态跨次保留，搜索时命中组全开。——感谢 [@jtmano](https://github.com/jtmano) |
+| **弹窗不再隐形** | 后台标签页中发起的审批、确认与计划提案现在正常弹出，不再被静默丢弃导致 agent 干等；阻塞弹窗也拥有了高于全屏页面的专属层级。 |
+| **内置代理** | 基于上游重建至 v18.12.6（monorepo `566a0d96`）：Esc 停止后不再被后台任务复活，压缩/切换会话不再丢工具结果，MCP 重连不再重复执行，`/mcp reauth` 可直接在应用内修复授权，输错的斜杠命令不再误触发相似命令。 |
 <a id="zh-gallery"></a>
 ### 界面导览
 
@@ -444,22 +438,22 @@ v0.9.23 让 GUI 与终端版功能对齐，并新增第三种界面语言：
 <a id="zh-install"></a>
 ### 安装与开始使用
 
-**本文安装基线：[v0.9.23](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.23)。** 最新可下载版本与发布说明以 [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
+**本文安装基线：[v0.9.24](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.24)。** 最新可下载版本与发布说明以 [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
 
-| Mac | v0.9.23 下载 |
+| Mac | v0.9.24 下载 |
 |---|---|
-| Apple Silicon | [omp-0.9.23-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-arm64.dmg) |
-| Intel | [omp-0.9.23.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23.dmg) |
+| Apple Silicon | [omp-0.9.24-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-arm64.dmg) |
+| Intel | [omp-0.9.24.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24.dmg) |
 
-| Windows x64 | v0.9.23 下载 |
+| Windows x64 | v0.9.24 下载 |
 |---|---|
-| 安装程序 | [omp-0.9.23-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-setup.exe) |
-| 便携版 | [omp-0.9.23-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23-portable.exe) |
+| 安装程序 | [omp-0.9.24-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-setup.exe) |
+| 便携版 | [omp-0.9.24-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24-portable.exe) |
 
-| Linux x64 | v0.9.23 下载 |
+| Linux x64 | v0.9.24 下载 |
 |---|---|
-| AppImage | [omp-0.9.23.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp-0.9.23.AppImage) |
-| Debian/Ubuntu | [omp_0.9.23_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.23/omp_0.9.23_amd64.deb) |
+| AppImage | [omp-0.9.24.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp-0.9.24.AppImage) |
+| Debian/Ubuntu | [omp_0.9.24_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.24/omp_0.9.24_amd64.deb) |
 
 打开 DMG，把 **omp** 拖入**应用程序**。应用与内置 macOS sidecar 均采用 ad-hoc 签名，未经公证。如果 macOS 拦截首次启动，请先确认下载来源，再使用**右键 → 打开**，或**系统设置 → 隐私与安全性 → 仍要打开**。
 
@@ -582,7 +576,7 @@ bun scripts/capture-showcase.ts
 |---|---|
 | macOS 拦截首次启动 | 确认来自发布页后，右键 → 打开，或通过隐私与安全性 → 仍要打开。应用与内置 sidecar 均为 ad-hoc 签名，未经公证。 |
 | Windows SmartScreen 拦截首次启动 | 确认来自发布页后，点击更多信息 → 仍要运行。Windows 包当前未签名。 |
-| 截图中的功能在已安装应用中不存在 | 本展示对应 v0.9.23，但截图可能展示较早的 GUI 界面；请检查已安装版本及其发布说明，较早版本可能不包含这些改进。 |
+| 截图中的功能在已安装应用中不存在 | 本展示对应 v0.9.24，但截图可能展示较早的 GUI 界面；请检查已安装版本及其发布说明，较早版本可能不包含这些改进。 |
 | `Built-in omp not found` | 源码检出中需构建或放入兼容 sidecar；已安装应用请重新安装正确的官方 DMG。另装系统 `omp` 无法补齐包内资源。 |
 | `build:omp` 找不到 monorepo | 将 GUI 放在 monorepo 的 `packages/gui/`，与 `packages/coding-agent/`、`packages/natives/` 同级。 |
 | `replacing stale addon … version sentinel ≠ …` | 提示信息：构建器发现并替换了版本不匹配的原生插件。 |
