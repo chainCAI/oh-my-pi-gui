@@ -576,6 +576,38 @@ describe("useRpcEvents context usage sync", () => {
 	});
 });
 
+describe("useRpcEvents stale run repair", () => {
+	it("settles a tab whose run ended unseen once the liveness probe reports it idle", async () => {
+		const { emitTabStatus, commandForTab } = installTabRoutedMockOmp();
+		const session = seedReadyTab("t-stuck");
+		// The switch-back hydrate times out (sidecars busy elsewhere), so the
+		// tab keeps what it showed when it was parked mid-run.
+		const original = commandForTab.getMockImplementation()!;
+		let hydrateFails = true;
+		commandForTab.mockImplementation((id, command) =>
+			command.type === "get_state" && hydrateFails
+				? Promise.resolve({ type: "response", command: "get_state", success: false, error: "timed out" })
+				: original(id, command),
+		);
+		await mount(<RpcEventsProbe heartbeatMs={25} />);
+		emitTabStatus({ status: "ready", cwd: "/alpha" }, "t-stuck");
+		await flush();
+		session.setState({ isStreaming: true, awaitingModelSince: 1 });
+
+		// The run finished while the tab was parked; no event will ever say so.
+		hydrateFails = false;
+		vi.spyOn(window.omp.rpc, "getState").mockResolvedValue(settledState({}));
+		await act(async () => {
+			const { promise, resolve } = Promise.withResolvers<void>();
+			setTimeout(resolve, 80);
+			await promise;
+		});
+
+		expect(session.getState().isStreaming).toBe(false);
+		expect(session.getState().awaitingModelSince).toBeNull();
+	});
+});
+
 describe("useRpcEvents awaiting-model marker", () => {
 	it("arms on agent/turn start and clears when the assistant message finalizes", async () => {
 		const { emitBatch } = installMockOmp();

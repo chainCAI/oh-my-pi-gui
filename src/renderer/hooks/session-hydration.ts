@@ -324,6 +324,27 @@ export async function hydrateSession(fallbackName?: string): Promise<void> {
 	return hydrateTabSession(tabId, fallbackName);
 }
 
+/**
+ * Repair a tab whose run state disagrees with a fresh `get_state` read. A
+ * parked tab misses its agent_start/agent_end, and its switch-back hydrate is
+ * skipped when live events race it or fails when the sidecar is slow to
+ * answer; without a later event (never, for a session that went idle) the tab
+ * keeps showing a finished run as live, or a live one as idle. Re-hydrates
+ * only when no event reached the tab since `eventVersionAtProbe`, the guard
+ * hydrate itself applies; a disagreement under live events waits for the next
+ * probe.
+ */
+export function repairStaleRunState(
+	tabId: string,
+	state: RpcSessionState,
+	eventVersionAtProbe: number | undefined,
+): void {
+	const session = sessionRuntimeStore<SessionStore>(tabId, "session")?.getState();
+	if (!session || session.eventVersion !== eventVersionAtProbe) return;
+	if (session.isStreaming === (state.isStreaming === true)) return;
+	void hydrateTabSession(tabId);
+}
+
 /** Reload every renderer store belonging to one visible tab. */
 export async function hydrateTabSession(tabId: string, fallbackName?: string): Promise<void> {
 	if (isTabClosed(tabId)) return;
@@ -410,9 +431,11 @@ export async function hydrateTabSession(tabId: string, fallbackName?: string): P
 			// Zombie settle: the run finished while this tab sat in the
 			// background, so its message_end/agent_end never forwarded and the
 			// restored bundle still paints partial assistant content. Clear only
-			// those stream buffers here; the transcript merge below separately
-			// removes delivered live rows while preserving an unsent local prompt.
+			// those stream buffers (and the waiting marker agent_end would have
+			// cleared) here; the transcript merge below separately removes
+			// delivered live rows while preserving an unsent local prompt.
 			messages?.getState().clearStreaming();
+			session?.setState({ awaitingModelSince: null });
 		}
 		// Per-tab subagent subscription (F-HYDRATE), re-asserted on every
 		// successful hydrate: the runtime's command channel routes to THIS tab's

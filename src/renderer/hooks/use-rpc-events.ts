@@ -9,6 +9,7 @@ import {
 	refreshConfigWarnings,
 	refreshModelState,
 	refreshSessionState,
+	repairStaleRunState,
 	syncGoal,
 	syncLoopMode,
 	syncVibeMode,
@@ -587,6 +588,9 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 				if (useSessionStore.getState().status !== "ready") return;
 				probing = true;
 				const probeTabId = useTabsStore.getState().activeTabId;
+				const probeEventVersion = probeTabId
+					? sessionRuntimeStore<SessionStore>(probeTabId, "session")?.getState().eventVersion
+					: undefined;
 				void window.omp.rpc
 					.getState()
 					.then(res => {
@@ -600,7 +604,12 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 						// The probe already paid for the tokenised context reading, so let it
 						// keep the usage ring honest: a session that idles between turns never
 						// lands a get_state snapshot any other way.
-						if (res.data != null && probeTabId) applyUsageSnapshot(res.data as RpcSessionState, probeTabId);
+						if (res.data != null && probeTabId) {
+							applyUsageSnapshot(res.data as RpcSessionState, probeTabId);
+							// A parked tab's missed agent_start/agent_end is otherwise
+							// only repaired by a later event — never, once it idles.
+							repairStaleRunState(probeTabId, res.data as RpcSessionState, probeEventVersion);
+						}
 					})
 					.catch(() => {
 						probing = false;

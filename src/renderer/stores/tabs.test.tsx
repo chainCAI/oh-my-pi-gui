@@ -628,6 +628,21 @@ describe("tabs store switch", () => {
 		expect(useSessionStore.getState().isStreaming).toBe(false);
 	});
 
+	it("re-arms a streaming tab's waiting marker when it returns from the background", async () => {
+		seedTabs();
+		// t0 is waiting on the model when the user leaves it; parked, it never
+		// receives the message_end that would clear this marker.
+		useSessionStore.setState({ isStreaming: true, awaitingModelSince: 1_000 });
+		await useTabsStore.getState().switchTab("t1");
+
+		omp.rpc.getState.mockResolvedValue(ok(serverState({ isStreaming: true })));
+		const returnedAt = Date.now();
+		await useTabsStore.getState().switchTab("t0");
+
+		// Counting from 1_000 would read as decades of "waiting for the model".
+		expect(useSessionStore.getState().awaitingModelSince).toBeGreaterThanOrEqual(returnedAt);
+	});
+
 	it("stamps the outgoing tab's chip when it was streaming in the foreground", async () => {
 		seedTabs();
 		useSessionStore.setState({ isStreaming: true });

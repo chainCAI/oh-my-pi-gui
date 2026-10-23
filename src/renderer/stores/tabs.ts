@@ -113,7 +113,20 @@ export function isTabClosed(tabId: string): boolean {
 	return closedTabIds.has(tabId);
 }
 
+/** Tabs whose full event stream main was last asked to forward. */
+let routedVisibleTabIds: readonly string[] = [];
+
 function routeTabView(focusedTabId: string, visibleTabIds: string[], split?: SplitLayout | null): Promise<boolean> {
+	// A parked tab missed the message_end/turn_end that clear its
+	// waiting-for-model marker, so a marker it comes back with counts from
+	// before it was parked. Drop it as the tab is shown again; hydrate re-arms
+	// it from a fresh get_state, or the next turn_start does.
+	for (const tabId of visibleTabIds) {
+		if (!routedVisibleTabIds.includes(tabId)) {
+			sessionRuntimeStore<SessionStore>(tabId, "session")?.setState({ awaitingModelSince: null });
+		}
+	}
+	routedVisibleTabIds = [...visibleTabIds];
 	const request = routingChain.then(() =>
 		visibleTabIds.length === 1 && !split
 			? window.omp.tabs.setActive(focusedTabId)
