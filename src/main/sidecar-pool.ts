@@ -353,14 +353,17 @@ export class SidecarPool {
 					entry.running = true;
 					entry.placeholder = false;
 					// An auto-retry re-enters through agent_start; only a run outside a
-					// retry saga starts with a clean slate. The saga ends on auto_retry_end.
-					if (!entry.retry) {
+					// retry saga starts with a clean slate. The saga ends on auto_retry_end
+					// (the "retrying" mark), but its wait is over: the retry row hands over
+					// to the live run, as the TUI's loader does.
+					if (entry.attention !== "retrying") {
 						entry.attention = undefined;
 						entry.attentionDetail = undefined;
 					}
+					entry.retry = undefined;
 				} else if (event.type === "agent_end") {
 					if (!entry.awaitingSessionSettled) entry.running = false;
-					if (event.isTerminal !== false && !entry.retry) settleAttention(entry, event.messages);
+					if (event.isTerminal !== false && entry.attention !== "retrying") settleAttention(entry, event.messages);
 				} else if (event.type === "auto_retry_start") {
 					entry.attention = "retrying";
 					entry.retry = {

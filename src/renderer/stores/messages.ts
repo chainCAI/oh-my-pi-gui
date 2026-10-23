@@ -38,6 +38,12 @@ export interface MessagesStore {
 	totalMessages: number;
 	nextCursor: string | undefined;
 	isLoadingPage: boolean;
+	/**
+	 * A settled run left delivered rows its agent_end did not commit (a retried
+	 * or continued run reports only its own messages). They were kept in
+	 * `messages` without entry ids; the next transcript fetch replaces them.
+	 */
+	needsTranscriptSync: boolean;
 	applyEvents: (events: AgentSessionEvent[]) => void;
 	loadPage: (page: MessagesPage) => void;
 	appendMessage: (message: AgentMessage) => void;
@@ -70,6 +76,7 @@ const initialState = {
 	totalMessages: 0,
 	nextCursor: undefined as string | undefined,
 	isLoadingPage: false,
+	needsTranscriptSync: false,
 };
 
 function isOptimisticUser(message: AgentMessage): boolean {
@@ -110,6 +117,37 @@ function optimisticUserWasCommitted(message: AgentMessage, fetched: AgentMessage
 	return fetched
 		.slice(anchorIndex + 1)
 		.some(entry => entry.entryId !== undefined && sameMessageContent(message, entry));
+}
+
+/** A delivered live row as a plain transcript row: the local-echo markers only mean something in `liveMessages`. */
+function settledLiveRow(message: AgentMessage): AgentMessage {
+	if (!isOptimisticUser(message)) return message;
+	const {
+		optimistic: _optimistic,
+		optimisticDelivered: _delivered,
+		optimisticAfterEntryId: _anchor,
+		...row
+	} = message;
+	return row;
+}
+
+/**
+ * Delivered live rows the run's commit does not cover. An auto-retry or other
+ * continuation runs a fresh agent loop, and the deferred agent_end carries only
+ * that last loop's messages — never the prompt that started the saga.
+ */
+function uncommittedLiveRows(liveMessages: AgentMessage[], committed: AgentMessage[]): AgentMessage[] {
+	const pending = committed.filter(message => message.entryId);
+	return liveMessages.filter(message => {
+		if (isOptimisticUser(message) && !message.optimisticDelivered) return false;
+		const identity = messageIdentity(message);
+		const index = pending.findIndex(
+			entry => messageIdentity(entry) === identity && sameMessageContent(message, entry),
+		);
+		if (index < 0) return true;
+		pending.splice(index, 1);
+		return false;
+	});
 }
 
 function upsertCommittedMessages(current: AgentMessage[], committed: AgentMessage[]): AgentMessage[] {
@@ -159,7 +197,8 @@ export const createMessagesStore = () =>
 		...initialState,
 		applyEvents: events => {
 			const state = get();
-			let { messages, liveMessages, streamingMessage, streamingText, streamingThinking } = state;
+			let { messages, liveMessages, streamingMessage, streamingText, streamingThinking, needsTranscriptSync } =
+				state;
 			for (const event of events) {
 				switch (event.type) {
 					case "message_start":
@@ -185,8 +224,17 @@ export const createMessagesStore = () =>
 						break;
 					case "agent_end":
 						if (event.messages) {
-							messages = upsertCommittedMessages(messages, event.messages);
-							if (event.messages.some(message => message.entryId)) {
+							const committed = event.messages.some(message => message.entryId);
+							// Keep what the commit missed in wire order, ahead of the rows it adds.
+							const uncommitted = committed
+								? uncommittedLiveRows(liveMessages, event.messages).map(settledLiveRow)
+								: [];
+							if (uncommitted.length > 0) needsTranscriptSync = true;
+							messages = upsertCommittedMessages(
+								uncommitted.length > 0 ? [...messages, ...uncommitted] : messages,
+								event.messages,
+							);
+							if (committed) {
 								// A prompt queued locally after this run ended is not part of its commit.
 								liveMessages = liveMessages.filter(
 									message =>
@@ -207,7 +255,8 @@ export const createMessagesStore = () =>
 				liveMessages === state.liveMessages &&
 				streamingMessage === state.streamingMessage &&
 				streamingText === state.streamingText &&
-				streamingThinking === state.streamingThinking
+				streamingThinking === state.streamingThinking &&
+				needsTranscriptSync === state.needsTranscriptSync
 			)
 				return;
 			// Preserve wire order above; publish only once per presentation frame.
@@ -218,6 +267,7 @@ export const createMessagesStore = () =>
 				streamingMessage,
 				streamingText,
 				streamingThinking,
+				needsTranscriptSync,
 				...(messages !== state.messages ? { totalMessages: messages.length } : {}),
 				...(appended.length > 0 ? { lastAppended: appended } : {}),
 			});
@@ -230,6 +280,7 @@ export const createMessagesStore = () =>
 				totalMessages: page.totalMessages,
 				nextCursor: page.nextCursor,
 				isLoadingPage: false,
+				needsTranscriptSync: false,
 			}),
 		appendMessage: message =>
 			set(s => ({
@@ -275,9 +326,11 @@ export const createMessagesStore = () =>
 			const messagesUnchanged =
 				fetched.length === state.messages.length &&
 				fetched.every((message, index) => message === state.messages[index]);
-			if (messagesUnchanged && liveMessages.length === state.liveMessages.length) return;
+			if (messagesUnchanged && liveMessages.length === state.liveMessages.length && !state.needsTranscriptSync)
+				return;
 			set({
 				messages: fetched,
+				needsTranscriptSync: false,
 				liveMessages: liveMessages.length === state.liveMessages.length ? state.liveMessages : liveMessages,
 				totalMessages: fetched.length,
 			});

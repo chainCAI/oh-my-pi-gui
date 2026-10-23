@@ -882,6 +882,60 @@ describe("useRpcEvents non-transcript frames", () => {
 		);
 	});
 
+	it("keeps a retried run's prompt and hands the retry row to the retried run", async () => {
+		const { omp, emitBatch } = installMockOmp();
+		await mount(<RpcEventsProbe />);
+		const prompt: AgentMessage = { role: "user", content: "fix the build", timestamp: 100 };
+		const failed: AgentMessage = {
+			role: "assistant",
+			content: [],
+			stopReason: "error",
+			errorMessage: "socket closed",
+			timestamp: 101,
+		};
+		const reply: AgentMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "fixed" }],
+			stopReason: "stop",
+			timestamp: 102,
+		};
+
+		await act(async () => {
+			emitBatch([
+				{ type: "agent_start" },
+				{ type: "message_end", message: prompt },
+				{ type: "message_end", message: failed },
+				{ type: "auto_retry_start", attempt: 1, maxAttempts: 10, delayMs: 0, errorMessage: "socket closed" },
+			]);
+		});
+		expect(useSessionStore.getState().retryInfo).not.toBeNull();
+
+		// The retried run starts; its saga only closes once a reply settles, or never.
+		await act(async () => {
+			emitBatch([{ type: "agent_start" }]);
+		});
+		expect(useSessionStore.getState().retryInfo).toBeNull();
+
+		const committed = [
+			{ ...prompt, entryId: "prompt-entry" },
+			{ ...failed, entryId: "failed-entry" },
+			{ ...reply, entryId: "reply-entry" },
+		];
+		omp.rpc.getTranscript.mockImplementation(async () => success({ messages: committed }));
+		// The deferred agent_end belongs to the retried loop: it never lists the prompt.
+		await act(async () => {
+			emitBatch([
+				{ type: "message_end", message: reply },
+				{ type: "agent_end", messages: [{ ...reply, entryId: "reply-entry" }] },
+			]);
+		});
+		expect(useMessagesStore.getState().messages.map(message => message.timestamp)).toEqual([100, 101, 102]);
+
+		await flush();
+		expect(useMessagesStore.getState().messages).toEqual(committed);
+		expect(useMessagesStore.getState().liveMessages).toEqual([]);
+	});
+
 	it("rehydrates when a deferred prompt result reports a local-only extension command", async () => {
 		const { omp, emitPromptResult } = installMockOmp();
 		await mount(<RpcEventsProbe />);

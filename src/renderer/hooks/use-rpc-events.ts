@@ -330,7 +330,10 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 							else void refreshSessionState(tabId);
 							break;
 						case "agent_start": {
-							useSessionStore.setState({ isStreaming: true, awaitingModelSince: Date.now() });
+							// TUI parity (#handleAgentStart): a retried run re-enters here,
+							// so the retry row hands over to the live turn. auto_retry_end
+							// can trail by the whole first reply, or never come at all.
+							useSessionStore.setState({ isStreaming: true, awaitingModelSince: Date.now(), retryInfo: null });
 							// Server-side mode changes (plan_approval accept exits plan
 							// mode, then dispatches the execution turn) carry no event —
 							// re-sync state-derived stores at turn start so the composer
@@ -373,6 +376,11 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 							useSessionStore.setState({ isStreaming: false, awaitingModelSince: null });
 							notifyOnAgentEnd(tabId, event);
 							toastOnAgentError(tabId, event);
+							// The commit missed rows this run delivered (a retried run reports
+							// only itself): fetch the transcript so they regain entry ids.
+							if (useMessagesStore.getState().needsTranscriptSync) {
+								void (tabId && sessionRuntime(tabId) ? hydrateTabSession(tabId) : hydrateSession());
+							}
 							// Re-fetch state so agent-side todo updates mid-turn reach the panel.
 							void refreshSessionState(tabId);
 							break;

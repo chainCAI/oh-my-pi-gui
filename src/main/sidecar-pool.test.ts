@@ -319,7 +319,8 @@ describe("SidecarPool tabs", () => {
 			{ type: "agent_start" },
 			{ type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1000, errorMessage: "overloaded" },
 		]);
-		// The retried attempt re-enters through agent_start: the saga is still on.
+		// The retried attempt re-enters through agent_start: the saga is still on,
+		// but its wait is over, so the retry row clears.
 		b?.emit("events", [{ type: "agent_start" }]);
 		b?.emit("events", [
 			{ type: "auto_retry_end", success: false, attempt: 3, finalError: "overloaded" },
@@ -334,6 +335,7 @@ describe("SidecarPool tabs", () => {
 
 		expect(outcomes()).toEqual([
 			["running", "retrying", undefined, 1],
+			["running", "retrying", undefined, null],
 			["ready", "failed", "overloaded (500)", null],
 			["running", null, undefined, null],
 			["ready", null, undefined, null],
