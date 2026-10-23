@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-10-23
+
+### Fixed
+
+- **The app no longer freezes when several agents stream at once**: the GUI now asks the agent for incremental streaming updates instead of a full copy of the reply so far on every token, and subagents report progress instead of every token they stream. Long or parallel streams could flood the app until commands timed out and the window stopped responding ([#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)).
+- **Background tabs no longer look stuck after you switch back**: a tab shown again resets its "waiting for the model" timer instead of counting thousands of seconds from before you left, and a tab whose run finished while it sat in the background settles within about 15 seconds instead of showing a live run forever.
+
+### Changed
+
+- While a tool call's arguments stream in, its card reads "tool call" until the agent names the tool.
+- Bundled agent rebuilt from upstream main past v18.12.6 (monorepo `290010dc`): `/resume` cancels the previous session's background jobs; `/memory clear` no longer wipes other projects' memory; `grep` says when it trims matches; web `read` retries with another user agent on 403/429; a project-wide LSP rename no longer corrupts files edited outside omp; llama.cpp discovery also finds llama-server's new default port 9931; and `dd … of=/dev/null` no longer triggers the critical-command prompt.
+
 ## [0.9.24] - 2026-10-22
 
 ### Added
