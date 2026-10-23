@@ -1,5 +1,5 @@
 import { createStore } from "zustand/vanilla";
-import type { AgentMessage, AgentSessionEvent } from "../../shared/rpc-types";
+import type { AgentMessage, AgentSessionEvent, ToolCallContent } from "../../shared/rpc-types";
 import { createScopedStoreHook } from "./session-runtime-context";
 
 export interface ToolEntry {
@@ -64,6 +64,14 @@ export const createToolsStore = () => {
 	let nextOccurrenceByCallId = new Map<string, number>();
 	let latestEntryKeyByCallId = new Map<string, string>();
 	let streamEntryKeysByIndex = new Map<number, string>();
+	/**
+	 * Keys of streaming calls whose id is not known yet. Delta `message_update`
+	 * frames carry no snapshot, so a call's id and name first arrive on its
+	 * `toolcall_end`; until then its args stream into an entry keyed by stream
+	 * position, renamed to the call's real key once the call is named.
+	 */
+	let unnamedStreamKeys = new Set<string>();
+	let unnamedStreamSeq = 0;
 	let queuedExecutionKeysByCallId = new Map<string, string[]>();
 	let runningEntryKeyByCallId = new Map<string, string>();
 
@@ -71,6 +79,7 @@ export const createToolsStore = () => {
 		nextOccurrenceByCallId = new Map();
 		latestEntryKeyByCallId = new Map();
 		streamEntryKeysByIndex = new Map();
+		unnamedStreamKeys = new Set();
 		queuedExecutionKeysByCallId = new Map();
 		runningEntryKeyByCallId = new Map();
 	};
@@ -108,6 +117,35 @@ export const createToolsStore = () => {
 		// one for the same invocation.
 		if (latest && latestEntry && latestEntry.status !== "done" && latestEntry.status !== "error") return latest;
 		return allocateEntryKey(callId);
+	};
+
+	/**
+	 * Bind the call streaming at `contentIndex` to its store key. A first sight
+	 * allocates the key; an unnamed streaming entry moves to it, keeping the
+	 * args streamed so far.
+	 */
+	const nameStreamEntry = (contentIndex: number, call: ToolCallContent, tools: Map<string, ToolEntry>): string => {
+		const current = streamEntryKeysByIndex.get(contentIndex);
+		if (current !== undefined && !unnamedStreamKeys.has(current)) {
+			bindCallEntryKey(call, call.id, current);
+			return current;
+		}
+		const key = allocateEntryKey(call.id);
+		bindCallEntryKey(call, call.id, key);
+		streamEntryKeysByIndex.set(contentIndex, key);
+		if (current !== undefined) {
+			unnamedStreamKeys.delete(current);
+			const entry = tools.get(current);
+			tools.delete(current);
+			if (entry) tools.set(key, { ...entry, toolName: call.name });
+		}
+		return key;
+	};
+
+	/** Drop streaming entries that were never named: their call did not survive the stream. */
+	const dropUnnamedStreamEntries = (tools: Map<string, ToolEntry>): void => {
+		for (const key of unnamedStreamKeys) tools.delete(key);
+		unnamedStreamKeys.clear();
 	};
 
 	return createStore<ToolsStore>()((set, get) => ({
@@ -181,31 +219,32 @@ export const createToolsStore = () => {
 			for (const event of events) {
 				switch (event.type) {
 					case "message_start": {
+						if (unnamedStreamKeys.size > 0) dropUnnamedStreamEntries(writable());
 						streamEntryKeysByIndex.clear();
 						break;
 					}
 					case "message_update": {
 						const ame = event.assistantMessageEvent;
 						if (ame.type === "toolcall_delta") {
-							// The wire shape is `{contentIndex, delta, partial}` (pi-ai):
-							// `partial` is the full streamed message so far and its
-							// content[contentIndex] toolCall block carries the final
-							// tool-call id from the very first delta.
+							const map = writable();
+							// Delta frames carry no snapshot; a full-mode frame's `partial`
+							// already names the call from its first delta.
 							const block = Array.isArray(ame.partial?.content) ? ame.partial.content[ame.contentIndex] : null;
-							if (block?.type !== "toolCall") break;
 							let key = streamEntryKeysByIndex.get(ame.contentIndex);
-							if (!key) {
-								key = allocateEntryKey(block.id);
+							if (block?.type === "toolCall") {
+								key = nameStreamEntry(ame.contentIndex, block, map);
+							} else if (key === undefined) {
+								key = `\u0000omp-tool-stream:${++unnamedStreamSeq}`;
+								unnamedStreamKeys.add(key);
 								streamEntryKeysByIndex.set(ame.contentIndex, key);
 							}
-							bindCallEntryKey(block, block.id, key);
-							const map = writable();
 							const existing = map.get(key);
 							if (existing) {
 								map.set(key, { ...existing, streamingArgs: existing.streamingArgs + (ame.delta ?? "") });
 							} else {
 								map.set(key, {
-									toolName: block.name ?? "unknown",
+									// Empty until `toolcall_end` names an unnamed call.
+									toolName: block?.type === "toolCall" ? block.name : "",
 									args: {},
 									status: "pending",
 									partialResult: null,
@@ -216,6 +255,8 @@ export const createToolsStore = () => {
 									endTime: null,
 								});
 							}
+						} else if (ame.type === "toolcall_end") {
+							nameStreamEntry(ame.contentIndex, ame.toolCall, writable());
 						}
 						break;
 					}
@@ -224,8 +265,7 @@ export const createToolsStore = () => {
 						const map = writable();
 						for (const [contentIndex, block] of event.message.content.entries()) {
 							if (block.type !== "toolCall") continue;
-							const key = streamEntryKeysByIndex.get(contentIndex) ?? allocateEntryKey(block.id);
-							bindCallEntryKey(block, block.id, key);
+							const key = nameStreamEntry(contentIndex, block, map);
 							queueExecutionKey(block.id, key);
 							const existing = map.get(key);
 							if (existing) {
@@ -244,6 +284,7 @@ export const createToolsStore = () => {
 								});
 							}
 						}
+						dropUnnamedStreamEntries(map);
 						streamEntryKeysByIndex.clear();
 						break;
 					}

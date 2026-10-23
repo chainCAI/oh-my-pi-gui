@@ -2389,6 +2389,7 @@ export const ru: Record<string, string> = {
 	"tools.edit.noChangesTo": "Файл {path} не изменён",
 	"tools.edit.morePending": "Файлов ожидает обработки: {count}…",
 	"tools.generic.args": "Аргументы",
+	"tools.generic.unnamed": "вызов инструмента",
 	"tools.generic.details": "Подробности",
 	"tools.generic.expand": "развернуть",
 	"tools.generic.partialResult": "Частичный результат",

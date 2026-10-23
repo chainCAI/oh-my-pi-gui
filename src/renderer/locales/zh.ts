@@ -2470,6 +2470,7 @@ export const zh: Record<string, string> = {
 	"tools.edit.noChangesTo": "{path} 未做任何更改",
 	"tools.edit.morePending": "还有 {count} 个文件待处理…",
 	"tools.generic.args": "参数",
+	"tools.generic.unnamed": "工具调用",
 	"tools.generic.details": "详情",
 	"tools.generic.expand": "展开",
 	"tools.generic.partialResult": "部分结果",

@@ -90,6 +90,7 @@ describe("SidecarManager", () => {
 			const commands = JSON.parse(await fs.readFile(commandLog, "utf8")) as Array<{
 				type: string;
 				events?: string[] | null;
+				messageUpdates?: string;
 			}>;
 			expect(commands.map(command => command.type)).toEqual([
 				"negotiate_protocol",
@@ -98,6 +99,8 @@ describe("SidecarManager", () => {
 				"terminal_configure",
 			]);
 			expect(commands[1]?.events).toContain("message_update");
+			// Full snapshots per token stall the main process (gui#19).
+			expect(commands[1]?.messageUpdates).toBe("delta");
 		} finally {
 			sidecar.dispose();
 			await fs.rm(tempDir, { recursive: true, force: true });

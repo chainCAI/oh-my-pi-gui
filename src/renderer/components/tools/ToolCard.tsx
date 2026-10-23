@@ -126,7 +126,7 @@ export function ToolCard({ toolCallId, toolName, args, runningIndicator = "spinn
 					<Check size={12} className="omp-tool-status-icon shrink-0 text-[var(--omp-success)]" />
 				)}
 				<span className="omp-tool-name shrink-0 font-mono text-omp-md font-semibold tracking-tight text-[var(--omp-text)]">
-					{toolName}
+					{toolName || t("tools.generic.unnamed")}
 				</span>
 				{summary && (
 					<span className="omp-tool-summary min-w-0 flex-1 truncate font-mono text-omp-sm text-[var(--omp-tool-output)]">

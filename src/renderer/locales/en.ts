@@ -2531,6 +2531,7 @@ export const en: Record<string, string> = {
 	"tools.edit.noChangesTo": "No changes were made to {path}",
 	"tools.edit.morePending": "{count} more file{plural} pending…",
 	"tools.generic.args": "Arguments",
+	"tools.generic.unnamed": "tool call",
 	"tools.generic.details": "Details",
 	"tools.generic.expand": "expand",
 	"tools.generic.partialResult": "Partial result",

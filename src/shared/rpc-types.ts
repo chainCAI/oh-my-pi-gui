@@ -25,7 +25,11 @@ export type RpcCommand =
 	| { id?: string; type: "set_host_tools"; tools: HostToolDefinition[] }
 	| { id?: string; type: "set_host_uri_schemes"; schemes: HostUriSchemeDefinition[] }
 	| { id?: string; type: "set_subagent_subscription"; level: SubagentSubscriptionLevel }
-	| { id?: string; type: "set_event_filter"; events: string[] | null }
+	/**
+	 * `messageUpdates: "delta"` drops the accumulated `partial` snapshot from every
+	 * `message_update`; omitting it resets the sidecar to full snapshots.
+	 */
+	| { id?: string; type: "set_event_filter"; events: string[] | null; messageUpdates?: "full" | "delta" }
 	/** Opts the host into upstream's `ask` extension-dialog protocol (`answers` responses). */
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_subagents" }
@@ -2401,7 +2405,13 @@ export type AgentSessionEvent =
 	| { type: "turn_start" }
 	| { type: "turn_end"; message?: AgentMessage; toolResults?: unknown[] }
 	| { type: "message_start"; messageId?: string; message: AgentMessage }
-	| { type: "message_update"; messageId?: string; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
+	| {
+			type: "message_update";
+			messageId?: string;
+			/** Delta-mode frames carry only the role; full-mode frames carry the whole snapshot. */
+			message: Pick<AgentMessage, "role">;
+			assistantMessageEvent: AssistantMessageEvent;
+	  }
 	| { type: "message_end"; messageId?: string; message: AgentMessage }
 	| {
 			type: "tool_execution_start";
@@ -2470,10 +2480,16 @@ export type AgentSessionEvent =
 	// treats this as the update channel; get_queue is only a hydrate fallback.
 	| { type: "queue_update"; steering: RpcQueuedMessage[]; followUp: RpcQueuedMessage[] };
 
+/**
+ * The GUI opts into delta-only `message_update` frames, so `partial` (the
+ * accumulated message) is absent; it is kept optional for sidecars that ignore
+ * the opt-in. A streaming tool call's id and name first arrive on `toolcall_end`.
+ */
 export type AssistantMessageEvent =
-	| { type: "text_delta"; contentIndex: number; delta: string; partial: AgentMessage }
-	| { type: "thinking_delta"; contentIndex: number; delta: string; partial: AgentMessage }
-	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AgentMessage };
+	| { type: "text_delta"; contentIndex: number; delta: string; partial?: AgentMessage }
+	| { type: "thinking_delta"; contentIndex: number; delta: string; partial?: AgentMessage }
+	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial?: AgentMessage }
+	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCallContent; partial?: AgentMessage };
 
 // ============================================================================
 // Sidecar Status

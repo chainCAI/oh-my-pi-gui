@@ -554,8 +554,11 @@ export class SidecarManager extends EventEmitter {
 		};
 		const announceReadyWithEventFilter = (): void => {
 			if (this.#isLive(generation) && this.#rpcClient) {
+				// Delta updates: a full `message_update` re-sends the whole message so far
+				// on every token — quadratic bytes that saturate this process's event loop
+				// under long streams and starve command responses (gui#19).
 				void this.#rpcClient
-					.command({ type: "set_event_filter", events: Object.keys(AGENT_EVENT_TYPES) })
+					.command({ type: "set_event_filter", events: Object.keys(AGENT_EVENT_TYPES), messageUpdates: "delta" })
 					.catch(() => {});
 				// Opt into upstream's `ask` protocol — the GUI renders ask dialogs.
 				void this.#rpcClient.command({ type: "set_ask_dialog", enabled: true }).catch(() => {});
