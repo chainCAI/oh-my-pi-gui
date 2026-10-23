@@ -24,7 +24,7 @@ import {
 } from "../stores/session-runtime-context";
 import { type SettingsStore, useSettingsStore } from "../stores/settings";
 import { useSubagentGraphStore } from "../stores/subagent-graph";
-import { type SubagentsStore, useSubagentsStore } from "../stores/subagents";
+import { SUBAGENT_SUBSCRIPTION_LEVEL, type SubagentsStore, useSubagentsStore } from "../stores/subagents";
 import { ensureTabRuntime } from "../stores/tab-runtime";
 import { isTabClosed, useTabsStore } from "../stores/tabs";
 import { useTodoStore } from "../stores/todo";
@@ -299,7 +299,7 @@ export async function hydrateLegacySession(fallbackName?: string, initialState?:
 			useSessionStore.setState({ awaitingModelSince: Date.now() });
 		}
 		if (!wire.isStreaming) useMessagesStore.getState().clearStreaming();
-		void activeTabCommand({ type: "set_subagent_subscription", level: "events" });
+		void activeTabCommand({ type: "set_subagent_subscription", level: SUBAGENT_SUBSCRIPTION_LEVEL });
 	}
 	if (focusUnchanged && messagesResult.status === "fulfilled" && messagesResult.value.success) {
 		const fetched = (messagesResult.value.data as { messages?: AgentMessage[] } | undefined)?.messages ?? [];
@@ -420,7 +420,7 @@ export async function hydrateTabSession(tabId: string, fallbackName?: string): P
 		// status handlers — this covers tabs that booted or settled in the
 		// background, whose frames would otherwise stay silent on return.
 		// Idempotent server-side.
-		void runtime.command({ type: "set_subagent_subscription", level: "events" });
+		void runtime.command({ type: "set_subagent_subscription", level: SUBAGENT_SUBSCRIPTION_LEVEL });
 	}
 
 	if (messagesResult.status === "fulfilled" && messagesResult.value.success) {

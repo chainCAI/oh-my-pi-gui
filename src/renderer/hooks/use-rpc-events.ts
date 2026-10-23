@@ -50,7 +50,7 @@ import {
 	withSessionRuntime,
 } from "../stores/session-runtime-context";
 import { useSettingsStore } from "../stores/settings";
-import { useSubagentsStore } from "../stores/subagents";
+import { SUBAGENT_SUBSCRIPTION_LEVEL, useSubagentsStore } from "../stores/subagents";
 import { isTabClosed, useTabsStore, visibleTabIds } from "../stores/tabs";
 import { useToastStore } from "../stores/toast";
 import { useTodoStore } from "../stores/todo";
@@ -688,7 +688,7 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 									useSettingsStore.getState().syncApproval(),
 								]);
 							}
-							void command({ type: "set_subagent_subscription", level: "events" });
+							void command({ type: "set_subagent_subscription", level: SUBAGENT_SUBSCRIPTION_LEVEL });
 						}
 					} catch {
 						if (isFocused()) useUiStore.getState().setSidecarError(translate("events.sidecarHealthFailed"));

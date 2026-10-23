@@ -1352,7 +1352,7 @@ describe("hydrateSession streaming reconcile (F-HYDRATE)", () => {
 		// The finalized content arrives via the transcript merge, not the bubble.
 		expect(messages.messages).toEqual([finalized]);
 		// Hydrate re-asserts the per-tab subagent subscription (switch-in path).
-		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("events");
+		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("progress");
 	});
 
 	it("does not clear live deliveries that arrived after an idle hydration began", async () => {
@@ -1400,7 +1400,7 @@ describe("hydrateSession streaming reconcile (F-HYDRATE)", () => {
 		expect(messages.streamingMessage).toBe(assistantMessage);
 		expect(messages.streamingText).toBe("partial reply");
 		expect(messages.streamingThinking).toBe("partial thinking");
-		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("events");
+		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("progress");
 	});
 });
 
@@ -1521,5 +1521,24 @@ describe("useRpcEvents tab-scoped routing guards", () => {
 		// Without the tombstone gate this frame falls through to the focused
 		// runtime and resets its stores wholesale.
 		expect(sessionRuntimeStore<MessagesStore>("t-live", "messages")?.getState().messages).toContain(kept);
+	});
+});
+
+describe("subagent subscription", () => {
+	it("subscribes at progress so subagent token streams never reach the shared pipe", async () => {
+		const { emitTabStatus, commandForTab } = installTabRoutedMockOmp();
+		seedReadyTab("t-sub");
+		await mount(<RpcEventsProbe />);
+		// Covers the ready-status health check as well as the mount-time hydration.
+		emitTabStatus({ status: "ready", cwd: "/alpha" }, "t-sub");
+		await flush();
+		await flush();
+
+		// `events` would forward a full-message snapshot per subagent token (gui#19).
+		const levels = commandForTab.mock.calls.flatMap(([, command]) =>
+			command.type === "set_subagent_subscription" ? [command.level] : [],
+		);
+		expect(levels.length).toBeGreaterThanOrEqual(2);
+		expect(new Set(levels)).toEqual(new Set(["progress"]));
 	});
 });

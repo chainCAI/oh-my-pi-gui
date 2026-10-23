@@ -1,6 +1,15 @@
 import { createStore } from "zustand/vanilla";
-import type { SubagentFrame, SubagentSnapshot } from "../../shared/rpc-types";
+import type { SubagentFrame, SubagentSnapshot, SubagentSubscriptionLevel } from "../../shared/rpc-types";
 import { activeTabCommand, createScopedStoreHook, type TabCommand } from "./session-runtime-context";
+
+/**
+ * Subagent frames every tab subscribes to. `progress` carries lifecycle and
+ * coalesced progress — all the dock, hub and DAG render; transcripts page in
+ * through `get_subagent_messages`. `events` would add every subagent session
+ * event, a full-message snapshot per streamed token, flooding the stdout pipe
+ * that command responses share (gui#19).
+ */
+export const SUBAGENT_SUBSCRIPTION_LEVEL: SubagentSubscriptionLevel = "progress";
 
 export type SubagentNode = SubagentSnapshot;
 
@@ -119,15 +128,6 @@ export const createSubagentsStore = (command: TabCommand = activeTabCommand) => 
 						kind: existing?.kind ?? "sub",
 						progress,
 					});
-					break;
-				}
-				case "subagent_event": {
-					const id = frame.payload.id;
-					const existing = get().subagents.get(id);
-					if (existing) {
-						subagents = new Map(get().subagents);
-						subagents.set(id, { ...existing });
-					}
 					break;
 				}
 			}

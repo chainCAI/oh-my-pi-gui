@@ -1099,7 +1099,7 @@ describe("useSessionTabs hook", () => {
 		await act(async () => {
 			emitTabStatus({ kind: "agent", tabId: "t0", cwd: "/alpha", status: "ready" });
 		});
-		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("events");
+		expect(omp.rpc.setSubagentSubscription).toHaveBeenCalledWith("progress");
 	});
 });
 

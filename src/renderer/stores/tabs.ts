@@ -48,6 +48,7 @@ import {
 	setFocusedSessionRuntime,
 	useRuntimeTabId,
 } from "./session-runtime-context";
+import { SUBAGENT_SUBSCRIPTION_LEVEL } from "./subagents";
 import { ensureTabRuntime, replaceTabRuntime } from "./tab-runtime";
 import { toast } from "./toast";
 import { useUiStore } from "./ui";
@@ -837,7 +838,7 @@ export function useSessionTabs(): void {
 			const tab = state.tabs.find(entry => entry.id === payload.tabId);
 			if (visibleTabIds(state).includes(payload.tabId)) {
 				const runtime = ensureTabRuntime(payload.tabId);
-				void runtime.command({ type: "set_subagent_subscription", level: "events" });
+				void runtime.command({ type: "set_subagent_subscription", level: SUBAGENT_SUBSCRIPTION_LEVEL });
 				if (!tab?.pendingSessionPath && previousStatus !== "ready" && previousStatus !== "running") {
 					// Light TAB_STATUS is registered before the full active-tab channel.
 					// If ready raced SET_ACTIVE_TAB, the full ready event was already
