@@ -22,6 +22,9 @@ interface SessionListResult {
  *   every append was what stacked old/new snapshots into ghost text.
  * - User-initiated deletion removes the row locally before the debounced
  *   background refresh reconciles authoritatively.
+ * - Only the newest read may land. A read of many sessions can take longer than
+ *   the one started after it; letting it land last put an older list back, so
+ *   sessions created in between stayed missing until something refreshed again.
  */
 export function useSessionList(scope: "local" | "global" = "local"): SessionListResult {
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -29,14 +32,17 @@ export function useSessionList(scope: "local" | "global" = "local"): SessionList
 	const [error, setError] = useState<string | null>(null);
 	const firstLoadDone = useRef(false);
 	const debounceTimer = useRef<number | undefined>(undefined);
+	const latestRead = useRef(0);
 
 	const refresh = useCallback(
 		(showSpinner = false) => {
 			if (showSpinner && !firstLoadDone.current) setIsLoading(true);
 			setError(null);
+			const read = ++latestRead.current;
 			window.omp.sessions
 				.list(scope)
 				.then(list => {
+					if (read !== latestRead.current) return;
 					firstLoadDone.current = true;
 					setIsLoading(false);
 					// Silent swap: stable React keys keep rows in place; only content
@@ -44,6 +50,7 @@ export function useSessionList(scope: "local" | "global" = "local"): SessionList
 					setSessions(list);
 				})
 				.catch(cause => {
+					if (read !== latestRead.current) return;
 					// A read that never answered is not a read that found nothing — the
 					// sidebar would otherwise claim "no sessions yet" for a failure.
 					setError(cause instanceof Error ? cause.message : String(cause));

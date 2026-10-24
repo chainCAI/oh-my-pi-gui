@@ -1,9 +1,9 @@
 /**
- * Sidebar presentation prefs: pinned workspaces/sessions, explicit MRU access
- * times, and workspace display aliases (rename). Persisted as one JSON blob
+ * Sidebar presentation prefs: pinned workspaces/sessions, archived sessions,
+ * explicit MRU access times, and workspace display aliases (rename). Persisted as one JSON blob
  * under the "sidebar" prefs key via window.omp.prefs (electron-store in main);
  * hydrate once at App mount. Recency bookkeeping writes fire-and-forget; the
- * pins and aliases the user can SEE are optimistic writes that roll back when
+ * pins, archive and aliases the user can SEE are optimistic writes that roll back when
  * the persist rejects, so a row never stays pinned across a restart.
  */
 import { create } from "zustand";
@@ -16,6 +16,7 @@ const PREFS_KEY = "sidebar";
 interface SidebarPrefsBlob {
 	pinnedGroups?: string[];
 	pinnedSessions?: string[];
+	archivedSessions?: string[];
 	groupAliases?: Record<string, string>;
 	workspaceLastUsed?: Record<string, number>;
 	sessionLastUsed?: Record<string, number>;
@@ -24,6 +25,8 @@ interface SidebarPrefsBlob {
 interface SidebarPrefsStore {
 	pinnedGroups: string[];
 	pinnedSessions: string[];
+	/** Session files hidden from the lanes and listed under "Archived". */
+	archivedSessions: string[];
 	groupAliases: Record<string, string>;
 	workspaceLastUsed: Record<string, number>;
 	sessionLastUsed: Record<string, number>;
@@ -31,6 +34,9 @@ interface SidebarPrefsStore {
 	hydrate: () => Promise<void>;
 	toggleGroupPin: (cwd: string) => Promise<void>;
 	toggleSessionPin: (path: string) => Promise<void>;
+	setSessionsArchived: (paths: readonly string[], archived: boolean) => Promise<void>;
+	/** Drop deleted session files from the pinned and archived lists. */
+	forgetSessions: (paths: readonly string[]) => void;
 	setGroupAlias: (cwd: string, alias: string | null) => Promise<void>;
 	touchWorkspace: (cwd: string) => void;
 	touchSession: (path: string, cwd?: string) => void;
@@ -73,6 +79,7 @@ function prefsBlob(state: SidebarPrefsStore): SidebarPrefsBlob {
 	return {
 		pinnedGroups: state.pinnedGroups,
 		pinnedSessions: state.pinnedSessions,
+		archivedSessions: state.archivedSessions,
 		groupAliases: state.groupAliases,
 		workspaceLastUsed: state.workspaceLastUsed,
 		sessionLastUsed: state.sessionLastUsed,
@@ -97,6 +104,7 @@ async function writePrefs(get: () => SidebarPrefsStore): Promise<{ success: bool
 export const useSidebarPrefs = create<SidebarPrefsStore>()((set, get) => ({
 	pinnedGroups: [],
 	pinnedSessions: [],
+	archivedSessions: [],
 	groupAliases: {},
 	workspaceLastUsed: {},
 	sessionLastUsed: {},
@@ -109,6 +117,7 @@ export const useSidebarPrefs = create<SidebarPrefsStore>()((set, get) => ({
 			set({
 				pinnedGroups: Array.isArray(blob?.pinnedGroups) ? blob.pinnedGroups : [],
 				pinnedSessions: Array.isArray(blob?.pinnedSessions) ? blob.pinnedSessions : [],
+				archivedSessions: Array.isArray(blob?.archivedSessions) ? blob.archivedSessions : [],
 				groupAliases: blob?.groupAliases && typeof blob.groupAliases === "object" ? blob.groupAliases : {},
 				workspaceLastUsed: validRecencyMap(blob?.workspaceLastUsed),
 				sessionLastUsed: validRecencyMap(blob?.sessionLastUsed),
@@ -142,6 +151,31 @@ export const useSidebarPrefs = create<SidebarPrefsStore>()((set, get) => ({
 			persist: () => writePrefs(get),
 			onFailure: message => toast({ variant: "error", title: translate("sidebar.pinFailed"), message }),
 		}),
+
+	setSessionsArchived: (paths, archived) =>
+		optimisticWrite({
+			store: { getState: get, setState: set },
+			mutate: state => {
+				const changed = new Set(paths);
+				const rest = state.archivedSessions.filter(path => !changed.has(path));
+				return { archivedSessions: archived ? [...rest, ...changed] : rest };
+			},
+			persist: () => writePrefs(get),
+			onFailure: message => toast({ variant: "error", title: translate("sidebar.archiveFailed"), message }),
+		}),
+
+	forgetSessions: paths => {
+		const gone = new Set(paths);
+		const state = get();
+		if (!state.pinnedSessions.some(path => gone.has(path)) && !state.archivedSessions.some(path => gone.has(path))) {
+			return;
+		}
+		set({
+			pinnedSessions: state.pinnedSessions.filter(path => !gone.has(path)),
+			archivedSessions: state.archivedSessions.filter(path => !gone.has(path)),
+		});
+		persist(get);
+	},
 
 	setGroupAlias: (cwd, alias) =>
 		optimisticWrite({
@@ -181,6 +215,7 @@ export const useSidebarPrefs = create<SidebarPrefsStore>()((set, get) => ({
 		set({
 			pinnedGroups: [],
 			pinnedSessions: [],
+			archivedSessions: [],
 			groupAliases: {},
 			workspaceLastUsed: {},
 			sessionLastUsed: {},

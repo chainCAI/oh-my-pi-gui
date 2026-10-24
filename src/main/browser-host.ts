@@ -1011,16 +1011,15 @@ export class BrowserHost {
 	/**
 	 * The Edit menu's Find commands. Their shortcuts reach the menu only when
 	 * the focused page did not take the keys itself, as in Chrome: a web app
-	 * with its own ⌘F keeps it. They act on the focused page, else on the page
-	 * the window's panel shows.
+	 * with its own ⌘F keeps it. They act on the focused page; with focus in the
+	 * window instead this returns false and the window decides what to search
+	 * (the conversation, or the panel's page).
 	 */
-	find(win: BrowserWindow | null, command: BrowserFindCommand): void {
+	find(command: BrowserFindCommand): boolean {
 		const focused = webContents.getFocusedWebContents();
-		const tabs = [...this.#tabs.values()];
-		const target =
-			(focused ? tabs.find(tab => tab.owns(focused)) : undefined) ??
-			tabs.find(tab => tab.win === win && tab.showing);
-		target?.findKey(command);
+		const owner = focused ? [...this.#tabs.values()].find(tab => tab.owns(focused)) : undefined;
+		owner?.findKey(command);
+		return owner !== undefined;
 	}
 
 	open(tabId: string, win: BrowserWindow, address: string): IpcBrowserState {

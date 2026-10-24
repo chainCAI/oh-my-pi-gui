@@ -113,7 +113,7 @@ const TEXT: Record<MainTextKey, Record<Exclude<MainLanguage, "ru">, string>> = {
 	"menu.debugConsole": { en: "Debug Console", zh: "调试控制台" },
 	"menu.documentation": { en: "Documentation", zh: "文档" },
 	"menu.edit": { en: "Edit", zh: "编辑" },
-	"menu.find": { en: "Find in Page…", zh: "在页面中查找…" },
+	"menu.find": { en: "Find…", zh: "查找…" },
 	"menu.findNext": { en: "Find Next", zh: "查找下一个" },
 	"menu.findPrevious": { en: "Find Previous", zh: "查找上一个" },
 	"menu.exportHtml": { en: "Export HTML", zh: "导出 HTML" },

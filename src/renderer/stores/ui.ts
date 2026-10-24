@@ -8,6 +8,12 @@ import { useTabsStore } from "./tabs";
 export type { ThemeMode };
 
 export type PanelTab = "diff" | "files" | "terminal" | "browser";
+/** Edit → Find, Find Next and Find Previous, as the window routes them. */
+export type FindCommand = "find" | "next" | "previous";
+export interface FindRequest {
+	nonce: number;
+	command: FindCommand;
+}
 
 /** Memory window tabs. */
 export type MemoryTabId = "knowledge" | "skills" | "sources";
@@ -95,6 +101,10 @@ interface UiStore {
 	prCenterOpen: boolean;
 	/** Search over what was said in sessions (⇧⌘F). */
 	conversationSearchOpen: boolean;
+	/** Edit → Find (⌘F) and Find Next/Previous (⌘G/⇧⌘G) for the focused tab's transcript. */
+	transcriptFindRequest: FindRequest;
+	/** The same commands for the browser panel's page, when it is what the window searches. */
+	browserFindRequest: FindRequest;
 	sessionPickerOpen: boolean;
 	branchPickerOpen: boolean;
 	sessionTreeOpen: boolean;
@@ -225,6 +235,8 @@ interface UiStore {
 	closePrCenter: () => void;
 	openConversationSearch: () => void;
 	closeConversationSearch: () => void;
+	requestTranscriptFind: (command: FindCommand) => void;
+	requestBrowserFind: (command: FindCommand) => void;
 	openSessionPicker: () => void;
 	closeSessionPicker: () => void;
 	openBranchPicker: () => void;
@@ -446,6 +458,12 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	conversationSearchOpen: false,
 	openConversationSearch: () => set({ conversationSearchOpen: true }),
 	closeConversationSearch: () => set({ conversationSearchOpen: false }),
+	transcriptFindRequest: { nonce: 0, command: "find" },
+	requestTranscriptFind: command =>
+		set(state => ({ transcriptFindRequest: { nonce: state.transcriptFindRequest.nonce + 1, command } })),
+	browserFindRequest: { nonce: 0, command: "find" },
+	requestBrowserFind: command =>
+		set(state => ({ browserFindRequest: { nonce: state.browserFindRequest.nonce + 1, command } })),
 	sessionPickerOpen: false,
 	openSessionPicker: () => set({ sessionPickerOpen: true }),
 	closeSessionPicker: () => set({ sessionPickerOpen: false }),

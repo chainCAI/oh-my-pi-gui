@@ -5,6 +5,11 @@
  * platforms where fs.watch is unreliable or a watcher silently detaches
  * (file replaced). Lines are batched: delivered via onLines at most every
  * 150ms instead of one callback per line. Maintains a 1000-line ring buffer.
+ *
+ * Every process writes its own dated file, so the directory only grows. Files
+ * untouched for a day are not watched (each watch holds a file handle, and a
+ * long-lived install had hundreds); a write to one brings it back through the
+ * directory watcher.
  */
 import { createReadStream, type FSWatcher, type Stats, watch } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
@@ -15,6 +20,8 @@ import { agentDir } from "./agent-paths";
 const RING_BUFFER_SIZE = 1000;
 const FLUSH_INTERVAL_MS = 150;
 const FALLBACK_POLL_MS = 15_000;
+/** A log file untouched this long belongs to a process that is gone. */
+const IDLE_LOG_MS = 24 * 60 * 60 * 1000;
 
 interface WatchedFile {
 	path: string;
@@ -27,6 +34,8 @@ interface WatchedFile {
 export class LogWatcher {
 	#logsDir: string;
 	#files = new Map<string, WatchedFile>();
+	/** Log files left unwatched because nothing has written them for a day, with their size then. */
+	#idle = new Map<string, number>();
 	#buffer: string[] = [];
 	#pending: string[] = [];
 	#sequence = 0;
@@ -68,6 +77,7 @@ export class LogWatcher {
 			file.watcher?.close();
 		}
 		this.#files.clear();
+		this.#idle.clear();
 		this.#buffer = [];
 	}
 
@@ -85,7 +95,7 @@ export class LogWatcher {
 			for (const entry of entries) {
 				if (entry.startsWith("omp.") && entry.endsWith(".log")) {
 					const fullPath = join(this.#logsDir, entry);
-					if (!this.#files.has(fullPath)) {
+					if (!this.#files.has(fullPath) && !this.#idle.has(fullPath)) {
 						await this.#watchFile(fullPath);
 					}
 				}
@@ -102,7 +112,10 @@ export class LogWatcher {
 				if (!filename?.startsWith("omp.") || !filename.endsWith(".log")) return;
 				const fullPath = join(this.#logsDir, filename);
 				if (!this.#files.has(fullPath)) {
-					void this.#watchFile(fullPath);
+					// Something just wrote it, so an idle file is live again from where it stopped.
+					const idleSize = this.#idle.get(fullPath);
+					this.#idle.delete(fullPath);
+					void this.#watchFile(fullPath, idleSize);
 				}
 			});
 			watcher.on("error", () => {
@@ -115,7 +128,8 @@ export class LogWatcher {
 		}
 	}
 
-	async #watchFile(filePath: string): Promise<void> {
+	/** `resumeAt`: the size an idle file had when it was set aside; new content starts there. */
+	async #watchFile(filePath: string, resumeAt?: number): Promise<void> {
 		let fileStat: Stats;
 		try {
 			fileStat = await stat(filePath);
@@ -124,9 +138,14 @@ export class LogWatcher {
 		}
 
 		if (!this.#running || this.#files.has(filePath)) return;
+		if (resumeAt === undefined && Date.now() - fileStat.mtimeMs > IDLE_LOG_MS) {
+			this.#idle.set(filePath, fileStat.size);
+			return;
+		}
 		const watched: WatchedFile = {
 			path: filePath,
-			offset: fileStat.size, // Start from end (only new content)
+			// Start from the end (only new content), or where an idle file left off.
+			offset: resumeAt !== undefined && resumeAt <= fileStat.size ? resumeAt : fileStat.size,
 			watcher: null,
 			reading: false,
 			partial: "",
@@ -149,6 +168,15 @@ export class LogWatcher {
 		}
 
 		this.#files.set(filePath, watched);
+		// A woken file was written before its watcher existed; read that write now.
+		if (watched.offset < fileStat.size) void this.#readNewContent(watched);
+	}
+
+	/** Stop watching a file nothing has written for a day. */
+	#retire(file: WatchedFile): void {
+		file.watcher?.close();
+		this.#files.delete(file.path);
+		this.#idle.set(file.path, file.offset);
 	}
 
 	#poll(): void {
@@ -168,7 +196,10 @@ export class LogWatcher {
 				file.offset = 0;
 				file.partial = "";
 			}
-			if (fileStat.size === file.offset) return;
+			if (fileStat.size === file.offset) {
+				if (Date.now() - fileStat.mtimeMs > IDLE_LOG_MS) this.#retire(file);
+				return;
+			}
 			const stream = createReadStream(file.path, { start: file.offset, end: fileStat.size - 1, encoding: "utf-8" });
 			let text = file.partial;
 			for await (const chunk of stream) text += chunk;

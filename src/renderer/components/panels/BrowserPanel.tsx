@@ -7,6 +7,7 @@ import { onEscape } from "../../lib/keymap";
 import { scrollStripOnWheel, useActiveChipInView } from "../../lib/strip-scroll";
 import { applyBrowserState, useTabBrowser } from "../../stores/browser";
 import { useTabsStore } from "../../stores/tabs";
+import { useUiStore } from "../../stores/ui";
 import { FindBar } from "./BrowserFindBar";
 import { PanelEmpty, ToolbarIconButton } from "./workspace-ui";
 
@@ -311,6 +312,18 @@ export function BrowserPanel() {
 		else if (payload.kind === "findNext") stepFind(payload.backward);
 	};
 
+	// Edit → Find commands the window routed to this panel's page (focus in the
+	// panel's own controls, or Next/Previous with no conversation search open).
+	const browserFindRequest = useUiStore(state => state.browserFindRequest);
+	const seenBrowserFindRequest = useRef(browserFindRequest.nonce);
+	useEffect(() => {
+		if (browserFindRequest.nonce === seenBrowserFindRequest.current) return;
+		seenBrowserFindRequest.current = browserFindRequest.nonce;
+		const { command } = browserFindRequest;
+		if (command === "find") browserKeyRef.current({ tabId: tabId ?? "", kind: "find" });
+		else browserKeyRef.current({ tabId: tabId ?? "", kind: "findNext", backward: command === "previous" });
+	}, [browserFindRequest, tabId]);
+
 	useEffect(() => {
 		if (findFocus === 0) return;
 		findRef.current?.focus();
@@ -334,7 +347,7 @@ export function BrowserPanel() {
 	useEffect(() => () => endFindRef.current(), []);
 
 	return (
-		<div className="flex h-full flex-col">
+		<div data-browser-panel className="flex h-full flex-col">
 			<span className="sr-only">{t("panel.tabs.browser")}</span>
 			<div className="relative flex h-11 shrink-0 items-center gap-1 border-b border-(--omp-border-muted) px-2">
 				{/* The page itself is a native view, so loading shows on the toolbar's edge. */}

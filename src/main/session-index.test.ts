@@ -86,3 +86,42 @@ describe("SessionIndex cache scope", () => {
 		expect(row(second, "quiet")).toBe(quietBefore);
 	});
 });
+
+describe("SessionIndex headers and watching", () => {
+	it("keeps the folder of a session whose header runs past 4KB of UTF-8", async () => {
+		const { index, dir } = await makeIndex();
+		const projectDir = path.join(dir, "project-x");
+		await fs.mkdir(projectDir, { recursive: true });
+		const file = path.join(projectDir, "imported.jsonl");
+		// Imported sessions carry metadata like this; 2k CJK characters is 6KB of UTF-8.
+		const header = { type: "session", version: 3, id: "imported", cwd: "/work/infron", note: "导入".repeat(1000) };
+		const message = { type: "message", id: "u1", message: { role: "user", content: "hello" } };
+		await fs.writeFile(
+			file,
+			`{"type":"title","v":1,"title":"Imported"}\n${JSON.stringify(header)}\n${JSON.stringify(message)}\n`,
+		);
+
+		const [info] = await index.list("global");
+		expect(info?.cwd).toBe("/work/infron");
+		expect(info?.id).toBe("imported");
+	});
+
+	it("watches session files without holding a handle per artifact file", async () => {
+		const { index, dir } = await makeIndex();
+		const file = await writeSession(dir, "with-artifacts");
+		const artifacts = file.replace(/\.jsonl$/, "");
+		await fs.mkdir(artifacts, { recursive: true });
+		await Promise.all(Array.from({ length: 40 }, (_, n) => fs.writeFile(path.join(artifacts, `out-${n}.md`), "x")));
+		const watchHandles = () => process.getActiveResourcesInfo().filter(kind => kind === "FSEventWrap").length;
+		const before = watchHandles();
+		index.start();
+		try {
+			await expect.poll(() => watchHandles() - before, { timeout: 2000 }).toBeGreaterThan(0);
+			await new Promise(resolve => setTimeout(resolve, 300));
+			// Root, project folder and its one session file — not the 40 artifacts.
+			expect(watchHandles() - before).toBeLessThan(10);
+		} finally {
+			index.stop();
+		}
+	});
+});

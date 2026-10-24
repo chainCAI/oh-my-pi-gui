@@ -291,6 +291,10 @@ export type UpdateStatus =
 	| { state: "error"; message: string; showInBanner?: boolean };
 
 export type MenuAction =
+	/** Edit → Find / Find Next / Find Previous with no browser page focused: the window picks what to search. */
+	| "find"
+	| "find-next"
+	| "find-previous"
 	| "new-session"
 	| "new-tab"
 	| "new-chat-tab"

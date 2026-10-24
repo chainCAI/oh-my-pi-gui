@@ -123,17 +123,23 @@ export function createMenu(windowManager: WindowManager, spawnWindow: SpawnWindo
 				{
 					label: mainT("menu.find", language),
 					accelerator: nativeAccelerator("browser.find"),
-					click: () => browserHost.find(windowManager.getTargetWindow(), "find"),
+					click: () => {
+						if (!browserHost.find("find")) sendMenuAction(windowManager, spawnWindow, "find");
+					},
 				},
 				{
 					label: mainT("menu.findNext", language),
 					accelerator: mac ? "Cmd+G" : "F3",
-					click: () => browserHost.find(windowManager.getTargetWindow(), "next"),
+					click: () => {
+						if (!browserHost.find("next")) sendMenuAction(windowManager, spawnWindow, "find-next");
+					},
 				},
 				{
 					label: mainT("menu.findPrevious", language),
 					accelerator: mac ? "Cmd+Shift+G" : "Shift+F3",
-					click: () => browserHost.find(windowManager.getTargetWindow(), "previous"),
+					click: () => {
+						if (!browserHost.find("previous")) sendMenuAction(windowManager, spawnWindow, "find-previous");
+					},
 				},
 			],
 		},

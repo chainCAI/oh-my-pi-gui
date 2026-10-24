@@ -162,4 +162,37 @@ describe("useSessionList silent refresh", () => {
 		expect(probeText('[data-testid="count"]')).toBe("1");
 		expect(probeText('[data-testid="error"]')).toBe("");
 	});
+
+	it("keeps the newest list when an older, slower read answers last", async () => {
+		listResult = [session("/s/one.jsonl")];
+		const omp = installMockOmp();
+		container = document.createElement("div") as never;
+		document.body.appendChild(container as never);
+		root = createRoot(container as unknown as Element);
+		await act(async () => {
+			root.render(<Probe />);
+		});
+		await flush();
+
+		// The first refresh stalls on a cold parse of many files; the next one,
+		// started after a new session appeared, answers first.
+		const slow = Promise.withResolvers<SessionInfo[]>();
+		omp.sessions.list.mockReturnValueOnce(slow.promise);
+		await act(async () => {
+			onSessionsChanged?.();
+		});
+		await flush(400);
+		listResult = [session("/s/one.jsonl"), session("/s/two.jsonl")];
+		await act(async () => {
+			onSessionsChanged?.();
+		});
+		await flush(400);
+		expect(probeText('[data-testid="count"]')).toBe("2");
+
+		await act(async () => {
+			slow.resolve([session("/s/one.jsonl")]);
+		});
+		await flush();
+		expect(probeText('[data-testid="count"]')).toBe("2");
+	});
 });

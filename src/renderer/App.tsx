@@ -589,6 +589,18 @@ export function App() {
 				setLang(nextLanguage(lang));
 				return;
 			}
+			// Edit → Find / Find Next / Find Previous with no browser page focused.
+			// Focus in the browser panel's controls searches its page; otherwise
+			// Find opens the conversation's find bar, and Next/Previous step that bar
+			// while it is open, else the panel's page.
+			if (action === "find" || action === "find-next" || action === "find-previous") {
+				const command = action === "find" ? "find" : action === "find-next" ? "next" : "previous";
+				const inBrowserPanel = document.activeElement?.closest("[data-browser-panel]") != null;
+				const transcriptFindOpen = document.querySelector("[data-transcript-find]") !== null;
+				if (!inBrowserPanel && (command === "find" || transcriptFindOpen)) ui.requestTranscriptFind(command);
+				else ui.requestBrowserFind(command);
+				return;
+			}
 			// New tab actions never touch the live run — they must stay OUT of the
 			// streaming busy-guard below (unlike new-session/open-project).
 			if (action === "new-tab") {

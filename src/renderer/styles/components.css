@@ -1186,6 +1186,20 @@
 	animation: omp-row-found 1.8s var(--omp-ease) both; /* motion-ok: color-only locate cue */
 }
 
+/* Find in conversation (⌘F): every match, and a stronger mark on the one the bar points at. */
+/* The find bar sits clear of the conversation navigator rail (14px + 34px). */
+.omp-find-bar {
+	inset-inline-end: 56px;
+}
+
+::highlight(omp-find) {
+	background-color: color-mix(in srgb, var(--omp-warning) 28%, transparent);
+}
+
+::highlight(omp-find-current) {
+	background-color: color-mix(in srgb, var(--omp-warning) 62%, transparent);
+}
+
 @keyframes omp-row-found {
 	0%,
 	40% {
@@ -1460,6 +1474,10 @@
 @container omp-workspace (max-width: 900px) {
 	.omp-conversation-nav {
 		display: none;
+	}
+
+	.omp-find-bar {
+		inset-inline-end: 16px;
 	}
 }
 

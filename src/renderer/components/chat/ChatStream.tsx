@@ -66,13 +66,21 @@ import { ExecutionGroup } from "./ExecutionGroup";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { TranscriptFindBar } from "./TranscriptFindBar";
 import { TranscriptLoading } from "./TranscriptLoading";
+import { findRangesInRow, findTranscriptMatches, paintFindHighlights } from "./transcript-find";
 
 // TanStack's end check needs one CSS pixel for fractional scrollTop rounding.
 // User intent is enforced separately by switching away from end anchoring.
 const LIVE_EDGE_THRESHOLD_PX = 1;
 /** How long a message opened from search stays marked. */
 const FOUND_MARK_MS = 1800;
+/** A revealed row or match settles this far below the top, clear of the docked composer. */
+const REVEAL_TOP_INSET_PX = 96;
+/** Frames a reveal keeps re-aiming while rows above it are measured (~1.5s). */
+const REVEAL_MAX_FRAMES = 90;
+/** Consecutive frames without movement that count as settled. */
+const REVEAL_STILL_FRAMES = 3;
 
 /**
  * Virtual-scroll message list. Stays pinned to the bottom while streaming
@@ -139,6 +147,8 @@ function SessionTranscript() {
 	// And which way they moved it: only a gesture toward the tail may re-engage
 	// following, so a stray tail-follow write cannot masquerade as reader intent.
 	const gestureTowardTailRef = useRef<GestureTowardTail>(null);
+	// Stops an in-flight reveal (search hit, find match); any reader gesture calls it.
+	const revealCancelRef = useRef<(() => void) | null>(null);
 
 	const lastCompactionIndex = displayMessages.findLastIndex(message => message.role === "compactionSummary");
 	const hiddenCount = collapseCompacted && !preCompactionOpen && lastCompactionIndex > 0 ? lastCompactionIndex : 0;
@@ -452,6 +462,7 @@ function SessionTranscript() {
 	// reading anchor, and record which way they moved so only a trip back to the tail
 	// can hand it over again.
 	const beginGesture = useCallback((towardTail: GestureTowardTail) => {
+		revealCancelRef.current?.();
 		userScrollIntentRef.current = true;
 		gestureAnchorRef.current = null;
 		gestureTowardTailRef.current = towardTail;
@@ -477,6 +488,7 @@ function SessionTranscript() {
 	const handleWheel = useCallback(
 		(event: React.WheelEvent<HTMLDivElement>) => {
 			if (event.deltaY === 0) return; // A horizontal wheel claims nothing.
+			revealCancelRef.current?.();
 			if (event.deltaY > 0) {
 				// Toward the tail needs no veto: an unpinned follower never moves the view,
 				// and `handleScroll` re-pins once the movement lands. Latching here could
@@ -506,6 +518,7 @@ function SessionTranscript() {
 	const handleScrollKeyDown = useCallback(
 		(event: React.KeyboardEvent<HTMLDivElement>) => {
 			if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) {
+				revealCancelRef.current?.();
 				gestureTowardTailRef.current = true;
 				return;
 			}
@@ -536,16 +549,56 @@ function SessionTranscript() {
 		jumpToLatest();
 	}, [pinNonce, jumpToLatest]);
 
-	const jumpToConversation = useCallback(
-		(rowIndex: number) => {
+	// Bring one row (or a spot inside it) near the top of the view and hold it
+	// there. Rows above it measure taller than their estimates as they mount, and
+	// the virtualizer never re-anchors on its own (see `anchorTo`), so a single
+	// scrollToIndex lands short and the row drifts out of view; re-aim each frame
+	// until it holds still. Any reader gesture cancels it.
+	const revealRow = useCallback(
+		(index: number, locate?: (row: HTMLElement) => number | null) => {
+			revealCancelRef.current?.();
 			userScrollIntentRef.current = false;
 			gestureAnchorRef.current = null;
-			gestureTowardTailRef.current = null;
+			gestureTowardTailRef.current = false;
+			viewRef.current.pinned = false;
 			setPinned(false);
-			virtualizer.scrollToIndex(rowIndex, { align: "start" });
+			virtualizer.scrollToIndex(index, { align: "start" });
+			let frames = 0;
+			let still = 0;
+			let handle = 0;
+			const stop = () => {
+				cancelAnimationFrame(handle);
+				if (revealCancelRef.current === stop) revealCancelRef.current = null;
+			};
+			const aim = () => {
+				const scroller = parentRef.current;
+				if (!scroller || ++frames > REVEAL_MAX_FRAMES) return stop();
+				const row = scroller.querySelector<HTMLElement>(`[data-index="${index}"]`);
+				if (!row) {
+					virtualizer.scrollToIndex(index, { align: "start" });
+					handle = requestAnimationFrame(aim);
+					return;
+				}
+				const inset = Math.min(REVEAL_TOP_INSET_PX, scroller.clientHeight / 4);
+				const top = locate?.(row) ?? row.getBoundingClientRect().top;
+				const delta = top - scroller.getBoundingClientRect().top - inset;
+				const before = scroller.scrollTop;
+				if (Math.abs(delta) >= 1) scroller.scrollTop = before + delta;
+				// Settled, or pinned against either end of the document.
+				if (Math.abs(delta) < 1 || scroller.scrollTop === before) {
+					if (++still >= REVEAL_STILL_FRAMES) return stop();
+				} else {
+					still = 0;
+				}
+				handle = requestAnimationFrame(aim);
+			};
+			revealCancelRef.current = stop;
+			handle = requestAnimationFrame(aim);
 		},
 		[virtualizer],
 	);
+	useEffect(() => () => revealCancelRef.current?.(), []);
+	const jumpToConversation = useCallback((rowIndex: number) => revealRow(rowIndex), [revealRow]);
 	const updateProcessExpanded = useCallback((key: string, expanded: boolean) => {
 		setExpandedProcessKeys(current => {
 			if (current.has(key) === expanded) return current;
@@ -557,8 +610,8 @@ function SessionTranscript() {
 	}, []);
 
 	// Open at a message (conversation search): once this tab shows the requested
-	// session file with its history loaded, scroll the message into the middle of
-	// the view and mark it. Earlier-than-compaction history opens first; a folded
+	// session file with its history loaded, bring the message near the top of the
+	// view and mark it. Earlier-than-compaction history opens first; a folded
 	// process group opens to show it. A message on another branch says so.
 	const sessionFile = useSessionStore(s => s.sessionFile);
 	const focusTarget = useTranscriptFocusStore(s => s.target);
@@ -585,12 +638,7 @@ function SessionTranscript() {
 		const key = rowKeys[found.index] ?? null;
 		if (found.kind === "process" && key) updateProcessExpanded(key, true);
 		// Hold the view on the message: no tail following until the reader heads back down.
-		userScrollIntentRef.current = false;
-		gestureAnchorRef.current = null;
-		gestureTowardTailRef.current = false;
-		viewRef.current.pinned = false;
-		setPinned(false);
-		virtualizer.scrollToIndex(found.index, { align: "center" });
+		revealRow(found.index);
 		setFoundKey(key);
 	}, [
 		focusTarget,
@@ -605,7 +653,7 @@ function SessionTranscript() {
 		settleFocus,
 		t,
 		updateProcessExpanded,
-		virtualizer,
+		revealRow,
 	]);
 	useEffect(() => {
 		if (foundKey === null) return;
@@ -613,12 +661,115 @@ function SessionTranscript() {
 		return () => clearTimeout(timer);
 	}, [foundKey]);
 
+	// Find in this conversation (⌘F). Matches come from the message data, since
+	// rows scrolled out of view are not in the DOM for the browser's own find.
+	const findRequest = useUiStore(s => s.transcriptFindRequest);
+	const activeTabId = useTabsStore(s => s.activeTabId);
+	const [findOpen, setFindOpen] = useState(false);
+	const [findQuery, setFindQuery] = useState("");
+	const [findIndex, setFindIndex] = useState(0);
+	const findInputRef = useRef<HTMLInputElement>(null);
+	const seenFindRequest = useRef(findRequest.nonce);
+	// The handlers below are rebuilt every render; the request effect reads the latest.
+	const findActions = useRef({ changeQuery: (_query: string) => {}, step: (_direction: 1 | -1) => {} });
+	useEffect(() => {
+		if (findRequest.nonce === seenFindRequest.current) return;
+		seenFindRequest.current = findRequest.nonce;
+		// Split panes each hold a transcript; only the focused tab answers.
+		if (tabId && tabId !== activeTabId) return;
+		if (findRequest.command !== "find") {
+			findActions.current.step(findRequest.command === "next" ? 1 : -1);
+			return;
+		}
+		// Selected text on one line becomes the query, and the view goes to it.
+		const selected = window.getSelection()?.toString().trim();
+		if (selected && !selected.includes("\n")) findActions.current.changeQuery(selected);
+		setFindOpen(true);
+		// A bar that is already open takes focus back; a new one autofocuses.
+		findInputRef.current?.focus();
+		findInputRef.current?.select();
+	}, [findRequest, tabId, activeTabId]);
+	const findMatches = useMemo(
+		() => (findOpen ? findTranscriptMatches(rows, findQuery) : []),
+		[findOpen, rows, findQuery],
+	);
+	const findCurrent = findMatches.length === 0 ? 0 : Math.min(findIndex, findMatches.length - 1);
+	const goToMatch = useCallback(
+		(match: { rowIndex: number; occurrence: number }, query: string) => {
+			const row = rows[match.rowIndex];
+			const key = rowKeys[match.rowIndex];
+			if (row?.kind === "process" && key) updateProcessExpanded(key, true);
+			revealRow(match.rowIndex, element => {
+				const ranges = findRangesInRow(element, query);
+				return ranges[Math.min(match.occurrence, ranges.length - 1)]?.getBoundingClientRect().top ?? null;
+			});
+		},
+		[rows, rowKeys, revealRow, updateProcessExpanded],
+	);
+	const changeFindQuery = (query: string) => {
+		setFindQuery(query);
+		// A new query starts from where the reader is, not from the top.
+		const matches = findTranscriptMatches(rows, query);
+		const ahead = matches.findIndex(match => match.rowIndex >= visibleRowIndex);
+		const next = ahead === -1 ? 0 : ahead;
+		setFindIndex(next);
+		const match = matches[next];
+		if (match) goToMatch(match, query);
+	};
+	const stepFind = (direction: 1 | -1) => {
+		if (findMatches.length === 0) return;
+		const next = (findCurrent + direction + findMatches.length) % findMatches.length;
+		setFindIndex(next);
+		const match = findMatches[next];
+		if (match) goToMatch(match, findQuery);
+	};
+	findActions.current = { changeQuery: changeFindQuery, step: stepFind };
+	const closeFind = () => {
+		setFindOpen(false);
+		paintFindHighlights([], null);
+		parentRef.current?.focus({ preventScroll: true });
+	};
+	// Repaint after every render while open: rows mount and unmount as the reader scrolls.
+	useLayoutEffect(() => {
+		if (!findOpen) return;
+		const scroller = parentRef.current;
+		if (!scroller || findMatches.length === 0) {
+			paintFindHighlights([], null);
+			return;
+		}
+		const current = findMatches[findCurrent];
+		const matchedRows = new Set(findMatches.map(match => match.rowIndex));
+		const all: Range[] = [];
+		let currentRange: Range | null = null;
+		for (const element of scroller.querySelectorAll<HTMLElement>("[data-index]")) {
+			const index = Number(element.dataset.index);
+			if (!matchedRows.has(index)) continue;
+			const ranges = findRangesInRow(element, findQuery);
+			all.push(...ranges);
+			if (current?.rowIndex === index)
+				currentRange = ranges[Math.min(current.occurrence, ranges.length - 1)] ?? null;
+		}
+		paintFindHighlights(all, currentRange);
+	});
+	useEffect(() => () => paintFindHighlights([], null), []);
+
 	// Messages hydrate via hydrateSession (use-rpc-events) on sidecar ready —
 	// no separate fetch here (that would double-download the transcript).
 
 	return (
 		<>
 			<div className="omp-transcript-editorial relative min-h-0 flex-1 bg-transparent">
+				{findOpen && (
+					<TranscriptFindBar
+						current={findCurrent}
+						inputRef={findInputRef}
+						onClose={closeFind}
+						onQueryChange={changeFindQuery}
+						onStep={stepFind}
+						query={findQuery}
+						total={findMatches.length}
+					/>
+				)}
 				<div
 					ref={parentRef}
 					aria-label={t("chat.transcript.label")}

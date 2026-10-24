@@ -10,7 +10,7 @@
  * next refresh instead of needing a background poll.
  */
 import { open, readdir, rm, stat } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
 import type { SessionInfo, SessionKind } from "../shared/ipc-types";
 import { agentDir } from "./agent-paths";
@@ -19,6 +19,8 @@ import { StampedLru } from "./session-cache";
 const TITLE_SLOT_BYTES = 256;
 const TAIL_BYTES = 32 * 1024;
 const HEAD_BYTES = 32 * 1024;
+/** Longest session header line read; imported sessions can carry kilobytes of metadata. */
+const MAX_HEADER_BYTES = 1024 * 1024;
 const MAX_PARSE_CACHE_ENTRIES = 4096;
 /** Per-file cap for full-content search reads; larger sessions match on this prefix. */
 const SEARCH_READ_BYTES = 8 * 1024 * 1024;
@@ -53,10 +55,20 @@ export class SessionIndex {
 	}
 
 	start(): void {
+		// Session files sit one level down (<project>/<session>.jsonl). Each session
+		// also owns an artifact folder beside its file that subagents and tools fill
+		// with thousands of files; watching those kept a file handle open per file
+		// (7k+ on a long-lived install) and woke the list on every artifact write.
+		const root = resolve(this.#sessionsDir);
 		this.#watcher = watch(this.#sessionsDir, {
 			persistent: true,
 			ignoreInitial: false,
-			depth: 2,
+			depth: 1,
+			ignored: (path, stats) => {
+				const parts = relative(root, path).split(sep);
+				if (parts.length < 2) return false;
+				return parts.length > 2 || !path.endsWith(".jsonl") || stats?.isDirectory() === true;
+			},
 			awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
 		});
 
@@ -258,10 +270,20 @@ export class SessionIndex {
 			} | null = null;
 
 			if (headerStart !== -1) {
-				// Read up to 4KB for the header line
-				const headerBuf = Buffer.alloc(Math.min(4096, size - headerStart - 1));
-				await fh.read(headerBuf, 0, headerBuf.length, headerStart + 1);
-				const headerLine = headerBuf.toString("utf-8").split("\n")[0];
+				// The header is the second line. It usually fits in the head already read;
+				// a longer one (imported sessions carry kilobytes of metadata) is read on
+				// until its newline. Cutting it at a fixed 4KB lost the session's folder,
+				// and the sidebar filed it under a group with no name.
+				let headerEnd = headBuf.indexOf(0x0a, headerStart + 1);
+				let headerBytes = headBuf;
+				if (headerEnd === -1 && size > headBuf.length) {
+					headerBytes = Buffer.alloc(Math.min(MAX_HEADER_BYTES, size));
+					await fh.read(headerBytes, 0, headerBytes.length, 0);
+					headerEnd = headerBytes.indexOf(0x0a, headerStart + 1);
+				}
+				const headerLine = headerBytes
+					.subarray(headerStart + 1, headerEnd === -1 ? headerBytes.length : headerEnd)
+					.toString("utf-8");
 				try {
 					header = JSON.parse(headerLine);
 				} catch {

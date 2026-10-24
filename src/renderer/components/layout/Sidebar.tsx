@@ -1,8 +1,11 @@
 import {
+	Archive,
+	ArchiveRestore,
 	BarChart3,
 	Bot,
 	Brain,
 	BriefcaseBusiness,
+	CheckCheck,
 	ChevronRight,
 	Code2,
 	Coins,
@@ -12,6 +15,8 @@ import {
 	GitBranchPlus,
 	GitPullRequest,
 	Keyboard,
+	ListChecks,
+	LoaderCircle,
 	type LucideIcon,
 	MessageCircle,
 	MessageSquarePlus,
@@ -27,10 +32,13 @@ import {
 	Search,
 	Settings,
 	Sparkles,
+	Square,
+	SquareCheck,
 	SquarePen,
 	SquareTerminal,
 	TextSearch,
 	Trash2,
+	X,
 } from "lucide-react";
 import {
 	type MouseEvent as ReactMouseEvent,
@@ -89,8 +97,11 @@ interface WorkspaceGroup {
 	sessions: SessionInfo[];
 }
 
-/** A delete the row or context menu queued, awaiting the confirmation dialog. */
-type PendingDelete = { kind: "session"; session: SessionInfo } | { kind: "group"; group: WorkspaceGroup };
+/** A delete the row, context menu or selection bar queued, awaiting the confirmation dialog. */
+type PendingDelete =
+	| { kind: "session"; session: SessionInfo }
+	| { kind: "group"; group: WorkspaceGroup }
+	| { kind: "selection"; sessions: SessionInfo[] };
 
 type SidebarMode = "code" | "work";
 
@@ -167,6 +178,12 @@ export function Sidebar() {
 		void window.omp.prefs.set("sidebarWidth", sidebarWidthRef.current).catch(() => {});
 	}, []);
 	const [deleting, setDeleting] = useState(false);
+	// Bulk deletes run one file at a time; the dialog counts them off.
+	const [deleteProgress, setDeleteProgress] = useState<{ done: number; total: number } | null>(null);
+	// Selection mode for bulk archive/delete: null while off. The anchor is the
+	// last row clicked, the start of a ⇧-click range.
+	const [selection, setSelection] = useState<ReadonlySet<string> | null>(null);
+	const selectionAnchor = useRef<string | null>(null);
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	// Deleting a session hard-deletes its transcript file, so the row and menu
 	// clicks only queue it: the dialog names the target and states the
@@ -190,6 +207,8 @@ export function Sidebar() {
 	const activeTabKind = activeTab?.kind;
 	const pinnedGroups = useSidebarPrefs(s => s.pinnedGroups);
 	const pinnedSessions = useSidebarPrefs(s => s.pinnedSessions);
+	const archivedPaths = useSidebarPrefs(s => s.archivedSessions);
+	const archived = useMemo(() => new Set(archivedPaths), [archivedPaths]);
 	const groupAliases = useSidebarPrefs(s => s.groupAliases);
 	const workspaceLastUsed = useSidebarPrefs(s => s.workspaceLastUsed);
 	const sessionLastUsed = useSidebarPrefs(s => s.sessionLastUsed);
@@ -230,7 +249,10 @@ export function Sidebar() {
 		(session: SessionInfo) => sessionLastUsed[session.path] ?? modifiedAt(session),
 		[sessionLastUsed],
 	);
-	const agentSessions = useMemo(() => sessions.filter(session => session.kind !== "chat"), [sessions]);
+	const agentSessions = useMemo(
+		() => sessions.filter(session => session.kind !== "chat" && !archived.has(session.path)),
+		[sessions, archived],
+	);
 	const codeSessions = useMemo(
 		() => agentSessions.filter(session => !defaultWorkspace || session.cwd !== defaultWorkspace),
 		[agentSessions, defaultWorkspace],
@@ -250,14 +272,26 @@ export function Sidebar() {
 	const chatSessions = useMemo(
 		() =>
 			sessions
-				.filter(session => session.kind === "chat")
+				.filter(session => session.kind === "chat" && !archived.has(session.path))
 				.toSorted((a, b) => {
 					const aPinned = pinnedSessions.includes(a.path) ? 0 : 1;
 					const bPinned = pinnedSessions.includes(b.path) ? 0 : 1;
 					if (aPinned !== bPinned) return aPinned - bPinned;
 					return recencyForSession(b) - recencyForSession(a);
 				}),
-		[sessions, pinnedSessions, recencyForSession],
+		[sessions, archived, pinnedSessions, recencyForSession],
+	);
+	// Archived sessions of the lane on screen, newest first.
+	const archivedSessions = useMemo(
+		() =>
+			sessions
+				.filter(session => {
+					if (!archived.has(session.path)) return false;
+					const inWork = session.kind !== "chat" && defaultWorkspace !== null && session.cwd === defaultWorkspace;
+					return mode === "work" ? inWork : !inWork;
+				})
+				.toSorted((a, b) => recencyForSession(b) - recencyForSession(a)),
+		[sessions, archived, defaultWorkspace, mode, recencyForSession],
 	);
 
 	// Code sessions stay grouped by project. Pins remain a priority partition,
@@ -289,17 +323,31 @@ export function Sidebar() {
 		});
 		return result;
 	}, [codeSessions, groupAliases, pinnedGroups, pinnedSessions, recencyForSession, workspaceLastUsed]);
+	function isCollapsedGroup(groupCwd: string): boolean {
+		if (groupCwd in collapsed) return collapsed[groupCwd] === true;
+		// Default: current workspace expanded, others collapsed (Codex-style).
+		return groupCwd !== cwd;
+	}
 	const totalCount = mode === "work" ? workSessions.length : codeSessions.length + chatSessions.length;
 	const visibleGroups = mode === "code" ? groups : [];
 	const chatsCollapsed = collapsed.__chats__ ?? false;
+	const archivedCollapsed = collapsed.__archived__ ?? true;
+	// Rows in the order they are drawn: what "select all" and a ⇧-click range cover.
+	const visibleSessions = [
+		...(mode === "work" ? workSessions : []),
+		...visibleGroups.flatMap(group => (isCollapsedGroup(group.cwd) ? [] : group.sessions)),
+		...(mode === "code" && !chatsCollapsed ? chatSessions : []),
+		...(archivedCollapsed ? [] : archivedSessions),
+	];
+	const selectedSessions = selection ? sessions.filter(session => selection.has(session.path)) : [];
+	const bulkLabel =
+		selectedSessions.length > 0
+			? t("sidebar.bulk.count", { count: selectedSessions.length })
+			: t("sidebar.bulk.empty");
+	const allSelectedArchived = selectedSessions.length > 0 && selectedSessions.every(s => archived.has(s.path));
 
-	const isCollapsed = (groupCwd: string) => {
-		if (groupCwd in collapsed) return collapsed[groupCwd];
-		// Default: current workspace expanded, others collapsed (Codex-style).
-		return groupCwd !== cwd;
-	};
 	const toggleGroup = (groupCwd: string) => {
-		setCollapsed(prev => ({ ...prev, [groupCwd]: !isCollapsed(groupCwd) }));
+		setCollapsed(prev => ({ ...prev, [groupCwd]: !isCollapsedGroup(groupCwd) }));
 	};
 	const tabForSession = (session: SessionInfo) =>
 		tabs.find(tab => tab.sessionId === session.id) ?? (session.id === sessionId ? activeTab : undefined);
@@ -367,6 +415,7 @@ export function Sidebar() {
 			} else {
 				await deleteSession(session.path);
 			}
+			useSidebarPrefs.getState().forgetSessions([session.path]);
 			setPendingDelete(null);
 		} catch (error) {
 			toast({ variant: "error", title: t("sidebar.deleteFailed"), message: String(error) });
@@ -389,6 +438,7 @@ export function Sidebar() {
 				if (session.id === sessionId) await dropSessionNow();
 				else await deleteSession(session.path);
 			}
+			useSidebarPrefs.getState().forgetSessions(group.sessions.map(session => session.path));
 			setPendingDelete(null);
 		} catch (error) {
 			toast({ variant: "error", title: t("sidebar.deleteFailed"), message: String(error) });
@@ -396,6 +446,113 @@ export function Sidebar() {
 			setDeleting(false);
 		}
 	};
+
+	// Running sessions are left alone; the rest go one file at a time so the
+	// dialog can count them off, and whatever was deleted before a failure stays
+	// deleted and leaves the selection.
+	const confirmDeleteSelection = async (targets: readonly SessionInfo[]) => {
+		const idle = targets.filter(session => !isSessionBusy(session));
+		const skipped = targets.length - idle.length;
+		const deleted: string[] = [];
+		setDeleting(true);
+		setDeleteProgress({ done: 0, total: idle.length });
+		try {
+			for (const session of idle) {
+				// eslint-disable-next-line no-await-in-loop -- sequential, keep FS load bounded
+				if (session.id === sessionId) await dropSessionNow();
+				else await deleteSession(session.path);
+				deleted.push(session.path);
+				setDeleteProgress({ done: deleted.length, total: idle.length });
+			}
+			setPendingDelete(null);
+			setSelection(null);
+			if (skipped > 0) toast({ variant: "warning", message: t("sidebar.bulk.skippedRunning", { count: skipped }) });
+		} catch (error) {
+			toast({ variant: "error", title: t("sidebar.deleteFailed"), message: String(error) });
+			setPendingDelete(null);
+			setSelection(current => {
+				if (!current) return current;
+				const next = new Set(current);
+				for (const path of deleted) next.delete(path);
+				return next;
+			});
+		} finally {
+			useSidebarPrefs.getState().forgetSessions(deleted);
+			setDeleting(false);
+			setDeleteProgress(null);
+		}
+	};
+
+	const startSelection = (paths: readonly string[]) => {
+		setSelection(new Set(paths));
+		selectionAnchor.current = paths.at(-1) ?? null;
+	};
+	const endSelection = () => {
+		setSelection(null);
+		selectionAnchor.current = null;
+	};
+	// ⌘/Ctrl-click toggles one row, ⇧-click adds the drawn range from the last
+	// row clicked; either starts selection mode.
+	const clickToSelect = (session: SessionInfo, event: { shiftKey: boolean }) => {
+		const next = new Set(selection ?? []);
+		const order = visibleSessions.map(item => item.path);
+		const from = selectionAnchor.current ? order.indexOf(selectionAnchor.current) : -1;
+		const to = order.indexOf(session.path);
+		if (event.shiftKey && from >= 0 && to >= 0) {
+			for (const path of order.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(path);
+		} else if (next.has(session.path)) {
+			next.delete(session.path);
+		} else {
+			next.add(session.path);
+		}
+		selectionAnchor.current = session.path;
+		setSelection(next);
+	};
+	const archiveSelection = (archive: boolean) => {
+		void useSidebarPrefs.getState().setSessionsArchived(
+			selectedSessions.map(session => session.path),
+			archive,
+		);
+		endSelection();
+	};
+	// Keys in selection mode, ahead of the window's own handlers (capture), so
+	// the Escape that ends a selection never also aborts the running turn:
+	// Escape leaves it, and with focus in the sidebar ⌘A selects every row shown
+	// and ⌫/Delete asks to delete the selection. A text field, dialog or menu
+	// keeps its keys.
+	const selecting = selection !== null;
+	const selectionKeys = useRef({ selectAll: () => {}, deleteSelected: () => {} });
+	selectionKeys.current = {
+		selectAll: () => startSelection(visibleSessions.map(session => session.path)),
+		deleteSelected: () => {
+			if (selectedSessions.length > 0) setPendingDelete({ kind: "selection", sessions: selectedSessions });
+		},
+	};
+	useEffect(() => {
+		if (!selecting) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.defaultPrevented || isImeKeyEvent(event)) return;
+			if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+			const target = event.target instanceof HTMLElement ? event.target : null;
+			if (target?.closest("input, textarea, [contenteditable='true']")) return;
+			const inSidebar = target?.closest(".omp-session-sidebar") != null;
+			const command = event.metaKey || event.ctrlKey;
+			if (event.key === "Escape") {
+				setSelection(null);
+				selectionAnchor.current = null;
+			} else if (inSidebar && command && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "a") {
+				selectionKeys.current.selectAll();
+			} else if (inSidebar && !command && (event.key === "Backspace" || event.key === "Delete")) {
+				selectionKeys.current.deleteSelected();
+			} else {
+				return;
+			}
+			event.preventDefault();
+			event.stopPropagation();
+		};
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => window.removeEventListener("keydown", onKeyDown, true);
+	}, [selecting]);
 
 	const rowActionButton =
 		"omp-sidebar-action flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
@@ -421,44 +578,70 @@ export function Sidebar() {
 		const renaming = renamingSessionPath === session.path;
 		const pinned = pinnedSessions.includes(session.path);
 		const recency = recencyForSession(session);
+		const selected = selection?.has(session.path) === true;
+		const SelectIcon = selected ? SquareCheck : Square;
 		return (
 			<div
 				key={session.path}
 				role="button"
 				tabIndex={0}
-				onClick={() => void openSession(session)}
+				aria-pressed={selecting ? selected : undefined}
+				onClick={event => {
+					if (selecting || event.metaKey || event.ctrlKey || (event.shiftKey && selectionAnchor.current)) {
+						clickToSelect(session, event);
+						return;
+					}
+					selectionAnchor.current = session.path;
+					void openSession(session);
+				}}
 				onContextMenu={event => setSessionMenu({ anchor: anchorFromEvent(event), session })}
 				onKeyDown={event => {
 					// Only the row itself: Enter inside a nested control (rename
 					// input, action buttons) must not also switch the session.
-					if (event.key === "Enter" && event.target === event.currentTarget) void openSession(session);
+					if (event.target !== event.currentTarget) return;
+					if (selecting && (event.key === "Enter" || event.key === " ")) {
+						event.preventDefault();
+						clickToSelect(session, event);
+					} else if (event.key === "Enter") void openSession(session);
 				}}
 				data-active={active}
+				data-selected={selected || undefined}
 				data-switch-pending={switchPendingTo === session.id || undefined}
-				data-has-actions={hasActions}
+				data-has-actions={hasActions && !selecting}
 				data-actions-open={renaming}
 				data-session-kind={session.kind ?? "agent"}
 				className={cx(
-					"omp-sidebar-session-row omp-color-fade group flex h-[30px] cursor-pointer items-center rounded-lg px-2",
-					active ? "bg-[var(--omp-selected-bg)]" : "hover:bg-[var(--omp-sidebar-item-hover)]",
+					"omp-sidebar-session-row omp-color-fade group flex h-[30px] cursor-pointer items-center rounded-lg px-2 select-none",
+					selected || (active && !selecting)
+						? "bg-[var(--omp-selected-bg)]"
+						: "hover:bg-[var(--omp-sidebar-item-hover)]",
 				)}
 			>
 				{/* The status slot lines titles up under the group icon; idle rows leave it empty. */}
 				<span aria-hidden="true" data-sidebar-session-icon className="mr-2 flex w-4 shrink-0 justify-center">
-					<span
-						role="img"
-						aria-label={signalLabel}
-						title={signalLabel}
-						className={cx("omp-signal-light", signalActive && "omp-signal-light--active")}
-						data-idle={
-							// Past sessions that simply finished carry no signal; unread
-							// completions (an open tab) and anything live or failed do.
-							(!signalActive &&
-								(signalColor === "var(--omp-dim)" || (tabSignal === null && session.status === "complete"))) ||
-							undefined
-						}
-						style={{ color: signalColor }}
-					/>
+					{selecting ? (
+						<SelectIcon
+							size={14}
+							strokeWidth={1.75}
+							className={selected ? "text-[var(--omp-accent)]" : "text-[var(--omp-dim)]"}
+						/>
+					) : (
+						<span
+							role="img"
+							aria-label={signalLabel}
+							title={signalLabel}
+							className={cx("omp-signal-light", signalActive && "omp-signal-light--active")}
+							data-idle={
+								// Past sessions that simply finished carry no signal; unread
+								// completions (an open tab) and anything live or failed do.
+								(!signalActive &&
+									(signalColor === "var(--omp-dim)" ||
+										(tabSignal === null && session.status === "complete"))) ||
+								undefined
+							}
+							style={{ color: signalColor }}
+						/>
+					)}
 				</span>
 				{pinned && (
 					<Pin size={11} className="mr-1.5 shrink-0 text-[var(--omp-dim)]" aria-label={t("sidebar.pinned")} />
@@ -492,6 +675,7 @@ export function Sidebar() {
 					</span>
 				)}
 				<span
+					hidden={selecting}
 					className="omp-sidebar-session-actions flex shrink-0 items-center justify-end gap-0.5"
 					onClick={event => event.stopPropagation()}
 				>
@@ -562,7 +746,7 @@ export function Sidebar() {
 		current?: boolean;
 	}) => (
 		<div
-			data-workspace-group={id === "__chats__" ? undefined : id}
+			data-workspace-group={id.startsWith("__") ? undefined : id}
 			data-actions-open={renameInput ? true : undefined}
 			onContextMenu={onContextMenu}
 			className={cx(
@@ -581,7 +765,7 @@ export function Sidebar() {
 				<span className="omp-sidebar-group-icon relative mr-2 flex size-4 shrink-0 items-center justify-center">
 					<Icon
 						aria-hidden="true"
-						data-sidebar-workspace-icon={id === "__chats__" ? undefined : true}
+						data-sidebar-workspace-icon={id.startsWith("__") ? undefined : true}
 						size={15}
 						strokeWidth={1.75}
 					/>
@@ -757,7 +941,10 @@ export function Sidebar() {
 									type="button"
 									aria-pressed={mode === value}
 									title={t(value === "code" ? "sidebar.mode.codeDescription" : "sidebar.mode.workDescription")}
-									onClick={() => setMode(value)}
+									onClick={() => {
+										setMode(value);
+										endSelection();
+									}}
 									className="flex h-6 items-center gap-1.5 px-2.5 text-omp-sm font-medium"
 								>
 									<Icon aria-hidden="true" size={13} />
@@ -840,8 +1027,26 @@ export function Sidebar() {
 					</button>
 				</div>
 
-				<div className="flex h-7 shrink-0 items-center px-4">
-					<span className="text-omp-xs font-medium text-[var(--omp-dim)]">{t("sidebar.recent")}</span>
+				<div className="flex h-7 shrink-0 items-center ps-4 pe-2.5">
+					<span className="min-w-0 flex-1 truncate text-omp-xs font-medium text-[var(--omp-dim)]">
+						{t("sidebar.recent")}
+					</span>
+					<button
+						type="button"
+						data-sidebar-select
+						aria-pressed={selecting}
+						onClick={() => (selecting ? endSelection() : startSelection([]))}
+						title={t("sidebar.bulk.selectHint")}
+						className={cx(
+							"omp-pressable flex h-6 items-center gap-1 rounded-md px-1.5 text-omp-xs",
+							selecting
+								? "bg-[var(--omp-selected-bg)] text-[var(--omp-text)]"
+								: "text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]",
+						)}
+					>
+						<ListChecks aria-hidden="true" size={13} />
+						{t("sidebar.bulk.select")}
+					</button>
 				</div>
 
 				<div className="omp-sidebar-list min-h-0 flex-1 overflow-y-auto px-2 pb-3 [overflow-anchor:none]">
@@ -877,7 +1082,7 @@ export function Sidebar() {
 						</div>
 					)}
 					{visibleGroups.map(group => {
-						const groupCollapsed = isCollapsed(group.cwd);
+						const groupCollapsed = isCollapsedGroup(group.cwd);
 						const renaming = renamingGroupCwd === group.cwd;
 						return (
 							<div key={group.cwd} className="mb-1">
@@ -974,7 +1179,100 @@ export function Sidebar() {
 							)}
 						</div>
 					)}
+					{archivedSessions.length > 0 && (
+						<div className="mt-2 mb-1" data-archived-section>
+							{renderGroupHeader({
+								id: "__archived__",
+								name: t("sidebar.archived"),
+								count: archivedSessions.length,
+								icon: Archive,
+								collapsedState: archivedCollapsed,
+								onToggle: () => setCollapsed(prev => ({ ...prev, __archived__: !archivedCollapsed })),
+							})}
+							{!archivedCollapsed && (
+								<div className="omp-sidebar-group" data-session-group="__archived__" data-state="expanded">
+									<div className="omp-sidebar-group-content space-y-px">
+										{archivedSessions.map(session => renderSessionRow(session))}
+									</div>
+								</div>
+							)}
+						</div>
+					)}
 				</div>
+
+				{/* Bulk actions for the selected rows. */}
+				{selecting && (
+					<div
+						role="toolbar"
+						aria-label={t("sidebar.bulk.label")}
+						data-sidebar-bulk
+						className="flex h-10 shrink-0 items-center gap-0.5 border-t border-[var(--omp-border-muted)] px-2"
+					>
+						{/* A narrow rail keeps the number and leaves the words to the tooltip. */}
+						{sidebarWidth < 220 ? (
+							<span aria-live="polite" aria-label={bulkLabel} title={bulkLabel} className="min-w-0 flex-1 px-1">
+								<span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-(--omp-accent-dim) px-1.5 text-omp-xs font-medium tabular-nums text-(--omp-accent)">
+									{selectedSessions.length}
+								</span>
+							</span>
+						) : (
+							<span
+								aria-live="polite"
+								className="min-w-0 flex-1 truncate px-1 text-omp-sm text-[var(--omp-text-secondary)]"
+							>
+								{bulkLabel}
+							</span>
+						)}
+						<button
+							type="button"
+							onClick={() => startSelection(visibleSessions.map(session => session.path))}
+							disabled={visibleSessions.length === 0}
+							title={t("sidebar.bulk.selectAll")}
+							aria-label={t("sidebar.bulk.selectAll")}
+							className={cx(utilityButton, "disabled:pointer-events-none disabled:opacity-40")}
+						>
+							<CheckCheck size={15} strokeWidth={1.75} />
+						</button>
+						<button
+							type="button"
+							data-sidebar-bulk-archive
+							onClick={() => archiveSelection(!allSelectedArchived)}
+							disabled={selectedSessions.length === 0}
+							title={allSelectedArchived ? t("sidebar.bulk.unarchive") : t("sidebar.bulk.archive")}
+							aria-label={allSelectedArchived ? t("sidebar.bulk.unarchive") : t("sidebar.bulk.archive")}
+							className={cx(utilityButton, "disabled:pointer-events-none disabled:opacity-40")}
+						>
+							{allSelectedArchived ? (
+								<ArchiveRestore size={15} strokeWidth={1.75} />
+							) : (
+								<Archive size={15} strokeWidth={1.75} />
+							)}
+						</button>
+						<button
+							type="button"
+							data-sidebar-bulk-delete
+							onClick={() => setPendingDelete({ kind: "selection", sessions: selectedSessions })}
+							disabled={selectedSessions.length === 0}
+							title={t("sidebar.bulk.delete")}
+							aria-label={t("sidebar.bulk.delete")}
+							className={cx(
+								utilityButton,
+								"hover:!bg-[var(--omp-tool-error-bg)] hover:!text-[var(--omp-error)] disabled:pointer-events-none disabled:opacity-40",
+							)}
+						>
+							<Trash2 size={15} strokeWidth={1.75} />
+						</button>
+						<button
+							type="button"
+							onClick={endSelection}
+							title={t("sidebar.bulk.cancel")}
+							aria-label={t("sidebar.bulk.cancel")}
+							className={utilityButton}
+						>
+							<X size={15} strokeWidth={1.75} />
+						</button>
+					</div>
+				)}
 
 				{/* Footer: app-level controls that are not tied to a session. */}
 				<div className="flex h-11 shrink-0 items-center gap-0.5 border-t border-[var(--omp-border-muted)] px-2">
@@ -1068,6 +1366,16 @@ export function Sidebar() {
 										setRenamingGroupCwd(groupMenu.group.cwd);
 										setGroupMenu(null);
 										requestAnimationFrame(() => groupRenameRef.current?.select());
+									},
+								},
+								{
+									id: "group-select",
+									label: t("sidebar.menu.selectSessions"),
+									icon: ListChecks,
+									onSelect: () => {
+										setGroupMenu(null);
+										setCollapsed(prev => ({ ...prev, [groupMenu.group.cwd]: false }));
+										startSelection(groupMenu.group.sessions.map(session => session.path));
 									},
 								},
 								{
@@ -1168,6 +1476,31 @@ export function Sidebar() {
 									},
 								},
 								{
+									id: "session-archive",
+									label: archived.has(sessionMenu.session.path)
+										? t("sidebar.menu.unarchive")
+										: t("sidebar.menu.archive"),
+									icon: archived.has(sessionMenu.session.path) ? ArchiveRestore : Archive,
+									onSelect: () => {
+										setSessionMenu(null);
+										void useSidebarPrefs
+											.getState()
+											.setSessionsArchived(
+												[sessionMenu.session.path],
+												!archived.has(sessionMenu.session.path),
+											);
+									},
+								},
+								{
+									id: "session-select",
+									label: t("sidebar.menu.select"),
+									icon: ListChecks,
+									onSelect: () => {
+										setSessionMenu(null);
+										startSelection([...(selection ?? []), sessionMenu.session.path]);
+									},
+								},
+								{
 									id: "session-delete",
 									label: t("common.delete"),
 									icon: Trash2,
@@ -1186,23 +1519,43 @@ export function Sidebar() {
 
 			<ConfirmDialog
 				open={pendingDelete !== null}
-				title={pendingDelete?.kind === "group" ? t("sidebar.deleteGroupConfirm") : t("sidebar.deleteConfirm")}
-				message={
+				title={
 					pendingDelete?.kind === "group"
-						? t("sidebar.deleteGroupMessage", {
-								name: pendingDelete.group.name,
-								count: pendingDelete.group.sessions.length,
-							})
-						: pendingDelete?.kind === "session"
-							? t("sidebar.deleteMessage", {
-									name: sessionDisplayTitle(pendingDelete.session, t("sidebar.untitled")),
-								})
-							: ""
+						? t("sidebar.deleteGroupConfirm")
+						: pendingDelete?.kind === "selection"
+							? t("sidebar.bulk.deleteConfirm", { count: pendingDelete.sessions.length })
+							: t("sidebar.deleteConfirm")
 				}
-				warning={pendingDelete?.kind === "group" ? t("sidebar.deleteGroupWarning") : undefined}
+				message={
+					deleteProgress ? (
+						<span className="flex items-center gap-2">
+							<LoaderCircle aria-hidden="true" size={14} className="shrink-0 animate-spin" />
+							{t("sidebar.bulk.deleting", { done: deleteProgress.done, total: deleteProgress.total })}
+						</span>
+					) : pendingDelete?.kind === "group" ? (
+						t("sidebar.deleteGroupMessage", {
+							name: pendingDelete.group.name,
+							count: pendingDelete.group.sessions.length,
+						})
+					) : pendingDelete?.kind === "selection" ? (
+						t("sidebar.bulk.deleteMessage", { count: pendingDelete.sessions.length })
+					) : pendingDelete?.kind === "session" ? (
+						t("sidebar.deleteMessage", {
+							name: sessionDisplayTitle(pendingDelete.session, t("sidebar.untitled")),
+						})
+					) : (
+						""
+					)
+				}
+				warning={
+					pendingDelete?.kind === "group" || pendingDelete?.kind === "selection"
+						? t("sidebar.deleteGroupWarning")
+						: undefined
+				}
 				busy={deleting}
 				onConfirm={() => {
 					if (pendingDelete?.kind === "group") void confirmDeleteGroup(pendingDelete.group);
+					else if (pendingDelete?.kind === "selection") void confirmDeleteSelection(pendingDelete.sessions);
 					else if (pendingDelete) void confirmDeleteSession(pendingDelete.session);
 				}}
 				onCancel={() => setPendingDelete(null)}

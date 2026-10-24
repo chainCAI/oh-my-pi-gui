@@ -80,7 +80,24 @@ const HOTKEY_GROUPS: HotkeyGroup[] = [
 			...remapRows("generation"),
 		],
 	},
-	{ titleKey: "hotkeys.group.view", rows: remapRows("view") },
+	{
+		titleKey: "hotkeys.group.view",
+		rows: [
+			...remapRows("view"),
+			{ keys: "Enter / ⇧Enter", labelKey: "hotkeys.row.findStep" },
+			{ keys: "⌘G / ⇧⌘G", labelKey: "hotkeys.row.findStepMenu" },
+		],
+	},
+	{
+		titleKey: "hotkeys.group.sidebar",
+		rows: [
+			{ keys: "⌘-click", labelKey: "hotkeys.row.sidebarToggleSelect" },
+			{ keys: "⇧-click", labelKey: "hotkeys.row.sidebarRangeSelect" },
+			{ keys: "⌘A", labelKey: "hotkeys.row.sidebarSelectAll" },
+			{ keys: "⌫", labelKey: "hotkeys.row.sidebarDeleteSelected" },
+			{ keys: "Esc", labelKey: "hotkeys.row.sidebarEndSelect" },
+		],
+	},
 	{ titleKey: "hotkeys.group.session", rows: remapRows("session") },
 	{ titleKey: "hotkeys.group.native", rows: reservedRows("native") },
 ];

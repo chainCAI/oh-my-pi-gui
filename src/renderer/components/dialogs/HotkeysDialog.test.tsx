@@ -76,6 +76,14 @@ describe("HotkeysDialog", () => {
 		}
 	});
 
+	it("labels every row and group in words, never as a raw translation key", async () => {
+		// A label with no locale entry renders its key ("hotkeys.row.newWindow"),
+		// which tells the reader nothing about what the chord does.
+		await mount();
+		const text = document.body.textContent ?? "";
+		expect(text.match(/hotkeys\.(row|group)\.[A-Za-z]+/g) ?? []).toEqual([]);
+	});
+
 	it("shows a user override instead of the default it replaced", async () => {
 		// A remapped action's old chord is dead; listing both tells the user a key
 		// works that no longer does.

@@ -16,6 +16,7 @@ import { I18nProvider } from "../../lib/i18n";
 import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { useTabsStore } from "../../stores/tabs";
+import { useToastStore } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
 import { Sidebar } from "./Sidebar";
 
@@ -159,8 +160,12 @@ async function mount(element: ReactElement): Promise<void> {
 	await flush();
 }
 
-/** Drive a React onClick/onContextMenu prop on an element. */
-async function fire(element: Element | TestElement | null, prop: "onClick" | "onContextMenu"): Promise<void> {
+/** Drive a React onClick/onContextMenu prop on an element; `modifiers` carries ⌘/⇧ state. */
+async function fire(
+	element: Element | TestElement | null,
+	prop: "onClick" | "onContextMenu",
+	modifiers: { metaKey?: boolean; shiftKey?: boolean } = {},
+): Promise<void> {
 	if (!element) throw new Error("fire: element is null");
 	const record = element as unknown as Record<string, unknown>;
 	const propsKey = Object.getOwnPropertyNames(record).find(key => key.startsWith("__reactProps$"));
@@ -173,6 +178,10 @@ async function fire(element: Element | TestElement | null, prop: "onClick" | "on
 			preventDefault: () => {},
 			clientX: 20,
 			clientY: 30,
+			metaKey: false,
+			ctrlKey: false,
+			shiftKey: false,
+			...modifiers,
 			currentTarget: element,
 		}),
 	);
@@ -461,7 +470,7 @@ describe("Sidebar menus and pinned ordering", () => {
 		}
 	});
 
-	it("right-click on a workspace header opens the agent-only 5-item group menu", async () => {
+	it("right-click on a workspace header opens the agent-only 6-item group menu", async () => {
 		installMockOmp(LIST);
 		seedStores();
 		await mount(<Sidebar />);
@@ -475,12 +484,13 @@ describe("Sidebar menus and pinned ordering", () => {
 		expect(labels.some(label => label.includes("New chat session here"))).toBe(false);
 		expect(labels.some(label => label.includes("New worktree tab here"))).toBe(true);
 		expect(labels.some(label => label.includes("Rename"))).toBe(true);
+		expect(labels.some(label => label.includes("Select sessions"))).toBe(true);
 		expect(labels.some(label => label.includes("Pin to top"))).toBe(true);
 		expect(labels.some(label => label.includes("Delete"))).toBe(true);
-		expect(labels).toHaveLength(5);
+		expect(labels).toHaveLength(6);
 	});
 
-	it("right-click on a session row opens the 6-item session menu", async () => {
+	it("right-click on a session row opens the 8-item session menu", async () => {
 		const omp = installMockOmp(LIST);
 		seedStores();
 		await mount(<Sidebar />);
@@ -492,13 +502,22 @@ describe("Sidebar menus and pinned ordering", () => {
 		await fire(row as Element, "onContextMenu");
 
 		const labels = menuItemLabels();
-		for (const expected of ["Open", "Open in new tab", "Open in new window", "Rename", "Pin to top", "Delete"]) {
+		for (const expected of [
+			"Open",
+			"Open in new tab",
+			"Open in new window",
+			"Rename",
+			"Pin to top",
+			"Archive",
+			"Select",
+			"Delete",
+		]) {
 			expect(
 				labels.some(label => label.includes(expected)),
 				`missing item: ${expected}`,
 			).toBe(true);
 		}
-		expect(labels).toHaveLength(6);
+		expect(labels).toHaveLength(8);
 
 		const pinItem = [...document.body.querySelectorAll('[role="menu"] button')].find(button =>
 			(button.textContent ?? "").includes("Pin to top"),
@@ -783,6 +802,151 @@ describe("Sidebar menus and pinned ordering", () => {
 			"/work/alpha/one.jsonl",
 			"/work/alpha/two.jsonl",
 		]);
+	});
+});
+
+describe("Sidebar bulk selection", () => {
+	const row = (title: string) =>
+		[...document.querySelectorAll(".omp-sidebar-session-row")].find(el =>
+			(el.textContent ?? "").includes(title),
+		) as unknown as Element;
+	const titles = (selector: string) =>
+		[...document.querySelectorAll(selector)].map(el => el.querySelector(".omp-sidebar-title")?.textContent ?? "");
+	const bulkBar = () => document.body.querySelector("[data-sidebar-bulk]");
+
+	it("archives ⌘-clicked sessions out of their workspace and restores them from Archived", async () => {
+		const omp = installMockOmp(LIST);
+		seedStores();
+		useSidebarPrefs.setState({ hydrated: true });
+		await mount(<Sidebar />);
+
+		// A ⌘-click selects instead of opening the session.
+		await fire(row("Session /work/alpha/one"), "onClick", { metaKey: true });
+		await fire(row("Session /work/alpha/two"), "onClick", { metaKey: true });
+		expect(omp.tabs.spawn).not.toHaveBeenCalled();
+		expect(bulkBar()?.textContent).toContain("2 selected");
+
+		await fire(document.body.querySelector("[data-sidebar-bulk-archive]"), "onClick");
+		expect(bulkBar()).toBeNull();
+		expect(container.querySelector('[data-workspace-group="/work/alpha"]')).toBeNull();
+		const archived = container.querySelector("[data-archived-section]");
+		expect(archived?.textContent).toContain("Archived");
+		expect(archived?.textContent).toContain("2");
+		expect(omp.prefs.set).toHaveBeenLastCalledWith(
+			"sidebar",
+			expect.objectContaining({ archivedSessions: ["/work/alpha/one.jsonl", "/work/alpha/two.jsonl"] }),
+		);
+
+		// Archived rows stay one expand away and come back the same way.
+		await fire(archived?.querySelector("button[aria-expanded]") as unknown as Element, "onClick");
+		await fire(row("Session /work/alpha/one"), "onClick", { metaKey: true });
+		await fire(row("Session /work/alpha/two"), "onClick", { metaKey: true });
+		const restore = document.body.querySelector("[data-sidebar-bulk-archive]");
+		expect(restore?.getAttribute("aria-label")).toBe("Unarchive selected");
+		await fire(restore, "onClick");
+		expect(container.querySelector("[data-archived-section]")).toBeNull();
+		expect(container.querySelector('[data-workspace-group="/work/alpha"]')).not.toBeNull();
+		expect(useSidebarPrefs.getState().archivedSessions).toEqual([]);
+	});
+
+	it("selects the drawn rows between two clicks on ⇧-click", async () => {
+		installMockOmp([
+			session("/work/alpha/newest.jsonl", "/work/alpha", { modified: "2026-01-05T00:00:00Z" }),
+			...LIST,
+		]);
+		seedStores();
+		await mount(<Sidebar />);
+		expect(titles(".omp-sidebar-session-row")).toEqual([
+			"Session /work/alpha/newest.jsonl",
+			"Session /work/alpha/one.jsonl",
+			"Session /work/alpha/two.jsonl",
+		]);
+
+		await fire(container.querySelector("[data-sidebar-select]"), "onClick");
+		await fire(row("Session /work/alpha/newest"), "onClick");
+		await fire(row("Session /work/alpha/two"), "onClick", { shiftKey: true });
+
+		expect(titles('.omp-sidebar-session-row[data-selected="true"]')).toEqual([
+			"Session /work/alpha/newest.jsonl",
+			"Session /work/alpha/one.jsonl",
+			"Session /work/alpha/two.jsonl",
+		]);
+		// The collapsed beta workspace is not part of the drawn range.
+		expect(bulkBar()?.textContent).toContain("3 selected");
+	});
+
+	it("deletes the selected idle sessions, leaves a running one, and forgets their pins", async () => {
+		const omp = installMockOmp([
+			session("/work/alpha/run.jsonl", "/work/alpha", { status: "pending", modified: "2026-01-05T00:00:00Z" }),
+			...LIST,
+		]);
+		seedStores();
+		useSidebarPrefs.setState({ hydrated: true, pinnedSessions: ["/work/alpha/one.jsonl"] });
+		await mount(<Sidebar />);
+
+		await fire(container.querySelector("[data-sidebar-select]"), "onClick");
+		await fire(document.body.querySelector('[aria-label="Select all shown"]'), "onClick");
+		expect(bulkBar()?.textContent).toContain("3 selected");
+		await fire(document.body.querySelector("[data-sidebar-bulk-delete]"), "onClick");
+
+		// Queued behind the dialog, which names the count before anything is removed.
+		expect(omp.sessions.delete).not.toHaveBeenCalled();
+		expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain("Delete 3 selected sessions?");
+		await fire(
+			[...document.body.querySelectorAll('[role="dialog"] button')].find(
+				b => (b.textContent ?? "").trim() === "Delete",
+			) as unknown as Element,
+			"onClick",
+		);
+
+		expect(omp.sessions.delete.mock.calls.map(call => call[0]).sort()).toEqual([
+			"/work/alpha/one.jsonl",
+			"/work/alpha/two.jsonl",
+		]);
+		expect(useSidebarPrefs.getState().pinnedSessions).toEqual([]);
+		expect(useToastStore.getState().toasts.map(toast => toast.message)).toContain(
+			"1 running sessions were left in place.",
+		);
+		expect(bulkBar()).toBeNull();
+	});
+});
+
+describe("Sidebar selection keys", () => {
+	async function press(target: unknown, key: string, modifiers: { metaKey?: boolean } = {}): Promise<boolean> {
+		const event = new Event("keydown", { bubbles: true, cancelable: true });
+		Object.assign(event, { key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...modifiers });
+		await act(async () => {
+			(target as { dispatchEvent: (event: Event) => boolean }).dispatchEvent(event);
+		});
+		await flush();
+		return event.defaultPrevented;
+	}
+
+	it("ends selection on Escape and marks the key handled, so the turn-abort handler skips it", async () => {
+		installMockOmp(LIST);
+		seedStores();
+		await mount(<Sidebar />);
+		await fire(container.querySelector("[data-sidebar-select]"), "onClick");
+		expect(document.body.querySelector("[data-sidebar-bulk]")).not.toBeNull();
+
+		expect(await press(document.body, "Escape")).toBe(true);
+		expect(document.body.querySelector("[data-sidebar-bulk]")).toBeNull();
+		// Out of selection mode, Escape is left for the rest of the window.
+		expect(await press(document.body, "Escape")).toBe(false);
+	});
+
+	it("selects every shown row on ⌘A and asks before deleting on ⌫, with focus in the sidebar", async () => {
+		const omp = installMockOmp(LIST);
+		seedStores();
+		await mount(<Sidebar />);
+		await fire(container.querySelector("[data-sidebar-select]"), "onClick");
+		const row = document.querySelector(".omp-sidebar-session-row");
+
+		expect(await press(row, "a", { metaKey: true })).toBe(true);
+		expect(document.body.querySelector("[data-sidebar-bulk]")?.textContent).toContain("2 selected");
+		await press(row, "Backspace");
+		expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain("Delete 2 selected sessions?");
+		expect(omp.sessions.delete).not.toHaveBeenCalled();
 	});
 });
 
