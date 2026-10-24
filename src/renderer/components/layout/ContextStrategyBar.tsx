@@ -272,7 +272,7 @@ export function ContextStrategyBar() {
 					/>
 				)}
 			</button>
-			<ContextUsagePopover />
+			<ContextUsagePopover autoCompactAt={autoCompaction ? threshold : null} />
 
 			{mounted &&
 				pos &&

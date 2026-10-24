@@ -7,7 +7,7 @@ import { useTabsStore } from "./tabs";
 
 export type { ThemeMode };
 
-export type PanelTab = "btw" | "diff" | "files" | "terminal" | "browser";
+export type PanelTab = "overview" | "btw" | "diff" | "files" | "terminal" | "browser";
 /** Edit → Find, Find Next and Find Previous, as the window routes them. */
 export type FindCommand = "find" | "next" | "previous";
 export interface FindRequest {
@@ -18,7 +18,7 @@ export interface FindRequest {
 /** Memory window tabs. */
 export type MemoryTabId = "knowledge" | "skills" | "sources";
 /** Drawer tabs that exist in a tool-free chat tab: no diffs, shells, or agent browsing without tools. */
-export const CHAT_PANEL_TABS: ReadonlySet<PanelTab> = new Set(["btw", "files"]);
+export const CHAT_PANEL_TABS: ReadonlySet<PanelTab> = new Set(["overview", "btw", "files"]);
 /** What the Changes view compares: the checkout, this session's edits, their timeline, or virtual artifacts. */
 export type DiffScope = "repository" | "current" | "timeline" | "artifacts";
 /** Center-dock card identifiers: todo/plan/agents render as live cards above the composer. */
@@ -278,7 +278,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	displayPreferences: {},
 	sidebarVisible: true,
 	panelVisible: false,
-	panelTab: "diff",
+	panelTab: "overview",
 	diffScope: "repository",
 	logsOpen: false,
 	filePreviewPath: null,
@@ -295,7 +295,9 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	thinkingExpanded: false,
 	transcriptDetail: "compact",
 	toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
-	togglePanel: () => set({ panelVisible: !get().panelVisible }),
+	// The bare toggle (title bar, shortcut) opens on Overview; links that open the
+	// drawer for a reason (Review, a file, /btw) go through setPanelTab instead.
+	togglePanel: () => set(get().panelVisible ? { panelVisible: false } : { panelVisible: true, panelTab: "overview" }),
 	toolsExpandAll: { expanded: false, seq: 0 },
 	toggleToolsExpandAll: () =>
 		set({ toolsExpandAll: { expanded: !get().toolsExpandAll.expanded, seq: get().toolsExpandAll.seq + 1 } }),

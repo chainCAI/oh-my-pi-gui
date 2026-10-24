@@ -66,14 +66,14 @@ const { ContextUsagePopover } = await import("./ContextUsagePopover");
 let container: HTMLElement;
 let root: Root;
 
-async function mount(): Promise<void> {
+async function mount(autoCompactAt: number | null = null): Promise<void> {
 	container = document.createElement("div") as unknown as HTMLElement;
 	document.body.appendChild(container as never);
 	root = createRoot(container as unknown as Element);
 	await act(async () => {
 		root.render(
 			<I18nProvider>
-				<ContextUsagePopover />
+				<ContextUsagePopover autoCompactAt={autoCompactAt} />
 			</I18nProvider>,
 		);
 	});
@@ -121,7 +121,7 @@ describe("ContextUsagePopover", () => {
 		expect(getContextReport).toHaveBeenCalledTimes(1);
 		const dialog = document.querySelector("#omp-context-usage-popover");
 		expect(dialog?.textContent).toContain("Context window");
-		expect(dialog?.textContent).toContain("Conversation messages~8.1k");
+		expect(dialog?.textContent).toContain("Messages~8.1k");
 		// Shares of a window that does not exist would be invented numbers.
 		expect(dialog?.textContent).not.toContain("%");
 		// A bar filled with the used tokens alone reads as "full", so the
@@ -130,13 +130,13 @@ describe("ContextUsagePopover", () => {
 		expect(dialog?.textContent).toContain("Context window unknown");
 	});
 
-	it("keeps context usage to one control and reveals the native three-category breakdown", async () => {
+	it("keeps context usage to one control and fills the window with categories, buffer and free space", async () => {
 		useSessionStore.setState({
 			contextUsage: { contextWindow: 1_000_000, percent: 16.19, tokens: 161_900 },
 			sessionId: "session-1",
 			status: "ready",
 		});
-		await mount();
+		await mount(850_000);
 
 		const trigger = container.querySelector("button") as unknown as HTMLButtonElement;
 		expect(trigger.getAttribute("aria-label")).toBe("Show context usage, 16% used");
@@ -152,11 +152,21 @@ describe("ContextUsagePopover", () => {
 		const dialog = document.querySelector("#omp-context-usage-popover");
 		expect(dialog?.textContent).toContain("Context used 16%");
 		expect(dialog?.textContent).toContain("~161.9k / 1.0M");
-		expect(dialog?.textContent).toContain("Context remaining838.1k");
-		expect(dialog?.textContent).toContain("System context~1.5k");
-		expect(dialog?.textContent).toContain("Tools~6.4k");
-		expect(dialog?.textContent).toContain("Conversation messages~154.0k");
-		expect(dialog?.querySelector('[role="progressbar"]')).not.toBeNull();
+		const rows = [...(dialog?.querySelectorAll("li") ?? [])].map(row => row.textContent);
+		// Each native category on its own row, then the stretch past the strategy
+		// bar's threshold and what is left: the shares add up to the whole window.
+		expect(rows).toEqual([
+			"Messages~154.0k15.4%",
+			"Tool schemas~6.4k0.6%",
+			"System prompt~1.0k0.1%",
+			"System context~200<0.1%",
+			"Skills~300<0.1%",
+			"Auto-compact buffer~150.0k15.0%",
+			"Free space~688.1k68.8%",
+		]);
+		expect(dialog?.querySelector('[role="progressbar"]')?.getAttribute("aria-valuetext")).toBe(
+			"161.9k Context used, 838.1k Context remaining",
+		);
 	});
 
 	it("renders nothing until the session reports context usage", async () => {

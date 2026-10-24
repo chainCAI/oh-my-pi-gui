@@ -189,8 +189,12 @@ export function isLossless(method: ExpectedMethod | null): boolean {
 
 /** Tokens at which maintenance starts, or `null` when the window is unknown. */
 export function compactionThreshold(config: CompactionConfig, profile: ModelProfile): number | null {
-	const window = profile.windowTokens;
-	if (window === null) return null;
+	return windowCompactionThreshold(config, profile.windowTokens);
+}
+
+/** {@link compactionThreshold} for a window known only by size, such as a context report's. */
+export function windowCompactionThreshold(config: CompactionConfig, window: number | null): number | null {
+	if (window === null || window <= 0) return null;
 	if (config.thresholdPercent > 0) return Math.floor((window * Math.min(config.thresholdPercent, 100)) / 100);
 	// Reserve-based default: the larger of 15% of the window and 16,384 tokens stays free.
 	return Math.max(0, window - Math.max(Math.floor(window * 0.15), 16_384));

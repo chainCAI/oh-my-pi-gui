@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CONTEXT_SETTING_PATH_LIST, type CompactionConfig, parseCompactionConfig } from "../lib/context-strategy";
+import {
+	CONTEXT_SETTING_PATH_LIST,
+	type CompactionConfig,
+	parseCompactionConfig,
+	windowCompactionThreshold,
+} from "../lib/context-strategy";
 import { useT } from "../lib/i18n";
 import { useTabRpc } from "../lib/tab-rpc";
 import { useSessionStore } from "../stores/session";
+import { useSettingsStore } from "../stores/settings";
 import { toast } from "../stores/toast";
 
 export interface CompactionConfigHandle {
@@ -72,4 +78,14 @@ export function useCompactionConfig(): CompactionConfigHandle {
 	);
 
 	return { config, saving, write };
+}
+
+/**
+ * Where auto-compaction fires in a window of `contextWindow` tokens — the
+ * threshold the strategy bar names — or null while it is off or unread.
+ */
+export function useAutoCompactAt(contextWindow: number): number | null {
+	const autoCompaction = useSettingsStore(state => state.autoCompaction);
+	const { config } = useCompactionConfig();
+	return autoCompaction && config ? windowCompactionThreshold(config, contextWindow) : null;
 }

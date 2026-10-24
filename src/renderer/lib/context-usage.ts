@@ -32,6 +32,50 @@ export function contextUsageView(
 	};
 }
 
+export type ContextSegmentKey =
+	| "messages"
+	| "systemTools"
+	| "systemPrompt"
+	| "systemContext"
+	| "skills"
+	| "autocompact"
+	| "free";
+
+export interface ContextSegment {
+	key: ContextSegmentKey;
+	tokens: number;
+}
+
+/**
+ * The report's categories, conversation first, then — with a
+ * known window — the auto-compact buffer and free space, so the segments fill
+ * the window exactly as `/context` in the terminal does. The buffer runs from
+ * `autoCompactAt` to the window edge but never past what is still unused;
+ * `autoCompactAt` is null when auto-compaction is off. Empty categories drop out.
+ */
+export function contextSegments(
+	breakdown: RpcContextUsageBreakdown,
+	view: Pick<ContextUsageView, "capacityKnown" | "contextWindow" | "usedTokens">,
+	autoCompactAt: number | null,
+): ContextSegment[] {
+	const segments: ContextSegment[] = [
+		{ key: "messages", tokens: breakdown.messagesTokens },
+		{ key: "systemTools", tokens: breakdown.systemToolsTokens },
+		{ key: "systemPrompt", tokens: breakdown.systemPromptTokens },
+		{ key: "systemContext", tokens: breakdown.systemContextTokens },
+		{ key: "skills", tokens: breakdown.skillsTokens },
+	];
+	if (view.capacityKnown) {
+		const unused = Math.max(0, view.contextWindow - view.usedTokens);
+		const buffer =
+			autoCompactAt !== null && autoCompactAt > 0 && autoCompactAt <= view.contextWindow
+				? Math.min(view.contextWindow - autoCompactAt, unused)
+				: 0;
+		segments.push({ key: "autocompact", tokens: buffer }, { key: "free", tokens: unused - buffer });
+	}
+	return segments.filter(segment => segment.tokens > 0);
+}
+
 /** `161.9k/1.0M`, or the bare reading when there is no capacity to compare against. */
 export function formatContextUsage(view: ContextUsageView): string {
 	return view.capacityKnown

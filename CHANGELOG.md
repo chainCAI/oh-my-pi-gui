@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Overview tab in the right drawer**: opening the drawer now lands on an overview of the session. It shows how full the context is, the folder, branch and model, uncommitted files, what is running (the agent, subagents, side questions, todo progress), and the state of each MCP server, with links to the full views. Chat tabs show only context, workspace and running work.
+- **Context breakdown by category**: `/context` and the usage popover beside Send now show one stacked bar and a row per category (messages, tool schemas, system prompt, system context, skills) with tokens and share of the window, plus the auto-compact buffer and free space, matching the compaction threshold the strategy bar shows.
 - **Side questions in the right drawer**: a Side questions tab lists this session's `/btw` topics and shows each full thread, where you can follow up, stop, copy, or branch an answer into the main conversation. `/btw` on its own opens the tab, and closing the `/btw` window no longer stops the answer: it keeps streaming in the drawer. — thanks [@Sakura1618](https://github.com/Sakura1618) ([#21](https://github.com/nornzach/oh-my-pi-gui/pull/21))
 
 ## [0.9.26] - 2026-10-24

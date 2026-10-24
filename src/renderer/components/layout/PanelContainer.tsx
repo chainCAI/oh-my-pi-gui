@@ -1,4 +1,4 @@
-import { Diff, FolderTree, Globe, MessageCircleQuestion, SquareTerminal, X } from "lucide-react";
+import { Diff, FolderTree, Globe, LayoutDashboard, MessageCircleQuestion, SquareTerminal, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveTabRouteReady } from "../../hooks/use-active-tab-route";
@@ -11,6 +11,7 @@ import { BrowserPanel } from "../panels/BrowserPanel";
 import { BtwPanel } from "../panels/BtwPanel";
 import { DiffPanel } from "../panels/DiffPanel";
 import { FilesPanel } from "../panels/FilesPanel";
+import { OverviewPanel } from "../panels/OverviewPanel";
 import { TerminalPanel } from "../panels/TerminalPanel";
 
 const MIN_WIDTH = 360;
@@ -30,6 +31,7 @@ function defaultPanelWidth(): number {
 }
 
 const TABS: { id: PanelTab; labelKey: string; icon: typeof Diff }[] = [
+	{ id: "overview", labelKey: "panel.tabs.overview", icon: LayoutDashboard },
 	{ id: "btw", labelKey: "panel.tabs.btw", icon: MessageCircleQuestion },
 	{ id: "diff", labelKey: "panel.tabs.diff", icon: Diff },
 	{ id: "files", labelKey: "panel.tabs.files", icon: FolderTree },
@@ -38,9 +40,9 @@ const TABS: { id: PanelTab; labelKey: string; icon: typeof Diff }[] = [
 ];
 
 /**
- * Review drawer: what the agent changed and the files it touched. Hidden by
- * default and opened from where the question arises — the title bar's change
- * count, a run's "Review" link in the transcript, a file link. Live execution
+ * Review drawer: an overview of the session, what the agent changed and the
+ * files it touched. Hidden by default; the bare toggle opens it on Overview,
+ * while the transcript's "Review" link, a file link or /btw open their own tab. Live execution
  * state (todos, plan, subagents, queue) renders in the center dock above the
  * composer, and application logs live in their own dialog.
  */
@@ -187,6 +189,7 @@ export function PanelContainer() {
 			</div>
 			<div className="min-h-0 flex-1 overflow-hidden">
 				<PanelErrorBoundary key={`${activeTabId ?? "no-tab"}:${visiblePanelTab}`}>
+					{visiblePanelTab === "overview" && <OverviewPanel />}
 					{visiblePanelTab === "btw" && <BtwPanel />}
 					{visiblePanelTab === "diff" && <DiffPanel />}
 					{visiblePanelTab === "files" && <FilesPanel />}

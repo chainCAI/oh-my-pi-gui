@@ -3,18 +3,23 @@ import type { RpcGitChanges } from "../../shared/rpc-types";
 import { useTabRpc } from "../lib/tab-rpc";
 import { useSessionStore } from "../stores/session";
 
+/** Number of changed files in the checkout, or null when unknown (see {@link useWorkingTreeChanges}). */
+export function useWorkingTreeChangeCount(enabled: boolean): number | null {
+	return useWorkingTreeChanges(enabled)?.files.length ?? null;
+}
+
 /**
- * Number of changed files in the session's checkout, or null when unknown
+ * Changed files in the session's checkout, or null when unknown
  * (not a repository, not ready, or the read failed). Read when the session
  * becomes ready, whenever a run settles, and when the window regains focus —
  * never mid-run, where the serial command queue belongs to the agent.
  */
-export function useWorkingTreeChangeCount(enabled: boolean): number | null {
+export function useWorkingTreeChanges(enabled: boolean): RpcGitChanges | null {
 	const rpc = useTabRpc();
 	const ready = useSessionStore(state => state.status) === "ready";
 	const isStreaming = useSessionStore(state => state.isStreaming);
 	const sessionId = useSessionStore(state => state.sessionId);
-	const [count, setCount] = useState<number | null>(null);
+	const [changes, setChanges] = useState<RpcGitChanges | null>(null);
 	const [focusPulse, setFocusPulse] = useState(0);
 
 	useEffect(() => {
@@ -26,7 +31,7 @@ export function useWorkingTreeChangeCount(enabled: boolean): number | null {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: session switches and focus pulses re-read the checkout.
 	useEffect(() => {
 		if (!enabled || !ready) {
-			setCount(null);
+			setChanges(null);
 			return;
 		}
 		if (isStreaming) return;
@@ -36,15 +41,15 @@ export function useWorkingTreeChangeCount(enabled: boolean): number | null {
 			.then(response => {
 				if (!active) return;
 				const data = response.success ? (response.data as RpcGitChanges) : null;
-				setCount(data?.isRepo ? data.files.length : null);
+				setChanges(data?.isRepo ? data : null);
 			})
 			.catch(() => {
-				if (active) setCount(null);
+				if (active) setChanges(null);
 			});
 		return () => {
 			active = false;
 		};
 	}, [enabled, ready, isStreaming, rpc, sessionId, focusPulse]);
 
-	return count;
+	return changes;
 }

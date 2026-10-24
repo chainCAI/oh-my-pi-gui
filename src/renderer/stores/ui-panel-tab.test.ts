@@ -64,3 +64,20 @@ describe("openChanges", () => {
 		expect(useUiStore.getState()).toMatchObject({ panelVisible: false, panelTab: "files", diffScope: "repository" });
 	});
 });
+
+describe("togglePanel", () => {
+	// The bare toggle answers "what is going on here?", whatever tab was last open;
+	// closing must not disturb the tab a link set.
+	it("opens on Overview, in an agent or a chat tab, and closes without changing the tab", () => {
+		for (const kind of ["agent", "chat"] as const) {
+			seedActiveTab(kind);
+			useUiStore.setState({ panelTab: "files", panelVisible: false });
+			useUiStore.getState().togglePanel();
+			expect(useUiStore.getState()).toMatchObject({ panelVisible: true, panelTab: "overview" });
+
+			useUiStore.setState({ panelTab: "files" });
+			useUiStore.getState().togglePanel();
+			expect(useUiStore.getState()).toMatchObject({ panelVisible: false, panelTab: "files" });
+		}
+	});
+});
