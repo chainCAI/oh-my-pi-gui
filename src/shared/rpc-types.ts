@@ -805,6 +805,21 @@ export function getBtwLatestTurn(record: BtwHistoryRecord): BtwHistoryTurn {
 	return record.followUps?.at(-1) ?? record;
 }
 
+/** Every turn of a side conversation: the root turn first, then follow-ups. */
+export function getBtwTurns(record: BtwHistoryRecord): readonly BtwHistoryTurn[] {
+	return [record, ...(record.followUps ?? [])];
+}
+
+/** Copy the most recent nonblank answer, preserving its original whitespace. */
+export function getBtwCopyText(record: BtwHistoryRecord): string | undefined {
+	const followUps = record.followUps ?? [];
+	for (let index = followUps.length - 1; index >= 0; index--) {
+		const answer = followUps[index]!.answer;
+		if (answer.trim()) return answer;
+	}
+	return record.answer.trim() ? record.answer : undefined;
+}
+
 /** One stored credential selectable for /logout (upstream `logout-account-selector`). */
 export interface LogoutAccount {
 	credentialId: number;

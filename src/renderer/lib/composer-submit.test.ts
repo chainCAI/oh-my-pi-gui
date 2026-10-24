@@ -139,6 +139,24 @@ describe("planComposerSubmit", () => {
 		expect(omp.rpc.prompt).not.toHaveBeenCalled();
 	});
 
+	it("opens the side-questions drawer for a bare /btw", () => {
+		const omp = installMockOmp();
+		useUiStore.setState({ panelTab: "diff", panelVisible: false });
+		const submit = planComposerSubmit({
+			message: "/btw",
+			images: [],
+			isStreaming: false,
+			mode: "prompt",
+			commands: [{ ...guiOnly("btw"), textModeExecutable: true }],
+		});
+
+		expect(submit.kind).toBe("handled");
+		expect(useUiStore.getState().panelTab).toBe("btw");
+		expect(useUiStore.getState().panelVisible).toBe(true);
+		expect(useUiStore.getState().btwRequest).toBeNull();
+		expect(omp.rpc.prompt).not.toHaveBeenCalled();
+	});
+
 	it("routes typed /compact through its long-running RPC instead of the 8s prompt path", async () => {
 		const omp = installMockOmp();
 		const submit = planComposerSubmit({

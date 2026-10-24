@@ -10,6 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BtwHistoryRecord, RpcBtwFrame, RpcCommand, RpcResponse } from "../../../shared/rpc-types";
 import { I18nProvider, translate } from "../../lib/i18n";
+import { useBtwStore } from "../../stores/btw";
 import { useUiStore } from "../../stores/ui";
 import { BtwDialog } from "./BtwDialog";
 
@@ -41,25 +42,14 @@ function record(overrides: Partial<BtwHistoryRecord> = {}): BtwHistoryRecord {
 	};
 }
 
-let emitFrame: (frame: RpcBtwFrame) => void = () => {};
 const command = vi.fn(async (cmd: RpcCommand): Promise<RpcResponse> => {
 	if (cmd.type === "btw") return { type: "response", command: "btw", success: true, data: { record: record() } };
+	if (cmd.type === "get_btw_history")
+		return { type: "response", command: "get_btw_history", success: true, data: { records: [] } };
 	return { type: "response", command: cmd.type, success: true };
 });
 
-Object.assign(window as unknown as Record<string, unknown>, {
-	omp: {
-		rpc: { command },
-		events: {
-			onBtwFrame: (callback: (frame: RpcBtwFrame) => void) => {
-				emitFrame = callback;
-				return () => {
-					emitFrame = () => {};
-				};
-			},
-		},
-	},
-});
+Object.assign(window as unknown as Record<string, unknown>, { omp: { rpc: { command } } });
 
 let container: InstanceType<typeof HTMLElement> | null = null;
 let root: Root | null = null;
@@ -85,7 +75,7 @@ function button(label: string): HTMLButtonElement | undefined {
 
 async function frame(next: RpcBtwFrame): Promise<void> {
 	await act(async () => {
-		emitFrame(next);
+		useBtwStore.getState().applyFrame(next);
 	});
 }
 
@@ -101,6 +91,8 @@ afterEach(async () => {
 	container = null;
 	root = null;
 	useUiStore.getState().closeBtw();
+	useUiStore.setState({ panelTab: "diff", panelVisible: false });
+	useBtwStore.getState().reset();
 });
 
 describe("BtwDialog", () => {
@@ -134,7 +126,7 @@ describe("BtwDialog", () => {
 		expect(document.body.textContent).not.toContain("leak");
 	});
 
-	it("cancels a still-streaming answer when the dialog closes", async () => {
+	it("keeps a still-streaming answer running when the dialog closes", async () => {
 		useUiStore.getState().openBtw("why?");
 		await mount();
 		await act(async () => {
@@ -143,7 +135,10 @@ describe("BtwDialog", () => {
 		await act(async () => {
 			useUiStore.getState().closeBtw();
 		});
-		expect(command.mock.calls.map(([cmd]) => cmd)).toContainEqual({ type: "btw_cancel", recordId: "topic-1" });
+		expect(command.mock.calls.map(([cmd]) => cmd)).not.toContainEqual({
+			type: "btw_cancel",
+			recordId: "topic-1",
+		});
 	});
 
 	it("does not cancel after the answer settled", async () => {
@@ -157,6 +152,29 @@ describe("BtwDialog", () => {
 			useUiStore.getState().closeBtw();
 		});
 		expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: "btw_cancel" }));
+	});
+
+	it("moves a running answer into the side-questions drawer when the dialog closes", async () => {
+		useUiStore.getState().openBtw("why?");
+		await mount();
+		await act(async () => {
+			button(translate("btw.ask"))?.click();
+		});
+
+		const closeButton = [...document.querySelectorAll("button")].find(
+			node => node.getAttribute("aria-label") === translate("common.close"),
+		);
+		await act(async () => {
+			closeButton?.click();
+		});
+
+		expect(useUiStore.getState().btwRequest).toBeNull();
+		expect(useUiStore.getState().panelTab).toBe("btw");
+		expect(useUiStore.getState().panelVisible).toBe(true);
+		expect(command.mock.calls.map(([cmd]) => cmd)).not.toContainEqual({
+			type: "btw_cancel",
+			recordId: "topic-1",
+		});
 	});
 
 	it("shows the failure instead of a thinking spinner when a turn ends with no text", async () => {

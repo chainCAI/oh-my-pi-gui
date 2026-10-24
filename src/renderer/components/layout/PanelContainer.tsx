@@ -1,4 +1,4 @@
-import { Diff, FolderTree, Globe, SquareTerminal, X } from "lucide-react";
+import { Diff, FolderTree, Globe, MessageCircleQuestion, SquareTerminal, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveTabRouteReady } from "../../hooks/use-active-tab-route";
@@ -8,6 +8,7 @@ import { useActiveTabKind, useTabsStore } from "../../stores/tabs";
 import { CHAT_PANEL_TABS, type PanelTab, useUiStore } from "../../stores/ui";
 import { PanelErrorBoundary } from "../common";
 import { BrowserPanel } from "../panels/BrowserPanel";
+import { BtwPanel } from "../panels/BtwPanel";
 import { DiffPanel } from "../panels/DiffPanel";
 import { FilesPanel } from "../panels/FilesPanel";
 import { TerminalPanel } from "../panels/TerminalPanel";
@@ -29,6 +30,7 @@ function defaultPanelWidth(): number {
 }
 
 const TABS: { id: PanelTab; labelKey: string; icon: typeof Diff }[] = [
+	{ id: "btw", labelKey: "panel.tabs.btw", icon: MessageCircleQuestion },
 	{ id: "diff", labelKey: "panel.tabs.diff", icon: Diff },
 	{ id: "files", labelKey: "panel.tabs.files", icon: FolderTree },
 	{ id: "terminal", labelKey: "panel.tabs.terminal", icon: SquareTerminal },
@@ -185,6 +187,7 @@ export function PanelContainer() {
 			</div>
 			<div className="min-h-0 flex-1 overflow-hidden">
 				<PanelErrorBoundary key={`${activeTabId ?? "no-tab"}:${visiblePanelTab}`}>
+					{visiblePanelTab === "btw" && <BtwPanel />}
 					{visiblePanelTab === "diff" && <DiffPanel />}
 					{visiblePanelTab === "files" && <FilesPanel />}
 					{visiblePanelTab === "terminal" && <TerminalPanel />}

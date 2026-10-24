@@ -1607,7 +1607,7 @@ export function buildCommandMenu(ctx: CommandRegistryContext): CommandMenuItem[]
 			run: question => {
 				const trimmed = question?.trim();
 				if (!trimmed) {
-					toast({ variant: "info", message: translate("btw.usage") });
+					useUiStore.getState().setPanelTab("btw");
 					return;
 				}
 				useUiStore.getState().openBtw(trimmed);

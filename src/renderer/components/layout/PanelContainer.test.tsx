@@ -107,13 +107,14 @@ function FileLinkHarness({ content = "[report](docs/report.md)" }: { content?: s
 }
 
 describe("PanelContainer chat tab filter", () => {
-	it("renders only the files tab in a chat tab", async () => {
+	it("renders the side questions and files tabs in a chat tab", async () => {
 		seedActiveTab("chat");
 		useUiStore.setState({ panelTab: "files", panelVisible: true });
 		await mount(<PanelContainer />);
 
 		const labels = drawerTabLabels();
 		expect(labels).toContain("Files");
+		expect(labels).toContain("Side questions");
 		// Diff, shells, and agent browsing need tools; todo/plan/agents/queue live in the center dock now.
 		for (const agentOnly of ["Changes", "Terminal", "Browser"]) {
 			expect(labels).not.toContain(agentOnly);
@@ -134,7 +135,7 @@ describe("PanelContainer chat tab filter", () => {
 		await mount(<PanelContainer />);
 
 		const labels = drawerTabLabels();
-		for (const visible of ["Changes", "Files", "Terminal", "Browser"]) {
+		for (const visible of ["Side questions", "Changes", "Files", "Terminal", "Browser"]) {
 			expect(labels).toContain(visible);
 		}
 		// Live-execution tabs moved to the center dock, logs to their own dialog.
