@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.9.26] - 2026-10-24
+
+### Fixed
+
+- **A manual `/compact` or handoff no longer makes the agent look unavailable**: slow commands (compaction, handoff, a compacting plan approval, sign-in, MCP and plugin actions) no longer hold every later command in a queue, so state reads, transcript loads and Stop keep answering while they run. Moving to another point in the conversation is refused until a compaction or handoff finishes, instead of moving the session under it ([#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)).
+- **An auto-retried run keeps your prompt**: the prompt and the failed attempt no longer vanish from the transcript after a retry, and the "retrying" row clears as soon as the retried run starts.
+- **Add row works for number maps** such as `task.agentSoftRequestBudget`: the new row stays a draft until it has a key and a value instead of saving an empty value the setting rejects ([#20](https://github.com/nornzach/oh-my-pi-gui/issues/20)).
+- A reply you stopped reads "Stopped" with Retry instead of a red "Request failed" card.
+- Failed and interrupted tool steps are colored in the transcript and named for screen readers.
+- Checklist items no longer show a bullet next to their checkbox; unlabeled code blocks no longer claim "plaintext" or show an empty header.
+
+### Changed
+
+- **Slow operations show their progress**: compaction, handoff, provider sign-in and a summarizing branch switch show an animated status with the elapsed time, a hint when the wait runs long, and Stop where it can be cancelled. A manual compaction or handoff gets a card in the chat with a progress track, and the title bar reads "Working" while it runs.
+- **Opening a tab shows a proper loading screen** instead of a small spinner at the top of a blank page: an animated mark, what is happening, the elapsed time, and placeholder rows shaped like the conversation.
+- Your message's time, copy, edit and fork buttons sit under the bubble and appear when you hover the message.
+- Bundled agent built from monorepo `fbde92e4`: upstream main past v18.12.6 (no new upstream commits since 0.9.25) plus the fork's RPC queue fix above.
+
 ## [0.9.25] - 2026-10-23
 
 ### Fixed

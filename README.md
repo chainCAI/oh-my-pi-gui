@@ -24,8 +24,8 @@ Keep the conversation, code changes, and agent activity in one place. Review a d
 
 Built on [omp](https://github.com/can1357/oh-my-pi), this Electron desktop app bundles its own agent: **users of the DMG, NSIS, and portable packages do not need to install omp, Bun, or Node separately.** It complements the TUI and shares the usual `~/.omp` configuration and sessions.
 
-[Features](#en-features) · [What's new in 0.9.25](#en-recent) · [Gallery](#en-gallery) · [Install](#en-install) · [Shortcuts](#en-shortcuts) · [Development](#en-development) · [Help](#en-help) · [Releasing](#en-release)
-> **v0.9.25 release.** The improvements below are included in v0.9.25, with the bundled agent rebuilt from upstream main past v18.12.6 (monorepo `290010dc`). The gallery screenshots may show earlier GUI surfaces; [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) is authoritative for available downloads and release contents.
+[Features](#en-features) · [What's new in 0.9.26](#en-recent) · [Gallery](#en-gallery) · [Install](#en-install) · [Shortcuts](#en-shortcuts) · [Development](#en-development) · [Help](#en-help) · [Releasing](#en-release)
+> **v0.9.26 release.** The improvements below are included in v0.9.26, with the bundled agent built from monorepo `fbde92e4` (upstream main past v18.12.6 plus the fork's RPC queue fix). The gallery screenshots may show earlier GUI surfaces; [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) is authoritative for available downloads and release contents.
 
 <img src="docs/screenshots/en/01-conversation.png" alt="English omp GUI conversation in the synthetic aurora-web project" width="100%">
 
@@ -62,16 +62,17 @@ The distinctive part is not just a chat window: it is being able to **separate p
 Model requests still go to the providers you configure. The bundled agent removes the separate runtime install, not the need to configure credentials, project dependencies, external Git/OpenSSH/MCP tools, or optional services. Only connect tools and services you trust.
 
 <a id="en-recent"></a>
-### What's new in 0.9.25
+### What's new in 0.9.26
 
-v0.9.25 keeps the app responsive when many agents stream at once and fixes background tabs that looked stuck after switching back:
+v0.9.26 keeps the agent answering during long operations and makes slow work visible instead of looking frozen:
 
 | In daily use | What has improved |
 |---|---|
-| **No freeze under parallel agents** | The app asks the agent for incremental streaming updates instead of the whole reply so far on every token, and subagents report progress rather than every token. Several long streams no longer flood the app until commands time out ([#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)). |
-| **Background tabs come back right** | A tab you return to resets its "waiting for the model" timer instead of showing thousands of seconds, and a run that finished in the background settles within about 15 seconds. |
-| **Streaming tool cards** | While a tool call's arguments stream in, its card reads "tool call" until the agent names the tool. |
-| **Bundled agent** | Rebuilt from upstream main past v18.12.6 (monorepo `290010dc`): `/resume` cancels the old session's background jobs, `/memory clear` stays within its project, `grep` says when it trims matches, web `read` retries on 403/429, and LSP renames no longer corrupt files edited outside omp. |
+| **No "agent unavailable" during `/compact`** | A manual compaction, handoff, sign-in or plugin action no longer holds every later command in a queue, so the app keeps reading state and Stop still works while it runs ([#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)). |
+| **Slow work shows its progress** | Compaction, handoff, sign-in and summarizing branch switches show an animated status, the elapsed time, a hint when the wait runs long, and Stop where it can be cancelled. Compaction gets a card in the chat with a progress track. |
+| **A real loading screen** | Opening a tab shows an animated mark, what is happening, the elapsed time and placeholder rows instead of a small spinner on a blank page. |
+| **Cleaner transcript** | Stopped replies read "Stopped" with Retry instead of an error card, failed steps are colored, retried runs keep your prompt, checklists lose their extra bullet, and your message's actions sit under the bubble. |
+| **Bundled agent** | Built from monorepo `fbde92e4`: upstream main past v18.12.6 (no new upstream commits since 0.9.25) plus the fork's fix that keeps slow RPC commands from holding the command queue. |
 <a id="en-gallery"></a>
 ### Explore the interface
 
@@ -144,22 +145,22 @@ Search with `⌘K`. Supported commands lead to native controls; pass-through and
 <a id="en-install"></a>
 ### Install & start
 
-**Documented install baseline: [v0.9.25](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.25).** Check [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) for authoritative current downloads and release notes.
+**Documented install baseline: [v0.9.26](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.26).** Check [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) for authoritative current downloads and release notes.
 
-| Mac | v0.9.25 download |
+| Mac | v0.9.26 download |
 |---|---|
-| Apple Silicon | [omp-0.9.25-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-arm64.dmg) |
-| Intel | [omp-0.9.25.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.dmg) |
+| Apple Silicon | [omp-0.9.26-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-arm64.dmg) |
+| Intel | [omp-0.9.26.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26.dmg) |
 
-| Windows x64 | v0.9.25 download |
+| Windows x64 | v0.9.26 download |
 |---|---|
-| Installer | [omp-0.9.25-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-setup.exe) |
-| Portable | [omp-0.9.25-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-portable.exe) |
+| Installer | [omp-0.9.26-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-setup.exe) |
+| Portable | [omp-0.9.26-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-portable.exe) |
 
-| Linux x64 | v0.9.25 download |
+| Linux x64 | v0.9.26 download |
 |---|---|
-| AppImage | [omp-0.9.25.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.AppImage) |
-| Debian/Ubuntu | [omp_0.9.25_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp_0.9.25_amd64.deb) |
+| AppImage | [omp-0.9.26.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26.AppImage) |
+| Debian/Ubuntu | [omp_0.9.26_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp_0.9.26_amd64.deb) |
 
 Open the DMG and drag **omp** into **Applications**. The app and bundled macOS sidecar are ad-hoc signed but not notarized. If macOS blocks the first launch, use **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**, after confirming the download's source.
 
@@ -285,7 +286,7 @@ The capture script renders the actual Electron GUI using a fresh temporary HOME,
 |---|---|
 | macOS blocks the first launch | Confirm the download came from the release page, then right-click → Open or use Privacy & Security → Open Anyway. The app and bundled sidecar are ad-hoc signed, not notarized. |
 | Windows SmartScreen blocks the first launch | Confirm the download came from the release page, then choose More info → Run anyway. The Windows package is currently unsigned. |
-| A screenshot shows something absent from the installed app | The showcase accompanies v0.9.25, but screenshots may show earlier GUI surfaces. Check the installed version and its release notes; earlier releases may not include these improvements. |
+| A screenshot shows something absent from the installed app | The showcase accompanies v0.9.26, but screenshots may show earlier GUI surfaces. Check the installed version and its release notes; earlier releases may not include these improvements. |
 | `Built-in omp not found` | In a source checkout, build the sidecar or supply a compatible prebuilt one. In an installed app, reinstall the correct official DMG; a separate system `omp` will not fix a missing bundle resource. |
 | `build:omp` cannot find the monorepo | Put the GUI checkout at the monorepo's `packages/gui/`, alongside `packages/coding-agent/` and `packages/natives/`. |
 | `replacing stale addon … version sentinel ≠ …` | Informational: the builder detected and replaced a mismatched native addon. |
@@ -313,9 +314,9 @@ Releases belong only to [`nornzach/oh-my-pi-gui`](https://github.com/nornzach/oh
 
 这是基于 [omp](https://github.com/can1357/oh-my-pi) 的 Electron 桌面应用，内置 Agent 二进制：**通过 DMG、NSIS 或便携版安装的用户无需另装 omp、Bun 或 Node。** GUI 与 TUI 互补，共享常规的 `~/.omp` 配置与会话。
 
-[功能全览](#zh-features) · [0.9.25 更新内容](#zh-recent) · [界面导览](#zh-gallery) · [安装](#zh-install) · [快捷键](#zh-shortcuts) · [开发](#zh-development) · [常见问题](#zh-help) · [发布](#zh-release)
+[功能全览](#zh-features) · [0.9.26 更新内容](#zh-recent) · [界面导览](#zh-gallery) · [安装](#zh-install) · [快捷键](#zh-shortcuts) · [开发](#zh-development) · [常见问题](#zh-help) · [发布](#zh-release)
 
-> **v0.9.25 功能展示。** 下文改进均纳入 v0.9.25，内置 Agent 基于上游 main 重建（v18.12.6 之后，monorepo `290010dc`）。截图可能展示较早的 GUI 界面；可用下载及实际发布内容以 [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
+> **v0.9.26 功能展示。** 下文改进均纳入 v0.9.26，内置 Agent 基于 monorepo `fbde92e4` 构建（上游 main v18.12.6 之后，外加 fork 的 RPC 队列修复）。截图可能展示较早的 GUI 界面；可用下载及实际发布内容以 [GitHub Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
 
 <img src="docs/screenshots/zh/01-conversation.png" alt="中文 omp GUI 中的合成 aurora-web 项目对话" width="100%">
 
@@ -352,16 +353,17 @@ Releases belong only to [`nornzach/oh-my-pi-gui`](https://github.com/nornzach/oh
 模型请求仍会发送到你配置的 Provider。内置 Agent 省去了单独安装运行时的步骤，但不替你配置凭据、项目依赖、外部 Git/OpenSSH/MCP 工具或可选服务。请只连接你信任的工具与服务。
 
 <a id="zh-recent"></a>
-### 0.9.25 更新内容
+### 0.9.26 更新内容
 
-v0.9.25 让多个 agent 同时流式输出时应用保持响应，并修复了切回后台标签页后看似卡死的问题：
+v0.9.26 让 agent 在长时间操作期间保持响应，并让慢操作显示进度，不再像卡死：
 
 | 日常场景 | 改进内容 |
 |---|---|
-| **多 agent 并行不再卡死** | 应用改为向 agent 请求增量流式更新，不再每个 token 都收到整段回复；子代理只上报进度而非逐 token 转发。多条长输出同时进行时，不会再把应用淹没到命令超时（[#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)）。 |
-| **后台标签页切回即恢复** | 切回的标签页会重置「等待模型」计时，不再显示几千秒；在后台已结束的运行约 15 秒内自动归位，不再一直显示为运行中。 |
-| **流式工具卡片** | 工具调用参数流式输出期间，卡片显示「工具调用」，直到 agent 给出工具名。 |
-| **内置代理** | 基于上游 main 重建（v18.12.6 之后，monorepo `290010dc`）：`/resume` 会取消旧会话的后台任务，`/memory clear` 只清当前项目，`grep` 截断结果时会明确说明，网页 `read` 遇 403/429 会换 UA 重试，LSP 重命名不再损坏在 omp 外编辑过的文件。 |
+| **`/compact` 期间不再显示 agent 不可用** | 手动压缩、交接、登录或插件操作不再让后续命令全部排队，运行期间应用仍能读取状态，停止按钮照常生效（[#19](https://github.com/nornzach/oh-my-pi-gui/issues/19)）。 |
+| **慢操作显示进度** | 压缩、交接、登录和带摘要的分支切换会显示动画状态、已用时间、等待过久时的提示，可取消时提供停止按钮；压缩在对话中显示带进度条的卡片。 |
+| **真正的加载界面** | 打开标签页时显示动画标记、当前进度、已用时间和占位行，不再是空白页顶部的一个小转圈。 |
+| **更整洁的对话** | 手动停止的回复显示「已停止」和重试，不再是报错卡片；失败步骤有颜色标示；自动重试后保留你的提问；任务清单不再多一个圆点；你消息的操作按钮移到气泡下方。 |
+| **内置代理** | 基于 monorepo `fbde92e4` 构建：上游 main（v18.12.6 之后，自 0.9.25 起上游无新提交），外加 fork 中让慢 RPC 命令不再阻塞命令队列的修复。 |
 <a id="zh-gallery"></a>
 ### 界面导览
 
@@ -434,22 +436,22 @@ v0.9.25 让多个 agent 同时流式输出时应用保持响应，并修复了�
 <a id="zh-install"></a>
 ### 安装与开始使用
 
-**本文安装基线：[v0.9.25](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.25)。** 最新可下载版本与发布说明以 [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
+**本文安装基线：[v0.9.26](https://github.com/nornzach/oh-my-pi-gui/releases/tag/v0.9.26)。** 最新可下载版本与发布说明以 [Releases](https://github.com/nornzach/oh-my-pi-gui/releases) 为准。
 
-| Mac | v0.9.25 下载 |
+| Mac | v0.9.26 下载 |
 |---|---|
-| Apple Silicon | [omp-0.9.25-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-arm64.dmg) |
-| Intel | [omp-0.9.25.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.dmg) |
+| Apple Silicon | [omp-0.9.26-arm64.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-arm64.dmg) |
+| Intel | [omp-0.9.26.dmg](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26.dmg) |
 
-| Windows x64 | v0.9.25 下载 |
+| Windows x64 | v0.9.26 下载 |
 |---|---|
-| 安装程序 | [omp-0.9.25-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-setup.exe) |
-| 便携版 | [omp-0.9.25-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-portable.exe) |
+| 安装程序 | [omp-0.9.26-setup.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-setup.exe) |
+| 便携版 | [omp-0.9.26-portable.exe](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26-portable.exe) |
 
-| Linux x64 | v0.9.25 下载 |
+| Linux x64 | v0.9.26 下载 |
 |---|---|
-| AppImage | [omp-0.9.25.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.AppImage) |
-| Debian/Ubuntu | [omp_0.9.25_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp_0.9.25_amd64.deb) |
+| AppImage | [omp-0.9.26.AppImage](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp-0.9.26.AppImage) |
+| Debian/Ubuntu | [omp_0.9.26_amd64.deb](https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.26/omp_0.9.26_amd64.deb) |
 
 打开 DMG，把 **omp** 拖入**应用程序**。应用与内置 macOS sidecar 均采用 ad-hoc 签名，未经公证。如果 macOS 拦截首次启动，请先确认下载来源，再使用**右键 → 打开**，或**系统设置 → 隐私与安全性 → 仍要打开**。
 
@@ -572,7 +574,7 @@ bun scripts/capture-showcase.ts
 |---|---|
 | macOS 拦截首次启动 | 确认来自发布页后，右键 → 打开，或通过隐私与安全性 → 仍要打开。应用与内置 sidecar 均为 ad-hoc 签名，未经公证。 |
 | Windows SmartScreen 拦截首次启动 | 确认来自发布页后，点击更多信息 → 仍要运行。Windows 包当前未签名。 |
-| 截图中的功能在已安装应用中不存在 | 本展示对应 v0.9.25，但截图可能展示较早的 GUI 界面；请检查已安装版本及其发布说明，较早版本可能不包含这些改进。 |
+| 截图中的功能在已安装应用中不存在 | 本展示对应 v0.9.26，但截图可能展示较早的 GUI 界面；请检查已安装版本及其发布说明，较早版本可能不包含这些改进。 |
 | `Built-in omp not found` | 源码检出中需构建或放入兼容 sidecar；已安装应用请重新安装正确的官方 DMG。另装系统 `omp` 无法补齐包内资源。 |
 | `build:omp` 找不到 monorepo | 将 GUI 放在 monorepo 的 `packages/gui/`，与 `packages/coding-agent/`、`packages/natives/` 同级。 |
 | `replacing stale addon … version sentinel ≠ …` | 提示信息：构建器发现并替换了版本不匹配的原生插件。 |
