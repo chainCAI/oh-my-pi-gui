@@ -116,10 +116,7 @@ export function ToolCard({ toolCallId, toolName, args, runningIndicator = "spinn
 						<span className="h-1.5 w-1.5 rounded-full bg-[var(--omp-accent)]" />
 					</span>
 				) : status === "aborted" ? (
-					<span className="omp-tool-status-icon flex shrink-0 items-center">
-						<Ban size={12} className="text-[var(--omp-warning)]" />
-						<span className="sr-only">{t("tools.status.interrupted")}</span>
-					</span>
+					<Ban size={12} className="omp-tool-status-icon shrink-0 text-[var(--omp-warning)]" />
 				) : isError ? (
 					<X size={12} className="omp-tool-status-icon shrink-0 text-[var(--omp-error)]" />
 				) : (
@@ -128,6 +125,12 @@ export function ToolCard({ toolCallId, toolName, args, runningIndicator = "spinn
 				<span className="omp-tool-name shrink-0 font-mono text-omp-md font-semibold tracking-tight text-[var(--omp-text)]">
 					{toolName || t("tools.generic.unnamed")}
 				</span>
+				{/* Outside the icon, which the transcript's quiet style hides. */}
+				{(status === "aborted" || isError) && (
+					<span className="sr-only">
+						{t(status === "aborted" ? "tools.status.interrupted" : "tools.status.failed")}
+					</span>
+				)}
 				{summary && (
 					<span className="omp-tool-summary min-w-0 flex-1 truncate font-mono text-omp-sm text-[var(--omp-tool-output)]">
 						{summary}

@@ -60,4 +60,15 @@ describe("task-list checkboxes", () => {
 		expect(html).toContain('type="checkbox"');
 		expect(html).toContain("disabled");
 	});
+
+	it("gives a checkbox item no bullet while a plain item keeps one", () => {
+		const html = render('- [x] done\n- plain\n\n<ul><li class="fixed inset-0">raw</li></ul>');
+		const items = html.match(/<li[^>]*>/g) ?? [];
+		expect(items).toHaveLength(3);
+		expect(items[0]).toContain("list-none");
+		expect(items[1]).toContain("ml-4");
+		// Only GFM's own marker class gets through; raw HTML cannot style an item.
+		expect(items[2]).not.toContain("fixed");
+		expect(items[2]).toContain("ml-4");
+	});
 });

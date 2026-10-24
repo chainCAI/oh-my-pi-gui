@@ -69,6 +69,9 @@ export function CodeBlock({
 }: CodeBlockProps) {
 	const t = useT();
 	const lang = normalizeLanguage(language);
+	// Only a language the source named: an unlabeled fence is still
+	// auto-highlighted, but "plaintext" over highlighted code would be wrong.
+	const label = showLanguage && language ? lang : null;
 	const [copied, setCopied] = useState(false);
 	const tokenize = highlight && !highlightedHtml && Boolean(code) && (code?.length ?? 0) <= HIGHLIGHT_CHAR_CAP;
 	const [hlHtml, setHlHtml] = useState<string | null>(() => {
@@ -142,6 +145,17 @@ export function CodeBlock({
 		});
 	};
 
+	const copyButton = (
+		<button
+			type="button"
+			onClick={handleCopy}
+			title={t("chat.copyCode")}
+			className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] opacity-60 transition-[opacity,background-color,color] duration-150 hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] focus:opacity-100 group-hover/code:opacity-100"
+		>
+			{copied ? <Check size={12} className="text-[var(--omp-success)]" /> : <Copy size={12} />}
+		</button>
+	);
+
 	return (
 		<div
 			className={cx(
@@ -149,20 +163,15 @@ export function CodeBlock({
 				className,
 			)}
 		>
-			{(showLanguage || showCopy) && (
+			{label !== null && (
 				<div className="omp-code-block-header flex h-8 items-center gap-2 px-3.5">
-					{showLanguage && <span className="text-omp-xs font-medium text-[var(--omp-dim)]">{lang}</span>}
-					{showCopy && (
-						<button
-							type="button"
-							onClick={handleCopy}
-							title={t("chat.copyCode")}
-							className="ml-auto flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] opacity-60 transition-[opacity,background-color,color] duration-150 hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] focus:opacity-100 group-hover/code:opacity-100"
-						>
-							{copied ? <Check size={12} className="text-[var(--omp-success)]" /> : <Copy size={12} />}
-						</button>
-					)}
+					<span className="text-omp-xs font-medium text-[var(--omp-dim)]">{label}</span>
+					{showCopy && <span className="ml-auto">{copyButton}</span>}
 				</div>
+			)}
+			{label === null && showCopy && (
+				// No header to sit in: the button floats over the code's corner on hover.
+				<span className="absolute end-2 top-2 z-10 rounded-md bg-[var(--omp-code-bg)]">{copyButton}</span>
 			)}
 			<div className={cx("overflow-auto", maxHeightClass)}>
 				{showLineNumbers && lineCount > 0 ? (

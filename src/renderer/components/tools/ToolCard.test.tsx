@@ -63,6 +63,28 @@ describe("ToolCard terminal states", () => {
 		await act(async () => root.unmount());
 	});
 
+	it("names a failed step for screen readers even where its icon is hidden", async () => {
+		useToolsStore.getState().hydrateMessages([
+			call("broken"),
+			{
+				role: "toolResult",
+				toolCallId: "broken",
+				toolName: "read",
+				content: [{ type: "text", text: "ENOENT" }],
+				isError: true,
+				timestamp: 2_000,
+			},
+		]);
+		const { root, container } = await renderCards(["broken"]);
+
+		expect(container.innerHTML).toContain('data-tool-error="true"');
+		const label = Array.from(container.querySelectorAll(".sr-only")).map(node => node.textContent);
+		expect(label).toContain("Failed");
+		expect(container.querySelector(".omp-tool-status-icon .sr-only")).toBeNull();
+
+		await act(async () => root.unmount());
+	});
+
 	it("shares a single clock between live cards and keeps none for finished ones", async () => {
 		useToolsStore.getState().hydrateMessages([call("dead")]);
 		useToolsStore.getState().applyEvents([

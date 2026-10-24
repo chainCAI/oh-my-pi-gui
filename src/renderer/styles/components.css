@@ -838,6 +838,17 @@
 	color: var(--omp-muted);
 }
 
+/* Without icons or rail, a failed or interrupted step still has to stand out. */
+.omp-transcript-editorial .omp-tool-card[data-tool-error="true"] .omp-tool-name,
+.omp-transcript-editorial .omp-tool-card[data-tool-error="true"] .omp-tool-summary {
+	color: var(--omp-error);
+}
+
+.omp-transcript-editorial .omp-tool-card[data-tool-status="aborted"] .omp-tool-name,
+.omp-transcript-editorial .omp-tool-card[data-tool-status="aborted"] .omp-tool-summary {
+	color: var(--omp-warning);
+}
+
 .omp-transcript-editorial .omp-tool-duration {
 	min-width: 44px;
 	border-radius: 0;
@@ -885,6 +896,76 @@
 	border-radius: 9999px;
 	background: var(--omp-accent);
 	animation: omp-pulse-dot 1.6s ease-in-out infinite; /* motion-ok: waiting signal */
+}
+
+/* A tab whose agent is starting: the logo inside a slowly orbiting arc. */
+@property --omp-loading-angle {
+	syntax: "<angle>";
+	inherits: false;
+	initial-value: 0deg;
+}
+
+@keyframes omp-loading-orbit {
+	to {
+		--omp-loading-angle: 360deg;
+	}
+}
+
+.omp-loading-mark {
+	position: relative;
+	display: flex;
+	width: 72px;
+	height: 72px;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid var(--omp-border-muted);
+	border-radius: 22px;
+	background: var(--omp-selected-bg);
+	color: var(--omp-accent);
+}
+
+.omp-loading-mark::after {
+	content: "";
+	position: absolute;
+	inset: -7px;
+	padding: 2.5px;
+	border-radius: 28px;
+	background: conic-gradient(
+		from var(--omp-loading-angle),
+		transparent 0 62%,
+		color-mix(in srgb, var(--omp-accent) 55%, transparent) 88%,
+		var(--omp-accent)
+	);
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask-composite: exclude;
+	animation: omp-loading-orbit 1.8s linear infinite; /* motion-ok: agent starting */
+}
+
+.omp-transcript-loading {
+	animation: omp-fade-in var(--omp-motion-med) var(--omp-ease-enter) both;
+}
+
+/* The transcript it stands in for, fading out toward the composer. */
+.omp-loading-skeleton {
+	mask-image: linear-gradient(to bottom, #000 30%, transparent);
+}
+
+/* Slow work this window asked for (a manual compaction or handoff). */
+.omp-task-card {
+	border-color: var(--omp-border-muted);
+	background: color-mix(in srgb, var(--omp-accent) 5%, var(--omp-bg-primary));
+	animation: omp-fade-up var(--omp-motion-med) var(--omp-ease-enter) both;
+}
+
+.omp-task-card-track {
+	position: absolute;
+	inset: auto 0 0;
+	height: 2px;
+	overflow: hidden;
+	background: color-mix(in srgb, var(--omp-accent) 12%, transparent);
 }
 
 /* A provider failure being retried: tinted, quiet, and actionable. */

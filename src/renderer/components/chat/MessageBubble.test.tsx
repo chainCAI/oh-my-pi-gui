@@ -429,3 +429,38 @@ describe("MessageBubble noise filtering", () => {
 		expect(html).not.toContain('class="min-w-0 flex-1"');
 	});
 });
+
+describe("MessageBubble ended replies", () => {
+	const ended = (stopReason: string, errorMessage: string) =>
+		renderToStaticMarkup(
+			<I18nProvider>
+				<MessageBubble
+					message={{
+						role: "assistant",
+						content: [{ type: "text", text: "Half an answer" }],
+						stopReason,
+						errorMessage,
+						timestamp: "2026-08-06T00:00:00.000Z",
+					}}
+				/>
+			</I18nProvider>,
+		);
+
+	it("shows a reply the user stopped as stopped, not as a failed request", () => {
+		const html = ended("aborted", "Request was aborted");
+		expect(html).toContain("Stopped");
+		expect(html).not.toContain("Request was aborted");
+		expect(html).not.toContain("The request failed");
+		expect(html).not.toContain('role="alert"');
+	});
+
+	it("keeps an abort reason that says more than the stop itself", () => {
+		expect(ended("aborted", "Handoff aborted by session")).toContain("Handoff aborted by session");
+	});
+
+	it("still reports a provider error as a failed request", () => {
+		const html = ended("error", "429 Too Many Requests");
+		expect(html).toContain("The request failed");
+		expect(html).toContain('role="alert"');
+	});
+});

@@ -78,4 +78,11 @@ describe("markdown code line numbers", () => {
 		expect(html).toContain(">typescript</span>");
 		expect(html).toContain("<button");
 	});
+
+	it("an unlabeled fence keeps its copy button but claims no language", () => {
+		const html = render("```\nconst value = 1;\n```", false);
+		expect(html).not.toContain(">plaintext<");
+		expect(html).not.toContain("omp-code-block-header");
+		expect(html).toContain("<button");
+	});
 });

@@ -134,6 +134,8 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
 		// Value-pinned: only type="checkbox" survives; any other type value is
 		// dropped with the attribute. checked/disabled carry the GFM state.
 		input: [["type", "checkbox"], "checked", "disabled"],
+		// Value-pinned: GFM's task-list marker, so a checkbox item drops its bullet.
+		li: [["className", "task-list-item"]],
 		ol: ["start"],
 		td: ["align"],
 		th: ["align"],
@@ -359,7 +361,15 @@ function Hr(props: ComponentPropsWithoutRef<"hr">) {
 	return <hr {...props} className="border-[var(--omp-md-hr)] my-4" />;
 }
 
-function Li({ children, ...props }: ComponentPropsWithoutRef<"li">) {
+function Li({ children, className, ...props }: ComponentPropsWithoutRef<"li">) {
+	// A task item's checkbox is its marker; a bullet beside it reads as two.
+	if (className === "task-list-item") {
+		return (
+			<li {...props} className="list-none">
+				{children}
+			</li>
+		);
+	}
 	return (
 		<li {...props} className="ml-4 [&::marker]:text-[var(--omp-md-list-bullet)]">
 			{children}
@@ -382,7 +392,8 @@ function Pre({ children }: ComponentPropsWithoutRef<"pre">) {
 		isValidElement<{ className?: unknown }>(children) && typeof children.props.className === "string"
 			? children.props.className
 			: "";
-	const language = FENCE_LANGUAGE_RE.exec(codeClass)?.[1] ?? "plaintext";
+	// Undefined for an unlabeled fence: CodeBlock then shows no language badge.
+	const language = FENCE_LANGUAGE_RE.exec(codeClass)?.[1];
 	return (
 		<SharedCodeBlock
 			code={textOf(children).replace(/\n$/, "")}
@@ -399,7 +410,7 @@ function TaskCheckbox(props: ComponentPropsWithoutRef<"input">) {
 	// The checkbox state comes from model output — there is nowhere a click
 	// could be stored. Force the readonly form regardless of what the input
 	// carried (second layer on top of the sanitize value pin).
-	return <input {...props} type="checkbox" disabled readOnly tabIndex={-1} />;
+	return <input {...props} className="me-2 align-[-1px]" type="checkbox" disabled readOnly tabIndex={-1} />;
 }
 
 // ── Markdown images ─────────────────────────────────────────────────────────

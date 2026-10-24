@@ -1,4 +1,16 @@
-import { Archive, Bot, Check, CircleAlert, Copy, FileText, GitBranch, Pencil, RotateCw, Terminal } from "lucide-react";
+import {
+	Archive,
+	Bot,
+	Check,
+	CircleAlert,
+	Copy,
+	FileText,
+	GitBranch,
+	Pencil,
+	RotateCw,
+	Square,
+	Terminal,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useState } from "react";
 import type { AgentMessage, ImageContent, MessageContent, ToolCallContent } from "../../../shared/rpc-types";
@@ -57,6 +69,9 @@ function InlineImage({ image }: { image: ImageContent }) {
  * offers Retry (the agent's own /retry, which knows what the failed turn was);
  * older ones are history and only say what went wrong.
  */
+/** The agent's text for a plain user abort, which adds nothing to "Stopped". */
+const GENERIC_ABORT_RE = /^(?:Request was aborted\.?|Stopped before model call)?$/;
+
 function MessageError({ message, repeats = 1 }: { message: AgentMessage; repeats?: number }) {
 	const t = useT();
 	const rpc = useTabRpc();
@@ -77,6 +92,32 @@ function MessageError({ message, repeats = 1 }: { message: AgentMessage; repeats
 			setRetrying(false);
 		}
 	};
+	const retryButton = isLatest && idle && (
+		<button
+			type="button"
+			disabled={retrying}
+			onClick={() => void retry()}
+			className="omp-pressable -my-0.5 flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-[var(--omp-border)] px-2.5 text-omp-sm font-medium text-[var(--omp-text)] hover:bg-[var(--omp-selected-bg)] disabled:opacity-50"
+		>
+			<RotateCw aria-hidden size={12} className={cx(retrying && "animate-spin")} />
+			{t("common.retry")}
+		</button>
+	);
+	// A reply the user stopped is not a failure: a quiet note, with the abort
+	// reason only when it says more than that the request was aborted.
+	if (message.stopReason === "aborted") {
+		const reason = GENERIC_ABORT_RE.test(message.errorMessage ?? "") ? null : message.errorMessage;
+		return (
+			<div className="omp-message-stopped mt-2 flex min-w-0 items-center gap-2 text-omp-sm text-[var(--omp-dim)]">
+				<Square aria-hidden size={10} className="shrink-0 fill-current" />
+				<span className="min-w-0 truncate" title={reason ?? undefined}>
+					{t("chat.stopped")}
+					{reason && <span className="text-[var(--omp-muted)]"> · {reason}</span>}
+				</span>
+				{retryButton}
+			</div>
+		);
+	}
 	return (
 		<div
 			role="alert"
@@ -99,17 +140,7 @@ function MessageError({ message, repeats = 1 }: { message: AgentMessage; repeats
 					{message.errorMessage}
 				</p>
 			</div>
-			{isLatest && idle && (
-				<button
-					type="button"
-					disabled={retrying}
-					onClick={() => void retry()}
-					className="omp-pressable -my-0.5 flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-[var(--omp-border)] px-2.5 text-omp-sm font-medium text-[var(--omp-text)] hover:bg-[var(--omp-selected-bg)] disabled:opacity-50"
-				>
-					<RotateCw aria-hidden size={12} className={cx(retrying && "animate-spin")} />
-					{t("common.retry")}
-				</button>
-			)}
+			{retryButton}
 		</div>
 	);
 }
@@ -545,7 +576,9 @@ export const MessageBubble = memo(function MessageBubble({
 					</div>
 				)}
 				{blocks}
-				{message.errorMessage && <MessageError message={message} repeats={repeats} />}
+				{(message.errorMessage || (message.role === "assistant" && message.stopReason === "aborted")) && (
+					<MessageError message={message} repeats={repeats} />
+				)}
 				<UsageRow message={message} />
 				{!compactChrome && (
 					<div className="omp-message-actions mt-1 flex h-6 items-center gap-1 text-omp-xs tabular-nums text-[var(--omp-dim)] opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">

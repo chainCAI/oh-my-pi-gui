@@ -6,10 +6,11 @@ import {
 	ChevronRight,
 	Code2,
 	FileDiff,
+	Handshake,
 	Languages,
+	Layers,
 	Lightbulb,
 	ListTodo,
-	Loader2,
 	PenLine,
 	RotateCw,
 	SearchCode,
@@ -65,6 +66,7 @@ import { ExecutionGroup } from "./ExecutionGroup";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { TranscriptLoading } from "./TranscriptLoading";
 
 // TanStack's end check needs one CSS pixel for fractional scrollTop rounding.
 // User intent is enforced separately by switching away from end anchoring.
@@ -636,11 +638,7 @@ function SessionTranscript() {
 							<div className="omp-indeterminate-progress h-full bg-[var(--omp-accent)]" />
 						</div>
 					)}
-					{awaitingTranscript && rows.length === 0 && !switchPending && (
-						<div className="flex justify-center py-3">
-							<Loader2 size={16} className="animate-spin text-[var(--omp-muted)]" />
-						</div>
-					)}
+					{awaitingTranscript && rows.length === 0 && !switchPending && <TranscriptLoading />}
 					{!awaitingTranscript && rows.length === 0 && !isStreaming && !switchPending && (
 						<div className="omp-empty-canvas flex min-h-full flex-col justify-center pb-20">
 							<div className="omp-empty-logo mb-6 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--omp-border-muted)] bg-[var(--omp-selected-bg)] text-[var(--omp-accent)]">
@@ -1058,6 +1056,10 @@ export function TurnStatusRow() {
 		return (
 			<div className="omp-status-turn ps-(--omp-editorial-inset) pe-(--omp-editorial-edge)">
 				<LongTaskStatus
+					card={{
+						icon: manualMaintenance.kind === "compact" ? <Layers size={15} /> : <Handshake size={15} />,
+						detail: t(`chat.maintenance.detail.${manualMaintenance.kind}`),
+					}}
 					label={t(`chat.maintenance.${manualMaintenance.kind}`)}
 					onStop={stop}
 					slowHint={t("chat.maintenance.slow")}

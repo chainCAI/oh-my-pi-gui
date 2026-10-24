@@ -625,6 +625,13 @@ kbd,
 
 /* Tab strip + title bar + composer leave ~480px of canvas at 820px tall, so
    the compact layout starts there or the welcome card clips under the strip. */
+/* Too short for the placeholder transcript: the mark and its label say enough. */
+@media (max-height: 600px) {
+	.omp-loading-skeleton {
+		display: none;
+	}
+}
+
 @media (max-height: 820px) {
 	.omp-empty-canvas {
 		justify-content: flex-start;

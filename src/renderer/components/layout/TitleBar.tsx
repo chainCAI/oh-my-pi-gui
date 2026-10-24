@@ -51,6 +51,8 @@ export function TitleBar() {
 	const advisorStatus = useSessionStore(s => s.advisorStatus);
 	const recording = useSyncExternalStore(subscribeRecording, isRecording);
 	const isCompacting = useSessionStore(s => s.isCompacting);
+	// A manual compaction or handoff sends no agent event; its request marks the tab busy.
+	const manualMaintenance = useSessionStore(s => s.manualMaintenance);
 	const statsPulse = useSessionStore(s => s.statsPulse);
 	const isChat = useActiveTabKind() === "chat";
 
@@ -195,7 +197,7 @@ export function TitleBar() {
 
 	const iconButton =
 		"no-drag omp-pressable flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--omp-muted)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
-	const working = isStreaming || isCompacting;
+	const working = isStreaming || isCompacting || manualMaintenance != null;
 	const statusActive = working || status === "starting" || status === "restarting";
 	const statusLabel = working
 		? t("titlebar.status.working")
