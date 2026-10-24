@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Side questions in the right drawer**: a Side questions tab lists this session's `/btw` topics and shows each full thread, where you can follow up, stop, copy, or branch an answer into the main conversation. `/btw` on its own opens the tab, and closing the `/btw` window no longer stops the answer: it keeps streaming in the drawer. — thanks [@Sakura1618](https://github.com/Sakura1618) ([#21](https://github.com/nornzach/oh-my-pi-gui/pull/21))
+
 ## [0.9.26] - 2026-10-24
 
 ### Fixed
