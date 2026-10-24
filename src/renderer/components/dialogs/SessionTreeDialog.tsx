@@ -36,7 +36,7 @@ import { useRuntimeTabId } from "../../stores/session-runtime-context";
 import { useTabsStore } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
-import { Badge, Button, Modal, Spinner } from "../common";
+import { Badge, Button, LongTaskStatus, Modal, Spinner } from "../common";
 import { RoleGlyph, roleMeta, SessionRootNode, SessionTreeNodeCard, ToolbarButton } from "./SessionTreeNodeCard";
 import {
 	buildSessionTreeLayout,
@@ -166,6 +166,8 @@ export function SessionTreeDialog() {
 	const [model, setModel] = useState<SessionTreeModel | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [branching, setBranching] = useState<string | null>(null);
+	/** Set while a switch writes a summary of the branch it leaves: one model call. */
+	const [summarizingSince, setSummarizingSince] = useState<number | null>(null);
 	const [menuEntryId, setMenuEntryId] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -478,6 +480,7 @@ export function SessionTreeDialog() {
 			}
 		}
 		setBranching(entryId);
+		if (summarize) setSummarizingSince(Date.now());
 		try {
 			const response = await tabRpc.switchLeaf(entryId, summarize ? { summarize: true } : undefined);
 			if (!response.success) {
@@ -512,6 +515,7 @@ export function SessionTreeDialog() {
 			toast({ variant: "error", title: t("sessionTree.switchFailed"), message: String(cause) });
 		} finally {
 			setBranching(null);
+			setSummarizingSince(null);
 		}
 	};
 
@@ -905,6 +909,14 @@ export function SessionTreeDialog() {
 							</ToolbarButton>
 						</div>
 					</div>
+				)}
+				{summarizingSince !== null && (
+					<LongTaskStatus
+						className="shrink-0 border-t border-(--omp-border-muted) px-3 py-2"
+						label={t("sessionTree.summarizing")}
+						slowHint={t("chat.maintenance.slow")}
+						startedAt={summarizingSince}
+					/>
 				)}
 				{!error && !loading && layout && layout.nodeCount > 0 ? (
 					selectedEntry && labelEditId === selectedEntry.entryId ? (

@@ -14,7 +14,7 @@ import { useModelStore } from "../../stores/model";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
-import { Badge, Button, ConfirmDialog, Modal, Spinner } from "../common";
+import { Badge, Button, ConfirmDialog, LongTaskStatus, Modal, Spinner } from "../common";
 
 function AuthBadge({ provider, t }: { provider: ProviderInfo; t: (k: string) => string }) {
 	if (!provider.authenticated) return <Badge variant="muted">{t("providers.badge.noAuth")}</Badge>;
@@ -69,6 +69,7 @@ export function ProviderRow({
 	onLogout,
 	onEdit,
 	busy,
+	signInStartedAt,
 	sidecarReady = true,
 	t,
 }: {
@@ -78,6 +79,8 @@ export function ProviderRow({
 	onLogout: (id: string) => void;
 	onEdit: (id: string) => void;
 	busy: boolean;
+	/** When this row's login started; set while the user signs in in the browser. */
+	signInStartedAt?: number;
 	sidecarReady?: boolean;
 	t: (k: string, p?: Record<string, string | number>) => string;
 }) {
@@ -107,6 +110,14 @@ export function ProviderRow({
 						</span>
 					)}
 				</div>
+				{signInStartedAt !== undefined && (
+					<LongTaskStatus
+						className="mt-1"
+						label={t("providers.waitingSignIn")}
+						slowHint={t("providers.waitingSignInHint")}
+						startedAt={signInStartedAt}
+					/>
+				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">
 				{showEdit && editAction && (
@@ -130,6 +141,7 @@ export function ProviderRow({
 						size="sm"
 						variant="primary"
 						icon={<LogIn size={12} />}
+						loading={signInStartedAt !== undefined}
 						disabled={busy || !sidecarReady}
 						onClick={() => onLogin(provider.id)}
 						title={!sidecarReady ? t("providers.notConnected") : undefined}
@@ -171,6 +183,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 	const [busyProvider, setBusyProvider] = useState<string | null>(null);
+	const [signIn, setSignIn] = useState<{ providerId: string; startedAt: number } | null>(null);
 	const [pendingLogout, setPendingLogout] = useState<{ id: string; name: string } | null>(null);
 	const requestVersion = useRef(0);
 
@@ -242,6 +255,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 	const handleLogin = async (providerId: string) => {
 		const name = providers.find(p => p.id === providerId)?.name ?? providerId;
 		setBusyProvider(providerId);
+		setSignIn({ providerId, startedAt: Date.now() });
 		try {
 			const res = await tabRpc.login(providerId);
 			if (!res.success) {
@@ -254,6 +268,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 			toast({ variant: "error", title: t("providers.loginFailed"), message: String(cause) });
 		} finally {
 			setBusyProvider(null);
+			setSignIn(null);
 		}
 	};
 
@@ -428,6 +443,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 									onLogout={requestLogout}
 									onEdit={handleEdit}
 									busy={busyProvider === p.id}
+									signInStartedAt={signIn?.providerId === p.id ? signIn.startedAt : undefined}
 									sidecarReady={sidecarReady}
 									t={t}
 								/>
@@ -450,6 +466,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 										onLogout={requestLogout}
 										onEdit={handleEdit}
 										busy={busyProvider === p.id}
+										signInStartedAt={signIn?.providerId === p.id ? signIn.startedAt : undefined}
 										sidecarReady={sidecarReady}
 										t={t}
 									/>

@@ -21,6 +21,13 @@ export interface TranscriptView {
 	measurements: VirtualItem[];
 }
 
+/** A compaction or handoff this window asked for; the agent announces neither with an event. */
+export interface ManualMaintenance {
+	kind: "compact" | "handoff";
+	/** Client clock when the request went out, for the elapsed time. */
+	startedAt: number;
+}
+
 export interface SessionStore {
 	collab: RpcCollabState | null;
 	switchPending: { fromId: string; toId: string } | null;
@@ -50,6 +57,8 @@ export interface SessionStore {
 	/** Live auto-compaction window (auto_compaction_start → auto_compaction_end):
 	 * carries the TUI loader's reason/action text for the inline status row. */
 	compactionInfo: { reason: "threshold" | "overflow" | "idle" | "incomplete"; action: string } | null;
+	/** In flight from request to response, whichever surface started it. */
+	manualMaintenance: ManualMaintenance | null;
 	status: SidecarStatus;
 	contextUsage: ContextUsage | null;
 	/** Bumped every time a get_state snapshot actually carries fresh context
@@ -98,6 +107,7 @@ const initialState = {
 	awaitingModelSince: null,
 	retryInfo: null,
 	compactionInfo: null,
+	manualMaintenance: null,
 	status: "starting" as SidecarStatus,
 	contextUsage: null,
 	statsPulse: 0,

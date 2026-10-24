@@ -34,7 +34,7 @@ import { type TodoSnapshot, useTodoStore } from "../../stores/todo";
 import { type ToolEntry, toolEntryKey, useToolsStore } from "../../stores/tools";
 import { TRANSCRIPT_FOCUS_TTL_MS, useTranscriptFocusStore } from "../../stores/transcript-focus";
 import { useUiStore } from "../../stores/ui";
-import { PiLogo } from "../common";
+import { LongTaskStatus, PiLogo } from "../common";
 import { buildEditCandidates } from "../panels/DiffPanel";
 import { DiffStat } from "../panels/workspace-ui";
 import { ReadGroupCard } from "../tools/ReadGroupCard";
@@ -111,6 +111,7 @@ function SessionTranscript() {
 	const awaitingModelSince = useSessionStore(s => s.awaitingModelSince);
 	const retryInfo = useSessionStore(s => s.retryInfo);
 	const compactionInfo = useSessionStore(s => s.compactionInfo);
+	const manualMaintenance = useSessionStore(s => s.manualMaintenance);
 	const status = useSessionStore(s => s.status);
 	const sessionId = useSessionStore(s => s.sessionId);
 	// Shared agent compaction preference and GUI-local transcript detail.
@@ -187,7 +188,10 @@ function SessionTranscript() {
 	// Priority matches the TUI, whose transient loaders replace the working
 	// loader; tool-execution windows show running tool cards instead.
 	const showStatusRow =
-		retryInfo != null || compactionInfo != null || (isStreaming && awaitingModelSince != null && !hasStreamedContent);
+		retryInfo != null ||
+		compactionInfo != null ||
+		manualMaintenance != null ||
+		(isStreaming && awaitingModelSince != null && !hasStreamedContent);
 
 	// Pending queue bubbles tail the stream in delivery order (steering
 	// interrupts first, follow-ups after) — the future user turns, deletable
@@ -981,6 +985,8 @@ const STALLED_RESPONSE_HINT_SECONDS = 90;
  *   the failure (unless the failed reply above already shows it), and Stop.
  * - compaction: `{reason}{action}…` for auto-maintenance, same reason/action
  *   vocabulary as the TUI loader.
+ * - manual maintenance: a `/compact` or handoff this window asked for — the
+ *   agent sends no event for it — with its elapsed time and Stop.
  * - waiting: between turn_start and the first streamed event. Elapsed time
  *   appears only once the wait is noticeable; past 30s a slow-response hint,
  *   past 90s a stalled hint with Stop.
@@ -991,6 +997,7 @@ export function TurnStatusRow() {
 	const tabId = useRuntimeTabId();
 	const retryInfo = useSessionStore(s => s.retryInfo);
 	const compactionInfo = useSessionStore(s => s.compactionInfo);
+	const manualMaintenance = useSessionStore(s => s.manualMaintenance);
 	const awaitingModelSince = useSessionStore(s => s.awaitingModelSince);
 	// The failed reply already in the transcript, so the retry row never prints its error twice.
 	const shownError = useMessagesStore(s => {
@@ -1043,6 +1050,19 @@ export function TurnStatusRow() {
 						{t("chat.retry.stop")}
 					</button>
 				</div>
+			</div>
+		);
+	}
+
+	if (!compactionInfo && manualMaintenance) {
+		return (
+			<div className="omp-status-turn ps-(--omp-editorial-inset) pe-(--omp-editorial-edge)">
+				<LongTaskStatus
+					label={t(`chat.maintenance.${manualMaintenance.kind}`)}
+					onStop={stop}
+					slowHint={t("chat.maintenance.slow")}
+					startedAt={manualMaintenance.startedAt}
+				/>
 			</div>
 		);
 	}

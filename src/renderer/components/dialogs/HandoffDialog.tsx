@@ -15,7 +15,7 @@ import { useT } from "../../lib/i18n";
 import { useForkHandoffStore } from "../../stores/fork-handoff";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
-import { Button, Modal, Spinner, TextArea } from "../common";
+import { Button, LongTaskStatus, Modal, TextArea } from "../common";
 
 interface HandoffResult {
 	savedPath?: string;
@@ -38,6 +38,11 @@ export function HandoffDialog() {
 	const [stage, setStage] = useState<"summary" | "fork">("summary");
 	const [instructions, setInstructions] = useState("");
 	const [running, setRunning] = useState(false);
+	/** When the current stage began, for the status line's elapsed time. */
+	const [stageStartedAt, setStageStartedAt] = useState(0);
+	const [stopping, setStopping] = useState(false);
+	/** Read by the running submit, whose render-time `stopping` is stale. */
+	const stopRequested = useRef(false);
 	const [error, setError] = useState<string | null>(null);
 	const textRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,14 +50,26 @@ export function HandoffDialog() {
 		if (!open) return;
 		setInstructions("");
 		setRunning(false);
+		setStopping(false);
 		setError(null);
 		requestAnimationFrame(() => textRef.current?.focus());
 	}, [open]);
 
-	// The handoff RPC cannot be cancelled from the GUI — block dismissal while
-	// the agent is generating the handoff document.
+	// Dismissal never abandons a handoff mid-flight; Cancel stops the summary
+	// explicitly (the agent answers abort while it runs) and the request then
+	// settles as cancelled. The fork step is quick and cannot be stopped.
 	const requestClose = () => {
 		if (!running) close();
+	};
+	const cancel = () => {
+		if (!running) {
+			close();
+			return;
+		}
+		if (stage !== "summary" || stopping) return;
+		stopRequested.current = true;
+		setStopping(true);
+		void tabRpc.abort();
 	};
 
 	const blockedReason = isStreaming
@@ -64,7 +81,10 @@ export function HandoffDialog() {
 	const submit = async () => {
 		if (!sidecarReady || running || blockedReason !== null) return;
 		setRunning(true);
+		setStopping(false);
+		stopRequested.current = false;
 		setError(null);
+		setStageStartedAt(Date.now());
 		try {
 			const trimmed = instructions.trim();
 			let result = prepared?.sessionId === sessionId ? prepared : null;
@@ -84,6 +104,8 @@ export function HandoffDialog() {
 				}
 				result = { ...handoffResult, sessionId };
 				setPrepared(result);
+				// Stop landed after the summary was written: keep it, but do not open the new session.
+				if (stopRequested.current) return;
 			}
 			if (result.forkAttempted) {
 				const current = await tabRpc.getState();
@@ -99,6 +121,7 @@ export function HandoffDialog() {
 			}
 			setPrepared({ ...result, forkAttempted: true });
 			setStage("fork");
+			setStageStartedAt(Date.now());
 			const fork = await tabRpc.fork();
 			if (!fork.success) throw new Error(fork.error);
 			if ((fork.data as { cancelled?: boolean } | undefined)?.cancelled) throw new Error(t("handoff.cancelled"));
@@ -115,6 +138,7 @@ export function HandoffDialog() {
 			setError(String(cause));
 		} finally {
 			setRunning(false);
+			setStopping(false);
 		}
 	};
 
@@ -148,14 +172,22 @@ export function HandoffDialog() {
 					</div>
 				)}
 				{running && (
-					<div className="flex items-center gap-2 text-omp-sm text-(--omp-dim)">
-						<Spinner size="sm" />
-						{t(stage === "summary" ? "handoff.generating" : "handoff.creating")}
-					</div>
+					<LongTaskStatus
+						label={t(
+							stopping ? "handoff.stopping" : stage === "summary" ? "handoff.generating" : "handoff.creating",
+						)}
+						slowHint={stage === "summary" ? t("chat.maintenance.slow") : undefined}
+						startedAt={stageStartedAt}
+					/>
 				)}
 				<div className="flex justify-end gap-2">
-					<Button disabled={running} onClick={requestClose} type="button" variant="ghost">
-						{t("common.cancel")}
+					<Button
+						disabled={running && (stage !== "summary" || stopping)}
+						onClick={cancel}
+						type="button"
+						variant="ghost"
+					>
+						{t(running ? "handoff.stop" : "common.cancel")}
 					</Button>
 					<Button
 						disabled={blockedReason !== null || !sidecarReady}

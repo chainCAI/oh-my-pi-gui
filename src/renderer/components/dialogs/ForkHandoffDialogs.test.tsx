@@ -50,6 +50,7 @@ function failure(error: string): RpcResponse {
 }
 
 interface MockRpc {
+	abort: Mock<() => Promise<RpcResponse>>;
 	fork: Mock<() => Promise<RpcResponse>>;
 	handoff: Mock<(customInstructions?: string) => Promise<RpcResponse>>;
 	getState: Mock<() => Promise<RpcResponse>>;
@@ -60,6 +61,7 @@ interface MockRpc {
 
 function installMockOmp(overrides: Partial<MockRpc> = {}): MockRpc {
 	const rpc: MockRpc = {
+		abort: vi.fn(async () => success({})),
 		fork: vi.fn(async () => success({})),
 		handoff: vi.fn(async () => success({ savedPath: undefined })),
 		getState: vi.fn(async () => success({ sessionId: "s2", todoPhases: [], messageCount: 3, queuedMessageCount: 0 })),
@@ -240,5 +242,29 @@ describe("HandoffDialog", () => {
 		expect(rpc.handoff).toHaveBeenCalledTimes(1);
 		expect(rpc.fork).toHaveBeenCalledTimes(2);
 		expect(useForkHandoffStore.getState().handoffDialogOpen).toBe(false);
+	});
+
+	it("stops the summary on request and, if it was already written, keeps it without opening the new session", async () => {
+		useSessionStore.setState({ sessionId: "s1", isStreaming: false, messageCount: 5 });
+		const summary = Promise.withResolvers<RpcResponse>();
+		const rpc = installMockOmp({ handoff: vi.fn(() => summary.promise) });
+		openHandoffDialog();
+		await mount(<HandoffDialog />);
+		await act(async () => {
+			click(buttonWithText("Start Handoff")!);
+		});
+		await flush();
+
+		await act(async () => {
+			click(buttonWithText("Stop handoff")!);
+		});
+		expect(rpc.abort).toHaveBeenCalledTimes(1);
+		// The summary finished before the abort reached it.
+		summary.resolve(success({ savedPath: "/tmp/handoff.md" }));
+		await flush();
+
+		expect(rpc.fork).not.toHaveBeenCalled();
+		expect(useForkHandoffStore.getState().handoffDialogOpen).toBe(true);
+		expect(buttonWithText("Continue from saved handoff")).toBeDefined();
 	});
 });

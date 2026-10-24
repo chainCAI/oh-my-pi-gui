@@ -1214,6 +1214,15 @@ describe("TurnStatusRow", () => {
 		expect([...document.querySelectorAll("button")].some(button => button.textContent === "Stop")).toBe(true);
 	});
 
+	it("shows a manual compaction with its elapsed time, a long-wait hint and Stop", async () => {
+		useSessionStore.setState({ manualMaintenance: { kind: "compact", startedAt: Date.now() - 95_000 } });
+		await mount(<TurnStatusRow />);
+		expect(document.body.textContent).toContain("Compacting the conversation");
+		expect(document.body.textContent).toContain("1m 35s");
+		expect(document.body.textContent).toContain("Long conversations can take a few minutes.");
+		expect([...document.querySelectorAll("button")].some(button => button.textContent === "Stop")).toBe(true);
+	});
+
 	it("renders the retry countdown, the attempt and the failure", async () => {
 		useSessionStore.setState({
 			retryInfo: {

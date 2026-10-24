@@ -5,7 +5,7 @@ import { createMessagesStore } from "./messages";
 import { createModelStore } from "./model";
 import { createPlanApprovalStore } from "./plan-approval";
 import { createQueueStore } from "./queue";
-import { createSessionStore, type SessionStore } from "./session";
+import { createSessionStore, type ManualMaintenance, type SessionStore } from "./session";
 import {
 	activeTabCommand,
 	addRuntimeStore,
@@ -37,6 +37,14 @@ const SESSION_CHANGING_COMMANDS = new Set<RpcCommand["type"]>([
 	"collab_leave",
 ]);
 
+/** Requests that run a long manual maintenance pass with no agent event of its own. */
+function manualMaintenanceKind(command: RpcCommand): ManualMaintenance["kind"] | null {
+	if (command.type === "compact") return "compact";
+	if (command.type === "handoff") return "handoff";
+	if (command.type === "plan_approval" && command.approved && command.option === "compact") return "compact";
+	return null;
+}
+
 function replacedSessionResponse(command: RpcCommand): RpcResponseError {
 	return {
 		type: "response",
@@ -48,7 +56,21 @@ function replacedSessionResponse(command: RpcCommand): RpcResponseError {
 
 export function createTabRuntime(tabId: string): SessionRuntime {
 	let generation = 0;
+	// The chat's status row shows a manual compaction or handoff for as long as
+	// its request is out, however it was started (composer, palette, dialogs).
 	const command = async (rpcCommand: RpcCommand, timeoutMs?: number): Promise<RpcResponse> => {
+		const kind = manualMaintenanceKind(rpcCommand);
+		const session = kind ? sessionRuntimeStore<SessionStore>(tabId, "session") : undefined;
+		if (!kind || !session) return send(rpcCommand, timeoutMs);
+		const marker: ManualMaintenance = { kind, startedAt: Date.now() };
+		session.setState({ manualMaintenance: marker });
+		try {
+			return await send(rpcCommand, timeoutMs);
+		} finally {
+			if (session.getState().manualMaintenance === marker) session.setState({ manualMaintenance: null });
+		}
+	};
+	const send = async (rpcCommand: RpcCommand, timeoutMs?: number): Promise<RpcResponse> => {
 		// An old dialog/continuation must not send a mutation to this tab's new owner.
 		if (sessionRuntime(tabId) !== runtime) return replacedSessionResponse(rpcCommand);
 		const changesSession = SESSION_CHANGING_COMMANDS.has(rpcCommand.type);

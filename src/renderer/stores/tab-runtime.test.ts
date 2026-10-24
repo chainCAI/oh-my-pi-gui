@@ -182,3 +182,20 @@ it("preserves a committed session change acknowledgement when its metadata arriv
 	expect(await runtime.command({ type: "new_session" })).toMatchObject({ success: true, data: { cancelled: false } });
 	expect(sessionRuntimeStore<SessionStore>("tab-a", "session")?.getState().sessionId).toBe("committed-session");
 });
+
+it("shows a compacting request as manual maintenance until its response arrives", async () => {
+	const runtime = createTabRuntime("tab-a");
+	const session = sessionRuntimeStore<SessionStore>("tab-a", "session");
+	const response = Promise.withResolvers<RpcResponse>();
+	vi.spyOn(window.omp.rpc, "commandForTab").mockImplementationOnce(() => response.promise);
+
+	const approval = runtime.command({ type: "plan_approval", approved: true, option: "compact" });
+	expect(session?.getState().manualMaintenance?.kind).toBe("compact");
+	// An approval that only starts the plan is not maintenance, and leaves the marker alone.
+	await runtime.command({ type: "plan_approval", approved: true, option: "execute" });
+	expect(session?.getState().manualMaintenance?.kind).toBe("compact");
+
+	response.resolve({ type: "response", command: "plan_approval", success: true, data: {} });
+	await approval;
+	expect(session?.getState().manualMaintenance).toBeNull();
+});

@@ -31,7 +31,7 @@ import {
 import { useSessionStore } from "../../stores/session";
 import { settleTabPlanApproval, useTabsStore } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
-import { Button, Modal, TextArea } from "../common";
+import { Button, LongTaskStatus, Modal, TextArea } from "../common";
 
 type SubmitKind = PlanApprovalSubmitState["kind"];
 
@@ -88,6 +88,7 @@ export function PlanApprovalDialog() {
 	const submitting = usePlanApprovalStore(state => state.submitting);
 	const setSubmitting = usePlanApprovalStore(state => state.setSubmitting);
 	const sidecarReady = useSessionStore(state => state.status) === "ready";
+	const maintenance = useSessionStore(state => state.manualMaintenance);
 
 	if (!pending) return null;
 
@@ -222,6 +223,15 @@ export function PlanApprovalDialog() {
 						placeholder={t("planApproval.refinePlaceholder")}
 						rows={2}
 						value={feedback}
+					/>
+				)}
+				{/* Approve-and-compact runs a whole compaction first: minutes on a long session. */}
+				{submitting?.kind === "approve" && submitting.option === "compact" && maintenance && (
+					<LongTaskStatus
+						label={t("chat.maintenance.compact")}
+						onStop={() => void tabRpc.abort()}
+						slowHint={t("chat.maintenance.slow")}
+						startedAt={maintenance.startedAt}
 					/>
 				)}
 				<div className="flex flex-wrap items-center justify-end gap-2">
