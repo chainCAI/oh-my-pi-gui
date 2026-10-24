@@ -673,7 +673,7 @@ kbd,
 	display: inline;
 }
 
-/* Four views share the header: a narrow drawer keeps their icons only. */
+/* Five views share the header: a narrow drawer keeps their icons only. */
 @container omp-inspector (max-width: 480px) {
 	.omp-inspector-tab-label {
 		display: none;

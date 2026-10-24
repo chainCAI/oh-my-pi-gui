@@ -791,7 +791,7 @@ export const zh: Record<string, string> = {
 	"cmd.leave": "离开协作",
 	"cmd.leave.desc": "离开协作会话",
 	"cmd.btw": "旁问",
-	"cmd.btw.desc": "使用当前会话上下文提出临时问题",
+	"cmd.btw.desc": "提出临时旁问；不带参数时打开旁问历史",
 	"cmd.tan": "切线代理",
 	"cmd.tan.desc": "在切线工作上运行后台代理",
 	"cmd.omfg": "锻造 TTSR 规则",
@@ -1950,8 +1950,14 @@ export const zh: Record<string, string> = {
 
 	// 临时旁问
 	"btw.title": "临时旁问",
-	"btw.usage": "用法：/btw <问题>",
+	"btw.newQuestion": "新问题",
+	"btw.followUp": "追问",
+	"btw.followUpLabel": "追问",
+	"btw.followUpPlaceholder": "就这个回答继续追问…",
+	"btw.questionPlaceholder": "输入旁问…",
 	"btw.thinking": "正在主对话之外思考…",
+	"btw.empty": "还没有旁问",
+	"btw.emptyHint": "使用 /btw <问题>，或在下方提问。回答不会进入主对话。",
 	"btw.copy": "复制回答",
 	"btw.copied": "已复制 /btw 回答",
 	"btw.copyFailed": "无法复制回答",
@@ -1960,8 +1966,13 @@ export const zh: Record<string, string> = {
 	"btw.branchCancelled": "扩展取消了分支操作。",
 	"btw.branchFailed": "无法从 /btw 创建分支",
 	"btw.cancel": "停止回答",
+	"btw.statusRunning": "进行中",
 	"btw.statusCancelled": "回答已取消。",
+	"btw.statusInterrupted": "已中断",
 	"btw.statusError": "旁问失败。",
+	"btw.followUpCount": "追问：{count}",
+	"btw.busyHint": "还有旁问正在进行。请先停止或等待其完成。",
+	"btw.historyFailed": "无法加载旁问历史。",
 
 	// 切题外后台代理
 	"tan.usage": "用法：/tan <任务>",
@@ -2931,8 +2942,9 @@ export const zh: Record<string, string> = {
 
 	// Workspace panel container
 	"panel.title": "审阅",
-	"panel.subtitle": "改动、文件、终端与浏览器",
+	"panel.subtitle": "旁问、改动、文件、终端与浏览器",
 	"panel.close": "关闭面板",
+	"panel.tabs.btw": "旁问",
 	"panel.tabs.diff": "变更",
 	"panel.tabs.files": "文件",
 	"panel.tabs.terminal": "终端",

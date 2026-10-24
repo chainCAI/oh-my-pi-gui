@@ -23,7 +23,7 @@ afterEach(() => {
 });
 
 describe("setPanelTab chat clamp", () => {
-	it("refuses the diff tab in a chat tab but allows files", () => {
+	it("refuses the diff tab in a chat tab but allows files and side questions", () => {
 		seedActiveTab("chat");
 		// Baseline: a chat-visible tab, so a clamped no-op leaves a provable state.
 		useUiStore.setState({ panelTab: "files", panelVisible: false });
@@ -33,6 +33,10 @@ describe("setPanelTab chat clamp", () => {
 
 		useUiStore.getState().setPanelTab("files");
 		expect(useUiStore.getState().panelTab).toBe("files");
+		expect(useUiStore.getState().panelVisible).toBe(true);
+
+		useUiStore.getState().setPanelTab("btw");
+		expect(useUiStore.getState().panelTab).toBe("btw");
 		expect(useUiStore.getState().panelVisible).toBe(true);
 	});
 

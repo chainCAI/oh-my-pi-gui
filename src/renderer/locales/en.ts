@@ -810,7 +810,7 @@ export const en: Record<string, string> = {
 	"cmd.leave": "Leave Collab",
 	"cmd.leave.desc": "Leave the collab session",
 	"cmd.btw": "Side Question",
-	"cmd.btw.desc": "Ask an ephemeral side question",
+	"cmd.btw.desc": "Ask a side question, or browse this session's side questions",
 	"cmd.tan": "Tangential Agent",
 	"cmd.tan.desc": "Run background agent on tangential work",
 	"cmd.omfg": "Forge TTSR Rule",
@@ -2004,8 +2004,14 @@ export const en: Record<string, string> = {
 
 	// Ephemeral side question
 	"btw.title": "Side Question",
-	"btw.usage": "Usage: /btw <question>",
+	"btw.newQuestion": "New question",
+	"btw.followUp": "Follow up",
+	"btw.followUpLabel": "Follow-up",
+	"btw.followUpPlaceholder": "Ask about this answer…",
+	"btw.questionPlaceholder": "Ask a side question…",
 	"btw.thinking": "Thinking outside the main conversation…",
+	"btw.empty": "No side questions yet",
+	"btw.emptyHint": "Use /btw <question>, or ask below. Answers stay out of the main conversation.",
 	"btw.copy": "Copy answer",
 	"btw.copied": "Copied /btw answer to clipboard",
 	"btw.copyFailed": "Could not copy the answer",
@@ -2014,8 +2020,13 @@ export const en: Record<string, string> = {
 	"btw.branchCancelled": "Branching was cancelled by an extension.",
 	"btw.branchFailed": "Could not branch from /btw",
 	"btw.cancel": "Stop answer",
+	"btw.statusRunning": "Running",
 	"btw.statusCancelled": "Answer cancelled.",
+	"btw.statusInterrupted": "Interrupted",
 	"btw.statusError": "Side question failed.",
+	"btw.followUpCount": "{count} follow-up{plural}",
+	"btw.busyHint": "A side question is still running. Stop it or wait for it to finish.",
+	"btw.historyFailed": "Could not load side questions.",
 
 	// Tangential background agent
 	"tan.usage": "Usage: /tan <work>",
@@ -2993,8 +3004,9 @@ export const en: Record<string, string> = {
 
 	// Workspace panel container
 	"panel.title": "Review",
-	"panel.subtitle": "Changes, files, terminal, and browser",
+	"panel.subtitle": "Side questions, changes, files, terminal, and browser",
 	"panel.close": "Close panel",
+	"panel.tabs.btw": "Side questions",
 	"panel.tabs.diff": "Changes",
 	"panel.tabs.files": "Files",
 	"panel.tabs.terminal": "Terminal",

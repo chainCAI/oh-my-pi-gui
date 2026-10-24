@@ -7,7 +7,7 @@ import { useTabsStore } from "./tabs";
 
 export type { ThemeMode };
 
-export type PanelTab = "diff" | "files" | "terminal" | "browser";
+export type PanelTab = "btw" | "diff" | "files" | "terminal" | "browser";
 /** Edit → Find, Find Next and Find Previous, as the window routes them. */
 export type FindCommand = "find" | "next" | "previous";
 export interface FindRequest {
@@ -18,7 +18,7 @@ export interface FindRequest {
 /** Memory window tabs. */
 export type MemoryTabId = "knowledge" | "skills" | "sources";
 /** Drawer tabs that exist in a tool-free chat tab: no diffs, shells, or agent browsing without tools. */
-export const CHAT_PANEL_TABS: ReadonlySet<PanelTab> = new Set(["files"]);
+export const CHAT_PANEL_TABS: ReadonlySet<PanelTab> = new Set(["btw", "files"]);
 /** What the Changes view compares: the checkout, this session's edits, their timeline, or virtual artifacts. */
 export type DiffScope = "repository" | "current" | "timeline" | "artifacts";
 /** Center-dock card identifiers: todo/plan/agents render as live cards above the composer. */

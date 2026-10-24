@@ -37,6 +37,7 @@ import { formatClock } from "../lib/format";
 import { translate } from "../lib/i18n";
 import { normalizeLoopUpdate } from "../lib/loop-mode";
 import { acceptsActiveTabEvents } from "../lib/tab-routing";
+import { useBtwStore } from "../stores/btw";
 import { useExtensionUiStore } from "../stores/extension-ui";
 import { useMessagesStore } from "../stores/messages";
 import { useModelStore } from "../stores/model";
@@ -641,6 +642,7 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 				if (isFocused()) stopHeartbeat();
 				retryPendingTabs.delete(statusTabId);
 				withSessionRuntime(statusTabId, () => {
+					useBtwStore.getState().reset();
 					useMessagesStore.getState().reset();
 					useModelStore.getState().reset();
 					useSessionStore.getState().reset();
@@ -653,10 +655,19 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 				});
 				if (isFocused()) useUiStore.getState().clearSidecarError();
 			}
+			if (payload.status === "error") {
+				withSessionRuntime(statusTabId, () => useBtwStore.getState().reset());
+			}
 			withSessionRuntime(statusTabId, () => useSessionStore.getState().setStatus(payload.status, payload.cwd));
 
 			if (payload.status === "ready") {
 				if (isFocused()) startHeartbeat();
+				// Frames are active-tab-only; a background tab or a restart can miss
+				// the terminal one. Re-read the shared history whenever the sidecar
+				// becomes ready so no topic is stuck showing "Running".
+				withSessionRuntime(statusTabId, () => {
+					void useBtwStore.getState().refresh();
+				});
 				if (payload.modelFallback) {
 					useToastStore.getState().push({
 						variant: "warning",
@@ -856,6 +867,13 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 			void maybeNotify("ask", sessionName, body, sessionRuntime(tabId)?.command ?? activeTabCommand);
 		});
 
+		// Side-question frames carry no tab id: the preload forwards them only for
+		// the active tab, so the focused runtime's store is the target.
+		const unsubBtw =
+			typeof window.omp.events.onBtwFrame === "function"
+				? window.omp.events.onBtwFrame(frame => useBtwStore.getState().applyFrame(frame))
+				: () => {};
+
 		return () => {
 			disposed = true;
 			stopHeartbeat();
@@ -869,6 +887,7 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 			unsubCommandOutput();
 			unsubSessionInfo();
 			unsubExtensionError();
+			unsubBtw();
 		};
 	}, [heartbeatMs]);
 }
