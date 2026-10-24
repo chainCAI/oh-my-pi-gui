@@ -424,7 +424,7 @@ export const MessageBubble = memo(function MessageBubble({
 
 	if (isUser) {
 		return (
-			<div className="omp-user-turn group flex justify-end px-6 py-2.5">
+			<div className="omp-user-turn group flex flex-col items-end px-6 py-2.5">
 				<div
 					className="omp-transcript-content omp-user-bubble relative rounded-xl border border-[var(--omp-user-msg-border)] bg-[var(--omp-user-msg-bg)] px-3.5 py-3"
 					style={{ boxShadow: "var(--omp-shadow-sm)" }}
@@ -478,39 +478,39 @@ export const MessageBubble = memo(function MessageBubble({
 							})}
 						</div>
 					</div>
-					<div className="omp-user-bubble-actions flex items-center gap-1.5 text-omp-xs tabular-nums text-[var(--omp-dim)]">
-						{timestamp && <span className="font-mono">{timestamp}</span>}
+				</div>
+				<div className="omp-user-bubble-actions flex items-center gap-0.5 text-omp-xs tabular-nums text-[var(--omp-dim)]">
+					{timestamp && <span className="me-1 font-mono">{timestamp}</span>}
+					<button
+						type="button"
+						onClick={handleCopy}
+						title={t("chat.copyMessage")}
+						className="omp-pressable flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]"
+					>
+						{copied ? <Check size={13} className="text-[var(--omp-success)]" /> : <Copy size={13} />}
+					</button>
+					{!isSteering && (
 						<button
 							type="button"
-							onClick={handleCopy}
-							title={t("chat.copyMessage")}
-							className="omp-pressable flex h-7 w-7 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]"
+							onClick={() => void handleEdit()}
+							disabled={branching || switchPending || isStreaming}
+							aria-label={t("chat.editFromHere")}
+							title={t(isStreaming ? "chat.editFromHereBusy" : "chat.editFromHere")}
+							className="omp-pressable flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-not-allowed disabled:opacity-50"
 						>
-							{copied ? <Check size={13} className="text-[var(--omp-success)]" /> : <Copy size={13} />}
+							<Pencil size={13} />
 						</button>
-						{!isSteering && (
-							<button
-								type="button"
-								onClick={() => void handleEdit()}
-								disabled={branching || switchPending || isStreaming}
-								aria-label={t("chat.editFromHere")}
-								title={t(isStreaming ? "chat.editFromHereBusy" : "chat.editFromHere")}
-								className="omp-pressable flex h-7 w-7 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-not-allowed disabled:opacity-50"
-							>
-								<Pencil size={13} />
-							</button>
-						)}
-						<button
-							type="button"
-							onClick={() => void handleBranch()}
-							disabled={branching || switchPending}
-							aria-label={t("chat.branchFromHere")}
-							title={t("chat.branchFromHere")}
-							className="omp-pressable flex h-7 w-7 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-wait disabled:opacity-50"
-						>
-							<GitBranch size={13} />
-						</button>
-					</div>
+					)}
+					<button
+						type="button"
+						onClick={() => void handleBranch()}
+						disabled={branching || switchPending}
+						aria-label={t("chat.branchFromHere")}
+						title={t("chat.branchFromHere")}
+						className="omp-pressable flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-wait disabled:opacity-50"
+					>
+						<GitBranch size={13} />
+					</button>
 				</div>
 			</div>
 		);

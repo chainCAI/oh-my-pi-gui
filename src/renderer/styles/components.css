@@ -654,10 +654,11 @@
 /* Your turn: a soft right-aligned bubble, so who said what never depends on
    reading a label. The author name stays for assistive technology only. */
 .omp-transcript-editorial .omp-user-turn {
-	justify-content: flex-end;
+	align-items: flex-end;
 	/* The reply above already ends in its own (hover) action row: a short top
-	   pad keeps turns one even step apart instead of a double gap. */
-	padding: 12px var(--omp-editorial-edge) 10px var(--omp-editorial-inset) !important;
+	   pad keeps turns one even step apart instead of a double gap. The bottom
+	   pad is the prompt's own action row. */
+	padding: 12px var(--omp-editorial-edge) 2px var(--omp-editorial-inset) !important;
 }
 
 .omp-transcript-editorial .omp-user-bubble.omp-transcript-content {
@@ -696,13 +697,11 @@
 	margin-block: 0;
 }
 
-/* Hover actions sit beside the bubble's lower edge instead of reserving an
-   invisible row under every prompt (which read as empty bottom padding). */
+/* Hover actions sit under the bubble's trailing edge, where a chat app puts
+   them, so they read as the prompt's own controls. The row keeps its height
+   while hidden: appearing on hover must not shift the transcript. */
 .omp-transcript-editorial .omp-user-bubble-actions {
-	position: absolute;
-	right: calc(100% + 6px);
-	bottom: 2px;
-	z-index: 1;
+	margin-top: 4px;
 	justify-content: flex-end;
 	white-space: nowrap;
 	opacity: 0;
@@ -710,8 +709,8 @@
 	transition: opacity var(--omp-motion-fast) var(--omp-ease);
 }
 
-.omp-transcript-editorial .omp-user-bubble:hover .omp-user-bubble-actions,
-.omp-transcript-editorial .omp-user-bubble:focus-within .omp-user-bubble-actions {
+.omp-transcript-editorial .omp-user-turn:hover .omp-user-bubble-actions,
+.omp-transcript-editorial .omp-user-turn:focus-within .omp-user-bubble-actions {
 	opacity: 1;
 	pointer-events: auto;
 }

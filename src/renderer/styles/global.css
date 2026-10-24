@@ -939,7 +939,7 @@ kbd,
 
 /* GUI density changes conversation spacing without scaling text or scroll coordinates. */
 [data-density="tight"] .omp-transcript-editorial .omp-user-turn {
-	padding-block: 12px 8px !important;
+	padding-block: 10px 0 !important;
 }
 [data-density="tight"] .omp-transcript-editorial .omp-user-bubble {
 	padding: 8px 12px;
