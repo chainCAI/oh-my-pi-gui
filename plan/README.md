@@ -23,6 +23,7 @@ Source-verified against omp codebase (2026-08-01 audit).
 | 19 | [Chat Sessions](./19-chat-sessions.md) | 无工具纯对话会话:SessionHeader.kind、--chat flag、类型隔离守卫、composer 裁剪、~2 天 | 12.6KB |
 | 22 | [Felt Quality](./22-felt-quality.md) | 对话流畅、session 切换、色彩合同、动效尺、Chrome 去重 |
 | 23 | [Scheduled Tasks](./23-scheduled-tasks.md) | Tasks from agent conversations: scheduler in main, headless run sidecars, structured reports, verification, review queue, insights; §14 as built |
+| 24 | [Agents View](./24-agents-view.md) | Issue #23: a docked Agents drawer tab, working-first roster that keeps the spawn tree, rich subagent transcripts reusing the main renderers, frame coalescing; a layered visual contract with a light/dark prototype in `mockups/` |
 
 ## Key Decisions
 

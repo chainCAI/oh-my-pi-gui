@@ -1,0 +1,547 @@
+<!doctype html>
+<!--
+  plan/24 prototype: the Agents drawer tab, built from the GUI's own tokens
+  (theme-dark.css, theme-light.css, global.css type scale) and the existing
+  row, card, segmented-control and tool-card language. Static HTML: open it
+  in a browser. Each frame has an id that plan/24 names (glance,
+  roster-active, roster-all, detail-working, detail-scrolled, detail-failed,
+  states), so review screenshots can be taken per frame.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Agents view — plan/24 prototype</title>
+<style>
+	.dark {
+		color-scheme: dark;
+		--omp-accent: #5aa9ff;
+		--omp-accent-dim: rgba(90, 169, 255, 0.14);
+		--omp-border: #333333;
+		--omp-border-muted: #2a2a2a;
+		--omp-border-strong: #4a4a4a;
+		--omp-border-accent: rgba(90, 169, 255, 0.5);
+		--omp-success: #6fcf97;
+		--omp-error: #f38b82;
+		--omp-error-dim: rgba(243, 139, 130, 0.1);
+		--omp-warning: #e8b75f;
+		--omp-warning-dim: rgba(232, 183, 95, 0.1);
+		--omp-text: #ececec;
+		--omp-text-secondary: #c5c5c5;
+		--omp-muted: #a8a8a8;
+		--omp-dim: #9b9b9b;
+		--omp-link: #7ab7ff;
+		--omp-bg-primary: #1f1f1f;
+		--omp-bg-secondary: #262626;
+		--omp-bg-elevated: #2a2a2a;
+		--omp-selected-bg: rgba(255, 255, 255, 0.07);
+		--omp-hover-bg: rgba(255, 255, 255, 0.05);
+		--omp-code-bg: #181818;
+		--omp-tool-pending-bg: #262626;
+		--omp-tool-success-bg: rgba(111, 207, 151, 0.04);
+		--omp-tool-error-bg: rgba(243, 139, 130, 0.06);
+		--omp-tool-output: #c5c5c5;
+		--omp-progress-bg: #2f2f2f;
+		--omp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24);
+		--omp-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.32);
+		--omp-segment-track: rgba(255, 255, 255, 0.07);
+		--omp-segment-thumb: color-mix(in srgb, #ececec 13%, #1f1f1f);
+		--omp-segment-track-solid: #2c2c2c;
+	}
+	.light {
+		color-scheme: light;
+		--omp-accent: #0b62c4;
+		--omp-accent-dim: rgba(11, 98, 196, 0.08);
+		--omp-border: #e3e3e3;
+		--omp-border-muted: #ececec;
+		--omp-border-strong: #c9c9c9;
+		--omp-border-accent: rgba(11, 98, 196, 0.45);
+		--omp-success: #1a7f45;
+		--omp-error: #c0392b;
+		--omp-error-dim: rgba(192, 57, 43, 0.07);
+		--omp-warning: #8a5a00;
+		--omp-warning-dim: rgba(138, 90, 0, 0.08);
+		--omp-text: #0d0d0d;
+		--omp-text-secondary: #404040;
+		--omp-muted: #5c5c5c;
+		--omp-dim: #6b6b6b;
+		--omp-link: #0b62c4;
+		--omp-bg-primary: #ffffff;
+		--omp-bg-secondary: #f7f7f7;
+		--omp-bg-elevated: #ffffff;
+		--omp-selected-bg: rgba(0, 0, 0, 0.05);
+		--omp-hover-bg: rgba(0, 0, 0, 0.04);
+		--omp-code-bg: #f7f7f7;
+		--omp-tool-pending-bg: #f7f7f7;
+		--omp-tool-success-bg: rgba(26, 127, 69, 0.04);
+		--omp-tool-error-bg: rgba(192, 57, 43, 0.05);
+		--omp-tool-output: #404040;
+		--omp-progress-bg: #efefef;
+		--omp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+		--omp-shadow-md: 0 6px 20px rgba(0, 0, 0, 0.08);
+		--omp-segment-track: rgba(0, 0, 0, 0.05);
+		--omp-segment-thumb: #ffffff;
+		--omp-segment-track-solid: #f2f2f2;
+	}
+
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; background: #8a8a8a; }
+	.frame {
+		--gui-font-size: 15px;
+		--xxs: calc(var(--gui-font-size) * 11 / 15);
+		--xs: calc(var(--gui-font-size) * 12 / 15);
+		--sm: calc(var(--gui-font-size) * 12.5 / 15);
+		--md: calc(var(--gui-font-size) * 13.5 / 15);
+		--lg: calc(var(--gui-font-size) * 14.5 / 15);
+		--mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+		width: 400px;
+		height: 820px;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", "PingFang SC", system-ui, sans-serif;
+		font-size: var(--md);
+		color: var(--omp-text);
+		background: var(--omp-bg-primary);
+		border-left: 1px solid var(--omp-border-muted);
+		-webkit-font-smoothing: antialiased;
+	}
+	.frame.wide { width: 520px; }
+	.frame.short { height: 560px; }
+	svg { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+	.mono { font-family: var(--mono); }
+	.num { font-variant-numeric: tabular-nums; }
+
+	/* ── Drawer header: the existing segmented tab bar ─────────────────── */
+	.drawer-head { height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--omp-border-muted); }
+	.seg { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 10px; background: var(--omp-segment-track); }
+	.seg > button { all: unset; display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 8px; color: var(--omp-muted); font-size: var(--md); font-weight: 500; white-space: nowrap; }
+	.seg > button[aria-pressed="true"] { background: var(--omp-segment-thumb); color: var(--omp-text); box-shadow: var(--omp-shadow-sm); }
+	.seg.small > button { height: 24px; padding: 0 9px; font-size: var(--sm); }
+	.seg .count { font-size: var(--xs); color: var(--omp-dim); font-variant-numeric: tabular-nums; }
+	.seg > button[aria-pressed="true"] .count { color: var(--omp-muted); }
+	/* Glance: a 6 px dot on the Agents icon while another tab is shown; never a number. */
+	.seg > button.dotted { position: relative; }
+	.seg > button.dotted::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--omp-accent); box-shadow: 0 0 0 2px var(--omp-segment-track-solid); }
+	.seg > button.dotted.err::after { background: var(--omp-error); }
+	.iconbtn { all: unset; width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--omp-muted); }
+	.iconbtn.on { background: var(--omp-selected-bg); color: var(--omp-text); }
+	.spacer { flex: 1; }
+
+	/* ── Roster toolbar ────────────────────────────────────────────────── */
+	.toolbar { height: 44px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 12px; }
+	.toolbar.scrolled { border-bottom: 1px solid var(--omp-border-muted); }
+	.banner { margin: 0 12px 6px; padding: 7px 10px; border-radius: 10px; display: flex; align-items: center; gap: 8px; font-size: var(--sm); background: var(--omp-warning-dim); color: var(--omp-warning); }
+	.banner .grow { flex: 1; color: var(--omp-text-secondary); }
+	.banner.error { background: var(--omp-error-dim); color: var(--omp-error); }
+	.linkbtn { all: unset; font-size: var(--sm); font-weight: 500; color: var(--omp-link); }
+
+	/* ── Roster rows ───────────────────────────────────────────────────── */
+	.list { flex: 1; overflow: hidden; padding: 2px 8px 12px; }
+	.row { position: relative; display: grid; grid-template-columns: 14px 16px minmax(0, 1fr) auto; column-gap: 4px; align-items: center; min-height: 30px; padding: 0 8px 0 calc(2px + var(--indent, 0px)); border-radius: 8px; }
+	.row + .row { margin-top: 1px; }
+	.row.two { padding-top: 6px; padding-bottom: 6px; row-gap: 1px; }
+	.row:hover { background: var(--omp-hover-bg); }
+	.row.sel { background: var(--omp-selected-bg); }
+	.row .chev { color: var(--omp-dim); display: flex; justify-content: center; }
+	.row .chev svg { width: 12px; height: 12px; }
+	.row .slot { display: flex; justify-content: center; }
+	.row .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; color: var(--omp-text-secondary); }
+	.row .meta { font-size: var(--xs); color: var(--omp-dim); font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; }
+	.row .now { grid-column: 3 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--xs); color: var(--omp-dim); line-height: 16px; }
+	.row .now .ntool { font-family: var(--mono); color: var(--omp-text-secondary); margin-right: 6px; }
+	.row .now .arg { font-family: var(--mono); }
+	.row.working .title { color: var(--omp-text); }
+	.row.context .title, .row.done .title { color: var(--omp-muted); }
+	.row.failed .meta { color: var(--omp-error); }
+	.row .now.warn { color: var(--omp-warning); }
+	.more { margin-left: 6px; display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--omp-border-muted); font-size: var(--xxs); color: var(--omp-dim); vertical-align: 1px; }
+	.more i { width: 5px; height: 5px; border-radius: 50%; background: var(--omp-accent); }
+	/* Tree guides: one hairline per ancestor level, centred on the parent's dot. */
+	.guide { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--omp-border-muted); }
+
+	/* Status signal: a 6 px dot, never a bar (global.css .omp-signal-light). */
+	.sig { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+	.sig.working { color: var(--omp-accent); }
+	.sig.waiting { background: transparent; box-shadow: inset 0 0 0 1.5px var(--omp-dim); width: 7px; height: 7px; }
+	.sig.failed { color: var(--omp-error); }
+	.sig.none { opacity: 0; }
+
+	/* ── Detail ────────────────────────────────────────────────────────── */
+	.nav { position: relative; height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 6px; border-bottom: 1px solid var(--omp-border-muted); }
+	.back { all: unset; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 8px 0 4px; border-radius: 8px; color: var(--omp-muted); font-size: var(--sm); font-weight: 500; }
+	.scroll { flex: 1; overflow: hidden; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+	.crumb { font-size: var(--xs); color: var(--omp-dim); display: flex; align-items: center; gap: 3px; }
+	.crumb a { color: var(--omp-link); text-decoration: none; }
+	.crumb svg { width: 11px; height: 11px; }
+	.h1 { font-size: var(--lg); font-weight: 600; line-height: 1.35; margin: 2px 0 0; color: var(--omp-text); }
+	.subline { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--xs); color: var(--omp-dim); }
+	.badge { display: inline-flex; align-items: center; gap: 6px; height: 18px; padding: 0 8px; border-radius: 9px; border: 1px solid; font-size: var(--xs); font-weight: 500; }
+	.badge.info { color: var(--omp-link); border-color: color-mix(in srgb, var(--omp-link) 35%, transparent); }
+	.badge.error { color: var(--omp-error); border-color: color-mix(in srgb, var(--omp-error) 35%, transparent); }
+	.badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+	.card { border: 1px solid var(--omp-border-muted); background: var(--omp-bg-elevated); border-radius: 14px; }
+	.stats { display: grid; grid-template-columns: repeat(4, 1fr); }
+	.stat { padding: 9px 12px 8px; }
+	.stat + .stat { border-left: 1px solid var(--omp-border-muted); }
+	.stat .k { font-size: var(--xs); color: var(--omp-dim); }
+	.stat .v { margin-top: 2px; font-size: var(--md); font-weight: 500; font-variant-numeric: tabular-nums; }
+	.ctx { padding: 8px 12px 10px; border-top: 1px solid var(--omp-border-muted); display: flex; align-items: center; gap: 10px; font-size: var(--xs); color: var(--omp-dim); }
+	.bar { flex: 1; height: 4px; border-radius: 2px; background: var(--omp-progress-bg); overflow: hidden; }
+	.bar b { display: block; height: 100%; background: var(--omp-accent); border-radius: 2px; }
+	.nowcard { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+	.nowcard .top { display: flex; align-items: center; gap: 8px; font-size: var(--sm); }
+	.shimmer { color: var(--omp-muted); background: linear-gradient(90deg, var(--omp-muted) 0%, var(--omp-muted) 40%, var(--omp-text) 50%, var(--omp-muted) 60%, var(--omp-muted) 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 500; }
+	.nowcard .target { font-family: var(--mono); font-size: var(--sm); color: var(--omp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.nowcard .intent { font-size: var(--sm); color: var(--omp-dim); }
+	.errcard { padding: 10px 12px; border-radius: 14px; background: var(--omp-error-dim); border: 1px solid color-mix(in srgb, var(--omp-error) 25%, transparent); }
+	.errcard .top { display: flex; align-items: center; gap: 8px; font-size: var(--sm); font-weight: 600; color: var(--omp-error); }
+	.errcard p { margin: 4px 0 0; font-size: var(--sm); color: var(--omp-text-secondary); line-height: 1.45; }
+	.disclosure { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+	.disclosure .label { font-size: var(--sm); font-weight: 500; color: var(--omp-muted); flex: none; }
+	.disclosure .preview { min-width: 0; flex: 1; font-size: var(--sm); color: var(--omp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.section { display: flex; align-items: baseline; justify-content: space-between; font-size: var(--sm); font-weight: 500; color: var(--omp-muted); margin-top: 4px; }
+	.section span { font-weight: 400; color: var(--omp-dim); font-size: var(--xs); }
+	.prose { font-size: var(--md); line-height: 1.55; color: var(--omp-text); margin: 0; }
+	.prose code { font-family: var(--mono); font-size: 0.92em; padding: 1px 4px; border-radius: 4px; background: var(--omp-code-bg); }
+	.think { display: flex; align-items: center; gap: 6px; font-size: var(--sm); color: var(--omp-dim); }
+	.think svg { width: 12px; height: 12px; }
+	.tool { position: relative; border: 1px solid var(--omp-border-muted); border-radius: 10px; overflow: hidden; box-shadow: var(--omp-shadow-sm); background: var(--omp-tool-success-bg); }
+	.tool::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--omp-success); }
+	.tool.run { background: var(--omp-tool-pending-bg); border-color: color-mix(in srgb, var(--omp-border-accent) 60%, transparent); }
+	.tool.run::before { background: var(--omp-accent); }
+	.tool.err { background: var(--omp-tool-error-bg); }
+	.tool.err::before { background: var(--omp-error); }
+	.tool .hd { display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 14px; }
+	.tool .hd svg { width: 12px; height: 12px; }
+	.tool .name { font-family: var(--mono); font-size: var(--md); font-weight: 600; letter-spacing: -0.01em; }
+	.tool .sum { min-width: 0; flex: 1; font-family: var(--mono); font-size: var(--sm); color: var(--omp-tool-output); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.tool .dur { font-size: var(--xs); color: var(--omp-dim); font-variant-numeric: tabular-nums; }
+	.tool pre { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--omp-border-muted); font-family: var(--mono); font-size: var(--sm); color: var(--omp-tool-output); background: var(--omp-code-bg); white-space: pre-wrap; }
+	.ok { color: var(--omp-success); }
+	.bad { color: var(--omp-error); }
+	.acc { color: var(--omp-accent); }
+	.chip { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--omp-bg-elevated); border: 1px solid var(--omp-border); box-shadow: var(--omp-shadow-md); font-size: var(--sm); font-weight: 500; color: var(--omp-text); }
+
+	/* Facts: the Overview card's label/value rows, one card for everything secondary. */
+	.facts { padding: 6px 12px 0; }
+	.fact { display: flex; align-items: center; gap: 12px; min-height: 26px; font-size: var(--md); }
+	.fact .k { width: 64px; flex: none; color: var(--omp-dim); }
+	.fact .v { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--omp-text); }
+	.fact .v .sep { color: var(--omp-dim); margin: 0 5px; }
+	.fact .v.ctxv { display: flex; align-items: center; gap: 10px; }
+	.fact .v.ctxv .bar { max-width: 140px; }
+	.facts .disclosure { margin: 6px -12px 0; border-top: 1px solid var(--omp-border-muted); }
+	.live { display: flex; align-items: center; gap: 8px; font-size: var(--sm); padding: 0 2px; }
+	.live .num { font-size: var(--xs); color: var(--omp-dim); }
+	.navtitle { position: absolute; left: 96px; right: 96px; text-align: center; font-size: var(--sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+	/* ── Empty / error states ──────────────────────────────────────────── */
+	.state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 40px; text-align: center; }
+	.state svg { width: 22px; height: 22px; color: var(--omp-dim); margin-bottom: 4px; }
+	.state .t { font-size: var(--md); color: var(--omp-text-secondary); font-weight: 500; }
+	.state .s { font-size: var(--sm); color: var(--omp-dim); line-height: 1.5; }
+	.btn { all: unset; margin-top: 8px; height: 28px; padding: 0 12px; border-radius: 8px; background: var(--omp-selected-bg); color: var(--omp-text); font-size: var(--sm); font-weight: 500; display: inline-flex; align-items: center; }
+	.caption { width: 100%; font: 600 13px -apple-system, sans-serif; color: #fff; margin: 8px 0 -12px; }
+	.stack { display: flex; flex-direction: column; }
+	.stack > .frame + .frame { border-top: 1px solid var(--omp-border); }
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+	<symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+	<symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></symbol>
+	<symbol id="i-q" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+	<symbol id="i-diff" viewBox="0 0 24 24"><path d="M12 3v14M5 10h14M5 21h14"/></symbol>
+	<symbol id="i-tree" viewBox="0 0 24 24"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3M3 3v13a2 2 0 0 0 2 2h3"/></symbol>
+	<symbol id="i-term" viewBox="0 0 24 24"><path d="m7 11 2-2-2-2M11 13h4"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+	<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+	<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+	<symbol id="i-list" viewBox="0 0 24 24"><path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/></symbol>
+	<symbol id="i-graph" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3M12 12V8"/></symbol>
+	<symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+	<symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+	<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+	<symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+	<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+	<symbol id="i-spin" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></symbol>
+	<symbol id="i-pause" viewBox="0 0 24 24"><rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/></symbol>
+	<symbol id="i-arrowdown" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
+	<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+	<symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 18V5M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4M17.6 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.6 1.5"/><path d="M18 18a4 4 0 0 0 2-7.46M6 18a4 4 0 0 1-2-7.46M18 18a4 4 0 0 1-4 4 2 2 0 0 1-2-2 2 2 0 0 1-2 2 4 4 0 0 1-4-4"/></symbol>
+</svg>
+
+<template id="drawer-head">
+	<div class="drawer-head">
+		<div class="seg">
+			<button><svg><use href="#i-dash"/></svg></button>
+			<button aria-pressed="true"><svg><use href="#i-bot"/></svg>Agents</button>
+			<button><svg><use href="#i-q"/></svg></button>
+			<button><svg><use href="#i-diff"/></svg></button>
+			<button><svg><use href="#i-tree"/></svg></button>
+			<button><svg><use href="#i-term"/></svg></button>
+			<button><svg><use href="#i-globe"/></svg></button>
+		</div>
+		<span class="spacer"></span>
+		<button class="iconbtn"><svg><use href="#i-x"/></svg></button>
+	</div>
+</template>
+
+<template id="toolbar-active">
+	<div class="toolbar">
+		<div class="seg small">
+			<button aria-pressed="true">Active <span class="count">13</span></button>
+			<button>All <span class="count">34</span></button>
+		</div>
+		<span class="spacer"></span>
+		<div class="seg small">
+			<button aria-pressed="true" title="List"><svg><use href="#i-list"/></svg></button>
+			<button title="Graph"><svg><use href="#i-graph"/></svg></button>
+		</div>
+		<button class="iconbtn" title="Pause agents, stop the turn"><svg><use href="#i-more"/></svg></button>
+	</div>
+</template>
+
+<!-- 1. Active roster, dark -->
+<div class="frame dark" id="roster-active" data-head="drawer-head" data-toolbar="toolbar-active">
+	<div class="list">
+		<div class="row working" style="--indent:0px">
+			<span class="chev"><svg><use href="#i-down"/></svg></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Map the auth surface</span><span class="meta">6m 40s</span>
+		</div>
+		<div class="row two working sel" style="--indent:14px">
+			<span class="guide" style="left:27px"></span>
+			<span class="chev"></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Find every verifyToken caller</span><span class="meta">1m 48s</span>
+			<span class="now"><span class="ntool">grep</span><span class="arg">verifyToken · src/</span></span>
+		</div>
+		<div class="row two working" style="--indent:14px">
+			<span class="guide" style="left:27px"></span>
+			<span class="chev"></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Read the session middleware</span><span class="meta">52s</span>
+			<span class="now"><span class="ntool">read</span><span class="arg">src/auth/session.ts</span></span>
+		</div>
+		<div class="row" style="--indent:14px">
+			<span class="guide" style="left:27px"></span>
+			<span class="chev"></span><span class="slot"><i class="sig waiting"></i></span>
+			<span class="title">Check the token refresh tests</span><span class="meta">Waiting</span>
+		</div>
+		<div class="row two working" style="--indent:0px">
+			<span class="chev"><svg><use href="#i-right"/></svg></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Rewrite the login handler<span class="more"><i></i>4</span></span><span class="meta">3m 05s</span>
+			<span class="now"><span class="ntool">edit</span><span class="arg">src/routes/login.ts</span></span>
+		</div>
+		<div class="row two working" style="--indent:0px">
+			<span class="chev"></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Draft the migration notes</span><span class="meta">41s</span>
+			<span class="now">Summarizing the call sites it was given</span>
+		</div>
+		<div class="row two working" style="--indent:0px">
+			<span class="chev"></span><span class="slot"><i class="sig working"></i></span>
+			<span class="title">Audit cookie flags</span><span class="meta">2m 10s</span>
+			<span class="now warn">Retrying 2 of 3 · 429 Too Many Requests</span>
+		</div>
+		<div class="row" style="--indent:0px">
+			<span class="chev"></span><span class="slot"><i class="sig waiting"></i></span>
+			<span class="title">Collect benchmark baselines</span><span class="meta">Waiting</span>
+		</div>
+		<div class="row two failed" style="--indent:0px">
+			<span class="chev"></span><span class="slot"><i class="sig failed"></i></span>
+			<span class="title">Benchmark the token cache</span><span class="meta">Failed</span>
+			<span class="now">Rate limited after 3 attempts</span>
+		</div>
+	</div>
+</div>
+
+<!-- 2. All roster, light, wider drawer -->
+<div class="frame light wide" id="roster-all" data-head="drawer-head">
+	<div class="toolbar scrolled">
+		<div class="seg small">
+			<button>Active <span class="count">13</span></button>
+			<button aria-pressed="true">All <span class="count">34</span></button>
+		</div>
+		<span class="spacer"></span>
+		<div class="seg small">
+			<button aria-pressed="true"><svg><use href="#i-list"/></svg></button>
+			<button><svg><use href="#i-graph"/></svg></button>
+		</div>
+		<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+	</div>
+	<div class="list">
+		<div class="row done"><span class="chev"><svg><use href="#i-right"/></svg></span><span class="slot"><i class="sig none"></i></span><span class="title">Survey the repository layout<span class="more">6</span></span><span class="meta">4m 12s</span></div>
+		<div class="row working"><span class="chev"><svg><use href="#i-down"/></svg></span><span class="slot"><i class="sig working"></i></span><span class="title">Map the auth surface</span><span class="meta">6m 40s</span></div>
+		<div class="row two working" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Find every verifyToken caller</span><span class="meta">1m 48s</span><span class="now"><span class="ntool">grep</span><span class="arg">verifyToken · src/</span></span></div>
+		<div class="row two working" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Read the session middleware</span><span class="meta">52s</span><span class="now"><span class="ntool">read</span><span class="arg">src/auth/session.ts</span></span></div>
+		<div class="row" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig waiting"></i></span><span class="title">Check the token refresh tests</span><span class="meta">Waiting</span></div>
+		<div class="row done" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">List the auth routes</span><span class="meta">38s</span></div>
+		<div class="row done" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">Read the OAuth callback</span><span class="meta">1m 02s</span></div>
+		<div class="row done"><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">Pin the current test baseline</span><span class="meta">2m 55s</span></div>
+		<div class="row two working"><span class="chev"><svg><use href="#i-right"/></svg></span><span class="slot"><i class="sig working"></i></span><span class="title">Rewrite the login handler<span class="more"><i></i>4</span></span><span class="meta">3m 05s</span><span class="now"><span class="ntool">edit</span><span class="arg">src/routes/login.ts</span></span></div>
+		<div class="row done"><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">Update the session types</span><span class="meta">1m 31s</span></div>
+		<div class="row done"><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">Rename the token helpers</span><span class="meta">58s</span></div>
+		<div class="row two working"><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Draft the migration notes</span><span class="meta">41s</span><span class="now">Summarizing the call sites it was given</span></div>
+		<div class="row done"><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">检查 i18n 文案中的登录提示</span><span class="meta">47s</span></div>
+		<div class="row two failed"><span class="chev"></span><span class="slot"><i class="sig failed"></i></span><span class="title">Benchmark the token cache</span><span class="meta">Failed</span><span class="now">Rate limited after 3 attempts</span></div>
+		<div class="row done"><span class="chev"></span><span class="slot"><i class="sig none"></i></span><span class="title">Remove the legacy cookie path</span><span class="meta">Cancelled</span></div>
+		<div class="row two working"><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Audit cookie flags</span><span class="meta">2m 10s</span><span class="now warn">Retrying 2 of 3 · 429 Too Many Requests</span></div>
+		<div class="row"><span class="chev"></span><span class="slot"><i class="sig waiting"></i></span><span class="title">Collect benchmark baselines</span><span class="meta">Waiting</span></div>
+	</div>
+</div>
+
+<!-- 3. Detail of a working agent, dark: opened at the top; the nav title appears once the heading scrolls away -->
+<div class="frame dark" id="detail-working" data-head="drawer-head">
+	<div class="nav">
+		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
+		<span class="spacer"></span>
+		<button class="iconbtn" title="Stop this agent"><svg><use href="#i-more"/></svg></button>
+	</div>
+	<div class="scroll">
+		<div>
+			<div class="crumb">In <a href="#">Map the auth surface</a></div>
+			<h1 class="h1">Find every verifyToken caller</h1>
+			<div class="subline"><span class="badge info"><i></i>Working</span><span class="num">1m 48s</span></div>
+		</div>
+		<div class="card facts">
+			<div class="fact"><span class="k">Agent</span><span class="v">explore<span class="sep">·</span>claude-sonnet-4.5</span></div>
+			<div class="fact"><span class="k">Work</span><span class="v num">14 steps<span class="sep">·</span>38.2k tokens<span class="sep">·</span>$0.21</span></div>
+			<div class="fact"><span class="k">Context</span><span class="v ctxv"><span class="bar"><b style="width:31%"></b></span><span class="num" style="color:var(--omp-dim)">31% of 200k</span></span></div>
+			<div class="disclosure"><svg style="color:var(--omp-dim);width:12px;height:12px"><use href="#i-right"/></svg><span class="label">Assignment</span><span class="preview">Find every call site of verifyToken() across the repo and report file:line with…</span></div>
+		</div>
+		<div class="section">Transcript</div>
+		<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
+		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
+		<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
+		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">bash</span><span class="sum">rg -c "verifyToken\(" --type ts</span><span class="dur">1.1s</span></div><pre>src/auth/session.ts:4
+src/routes/login.ts:3
+src/middleware/guard.ts:2</pre></div>
+		<p class="prose"><b>9 files</b> call <code>verifyToken</code> directly; three of them wrap it in <code>requireSession</code>. Checking <code>packages/</code> next.</p>
+		<div class="tool run"><div class="hd"><svg class="acc"><use href="#i-spin"/></svg><span class="name">grep</span><span class="sum">verifyToken  packages/</span><span class="dur">0:12</span></div></div>
+		<div class="live"><span class="shimmer">Looking for callers outside the auth module</span></div>
+	</div>
+</div>
+
+<!-- 3b. The same detail scrolled up while new steps arrive: nav title shown, the floating chip -->
+<div class="frame dark short" id="detail-scrolled" data-head="drawer-head" style="position:relative;height:420px">
+	<div class="nav">
+		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
+		<span class="navtitle">Find every verifyToken caller</span>
+		<span class="spacer"></span>
+		<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+	</div>
+	<div class="scroll">
+		<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
+		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
+		<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
+		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">read</span><span class="sum">src/auth/session.ts:40-120</span><span class="dur">0.1s</span></div></div>
+	</div>
+	<span class="chip"><svg style="width:12px;height:12px"><use href="#i-arrowdown"/></svg>3 new steps</span>
+</div>
+
+<!-- 4. Detail of a failed agent, light: the error leads -->
+<div class="frame light" id="detail-failed" data-head="drawer-head">
+	<div class="nav">
+		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
+		<span class="spacer"></span>
+		<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+	</div>
+	<div class="scroll">
+		<div>
+			<h1 class="h1">Benchmark the token cache</h1>
+			<div class="subline"><span class="badge error"><i></i>Failed</span><span class="num">after 3m 22s</span></div>
+		</div>
+		<div class="errcard">
+			<div class="top"><svg><use href="#i-alert"/></svg>Stopped after 3 attempts</div>
+			<p>429 Too Many Requests: the provider's rate limit was hit while the benchmark was warming the cache.</p>
+		</div>
+		<div class="card facts">
+			<div class="fact"><span class="k">Agent</span><span class="v">task<span class="sep">·</span>gpt-5.1-mini</span></div>
+			<div class="fact"><span class="k">Work</span><span class="v num">9 steps<span class="sep">·</span>12.9k tokens<span class="sep">·</span>$0.04</span></div>
+			<div class="disclosure"><svg style="color:var(--omp-dim);width:12px;height:12px"><use href="#i-right"/></svg><span class="label">Assignment</span><span class="preview">Measure verifyToken latency with and without the LRU cache, 10k calls…</span></div>
+		</div>
+		<div class="section">Transcript</div>
+		<p class="prose">Warming the cache with 10,000 synthetic tokens before timing the cold and warm paths.</p>
+		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">write</span><span class="sum">bench/token-cache.bench.ts</span><span class="dur">0.1s</span></div></div>
+		<div class="tool err"><div class="hd"><svg class="bad"><use href="#i-x"/></svg><span class="name">bash</span><span class="sum">bun bench/token-cache.bench.ts</span><span class="dur">41s</span></div><pre>error: upstream returned 429
+  at warmCache (token-cache.bench.ts:18)</pre></div>
+	</div>
+</div>
+
+<!-- 0. Glance: the Agents tab while Overview is shown. Working agents → accent dot; a failure you have not seen → error dot -->
+<div class="stack" id="glance">
+	<div class="frame dark" style="height:48px">
+		<div class="drawer-head" style="border-bottom:0">
+			<div class="seg">
+				<button aria-pressed="true"><svg><use href="#i-dash"/></svg>Overview</button>
+				<button class="dotted" title="Agents · 6 working"><svg><use href="#i-bot"/></svg></button>
+				<button><svg><use href="#i-q"/></svg></button><button><svg><use href="#i-diff"/></svg></button><button><svg><use href="#i-tree"/></svg></button><button><svg><use href="#i-term"/></svg></button><button><svg><use href="#i-globe"/></svg></button>
+			</div>
+			<span class="spacer"></span><button class="iconbtn"><svg><use href="#i-x"/></svg></button>
+		</div>
+	</div>
+	<div class="frame light" style="height:48px">
+		<div class="drawer-head" style="border-bottom:0">
+			<div class="seg">
+				<button aria-pressed="true"><svg><use href="#i-dash"/></svg>Overview</button>
+				<button class="dotted err" title="Agents · 1 failed"><svg><use href="#i-bot"/></svg></button>
+				<button><svg><use href="#i-q"/></svg></button><button><svg><use href="#i-diff"/></svg></button><button><svg><use href="#i-tree"/></svg></button><button><svg><use href="#i-term"/></svg></button><button><svg><use href="#i-globe"/></svg></button>
+			</div>
+			<span class="spacer"></span><button class="iconbtn"><svg><use href="#i-x"/></svg></button>
+		</div>
+	</div>
+</div>
+
+<!-- 5. States, dark: empty, nothing active, paused, refresh failed with rows, load failed -->
+<div class="stack" id="states">
+	<div class="frame dark short" style="height:280px" data-head="drawer-head">
+		<div class="state"><svg><use href="#i-bot"/></svg><div class="t">No subagents yet</div><div class="s">When the agent hands work to subagents, they appear here while they run.</div></div>
+	</div>
+	<div class="frame dark short" style="height:300px">
+		<div class="toolbar">
+			<div class="seg small"><button aria-pressed="true">Active <span class="count">0</span></button><button>All <span class="count">34</span></button></div>
+			<span class="spacer"></span>
+			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
+			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+		</div>
+		<div class="state"><svg><use href="#i-check"/></svg><div class="t">Nothing is running</div><div class="s">Every agent in this session has finished.</div><button class="btn">Show all</button></div>
+	</div>
+	<div class="frame dark short" style="height:200px">
+		<div class="toolbar">
+			<div class="seg small"><button aria-pressed="true">Active <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
+			<span class="spacer"></span>
+			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
+			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+		</div>
+		<div class="banner"><svg><use href="#i-pause"/></svg><span class="grow">Agents are paused</span><button class="linkbtn">Resume</button></div>
+		<div class="list">
+			<div class="row two working"><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Find every verifyToken caller</span><span class="meta">1m 48s</span><span class="now"><span class="ntool">grep</span><span class="arg">verifyToken · src/</span></span></div>
+			<div class="row"><span class="chev"></span><span class="slot"><i class="sig waiting"></i></span><span class="title">Check the token refresh tests</span><span class="meta">Waiting</span></div>
+		</div>
+	</div>
+	<div class="frame dark short" style="height:150px">
+		<div class="toolbar">
+			<div class="seg small"><button aria-pressed="true">Active <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
+			<span class="spacer"></span>
+			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
+			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
+		</div>
+		<div class="banner error"><svg><use href="#i-alert"/></svg><span class="grow">Couldn't refresh the agents</span><button class="linkbtn">Retry</button></div>
+		<div class="list">
+			<div class="row two working"><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Find every verifyToken caller</span><span class="meta">1m 48s</span><span class="now"><span class="ntool">grep</span><span class="arg">verifyToken · src/</span></span></div>
+		</div>
+	</div>
+	<div class="frame dark short" style="height:220px">
+		<div class="state"><svg style="color:var(--omp-error)"><use href="#i-alert"/></svg><div class="t">Couldn't load the agents</div><div class="s">The agent didn't answer.</div><button class="btn">Retry</button></div>
+	</div>
+</div>
+
+<script>
+	for (const frame of document.querySelectorAll("[data-head]")) {
+		const head = document.getElementById(frame.dataset.head).content.cloneNode(true);
+		frame.prepend(head);
+	}
+	for (const frame of document.querySelectorAll("[data-toolbar]")) {
+		const bar = document.getElementById(frame.dataset.toolbar).content.cloneNode(true);
+		frame.children[0].after(bar);
+	}
+</script>
+</body>
+</html>
