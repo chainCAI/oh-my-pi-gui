@@ -11,24 +11,13 @@
 
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
-import type { ExtensionUIRequest } from "../../../shared/rpc-types";
+import { type ApprovalSelect, parseApprovalTitle } from "../../../shared/approval-prompt";
 import { useT } from "../../lib/i18n";
 import { Badge, type BadgeVariant, Button, Modal } from "../common";
 
-const APPROVAL_TITLE_PREFIX = "Allow tool: ";
 const SESSION_OPTION = /^Approve (.+) for this session$/;
 
-type ApprovalSelect = Extract<ExtensionUIRequest, { method: "select" }>;
-
 export type ApprovalResponse = { value: string } | { confirmed: boolean } | { cancelled: true };
-
-export function isApprovalRequest(request: ExtensionUIRequest): request is ApprovalSelect {
-	if (request.method !== "select" || !request.title.startsWith(APPROVAL_TITLE_PREFIX)) return false;
-	const { options } = request;
-	// Grants shift "Approve" off index 0; its presence anywhere plus a "Deny"
-	// tail is the approval shape.
-	return options.includes("Approve") && options.at(-1) === "Deny";
-}
 
 /** The "approve for this session" option and the subject it names, when the prompt offers one. */
 function sessionOption(request: ApprovalSelect): { value: string; subject: string } | undefined {
@@ -88,10 +77,7 @@ export function ApprovalDialog({
 }) {
 	const t = useT();
 	const { toolName, body } = useMemo(() => {
-		const lines = request.title.split("\n");
-		const first = lines[0] ?? "";
-		const name = first.startsWith(APPROVAL_TITLE_PREFIX) ? first.slice(APPROVAL_TITLE_PREFIX.length).trim() : first;
-		const rest = lines.slice(1).join("\n").trim();
+		const { toolName: name, body: rest } = parseApprovalTitle(request.title);
 		return { toolName: name || t("approval.unknownTool"), body: rest };
 	}, [request.title, t]);
 

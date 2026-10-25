@@ -19,9 +19,11 @@ export interface QuitRisk {
 	totalTabs: number;
 	/** Windows holding at least one working tab — the dialog names the count. */
 	workingWindows: number;
+	/** Scheduled task runs in flight (plan/23); they belong to no window. */
+	runningTasks: number;
 }
 
-export function assessQuitRisk(facts: readonly WindowTabFact[]): QuitRisk {
+export function assessQuitRisk(facts: readonly WindowTabFact[], runningTasks = 0): QuitRisk {
 	const workingWindows = new Set<number>();
 	let workingTabs = 0;
 	for (const fact of facts) {
@@ -29,10 +31,10 @@ export function assessQuitRisk(facts: readonly WindowTabFact[]): QuitRisk {
 		workingTabs++;
 		workingWindows.add(fact.windowId);
 	}
-	return { workingTabs, totalTabs: facts.length, workingWindows: workingWindows.size };
+	return { workingTabs, totalTabs: facts.length, workingWindows: workingWindows.size, runningTasks };
 }
 
-/** Idle tabs die quietly; live agent runs always ask first. */
+/** Idle tabs die quietly; live agent runs and scheduled runs always ask first. */
 export function quitNeedsConfirmation(risk: QuitRisk): boolean {
-	return risk.workingTabs > 0;
+	return risk.workingTabs > 0 || risk.runningTasks > 0;
 }

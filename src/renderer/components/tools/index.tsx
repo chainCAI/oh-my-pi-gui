@@ -34,6 +34,7 @@ import {
 } from "./OpsRenderers";
 import { ReadRenderer } from "./ReadRenderer";
 import { ResolveRenderer } from "./ResolveRenderer";
+import { ScheduleTaskRenderer } from "./ScheduleTaskRenderer";
 import { TaskRenderer } from "./TaskRenderer";
 import { TodoRenderer } from "./TodoRenderer";
 import type { ToolRendererProps } from "./ToolCard";
@@ -158,6 +159,7 @@ const REGISTRY: Record<string, ComponentType<ToolRendererProps>> = {
 	manage_skill: ManageSkillRenderer,
 	security_scan: SecurityScanRenderer,
 	ida: IdaRenderer,
+	schedule_task: ScheduleTaskRenderer,
 };
 
 export function getToolRenderer(name: string): ComponentType<ToolRendererProps> {
@@ -240,6 +242,7 @@ const SUMMARIES: Record<string, (args: Record<string, unknown>) => string> = {
 	tts: args => argLine(args, ["text"]),
 	resolve: args => argLine(args, ["reason", "label"]),
 	reject: args => argLine(args, ["reason"]),
+	schedule_task: args => argLine(args, ["title"]),
 };
 
 const FALLBACK_ARG_KEYS = ["path", "file", "name", "pattern", "query", "command", "action", "i", "text"] as const;

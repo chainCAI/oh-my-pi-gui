@@ -23,9 +23,10 @@ import { LogWatcher } from "./log-watcher";
 import { MemoryWatcher } from "./memory-watcher";
 import { createMenu } from "./menu";
 import { writeRuntimeLog } from "./runtime-log";
+import { SchedulerHost } from "./scheduler/host";
 import { SessionIndex } from "./session-index";
 import { shellSpawnEnv } from "./shell-env";
-import { SidecarManager } from "./sidecar";
+import { SidecarManager, type SidecarOptions } from "./sidecar";
 import { SidecarPool } from "./sidecar-pool";
 import { StatsClient } from "./stats-client";
 import { StatsServerManager } from "./stats-server";
@@ -222,6 +223,7 @@ let statsClient: StatsClient;
 let logWatcher: LogWatcher;
 let memoryWatcher: MemoryWatcher | undefined;
 let conversationIndex: ConversationIndex | null = null;
+let schedulerHost: SchedulerHost | null = null;
 
 function errorMessage(value: unknown): { message: string; stack?: string } {
 	if (value instanceof Error) return { message: value.message, stack: value.stack };
@@ -341,6 +343,19 @@ app.whenReady().then(() => {
 	const explicitStartupCwd = resolveExplicitStartupCwd();
 	const bundledOmp = resolveBundledOmp();
 	const sourceCli = resolveSourceCli();
+	// Finder-launched omp has no terminal, and a sidecar that dies before
+	// it can write its own log only speaks through stderr — land the tail
+	// in gui-runtime.jsonl so it is readable after the fact.
+	const reportSidecarFailure: SidecarOptions["reportFailure"] = report => {
+		writeRuntimeLog(
+			{
+				source: "sidecar-restart",
+				message: report.reason,
+				details: { attempt: report.attempt, maxAttempts: report.maxAttempts, stderr: report.stderr },
+			},
+			{ cwd: report.cwd },
+		);
+	};
 	sidecarPool = new SidecarPool((cwd, kind, fresh) => {
 		const sc = new SidecarManager({
 			binaryPath: bundledOmp ?? "",
@@ -351,19 +366,7 @@ app.whenReady().then(() => {
 			fresh,
 			proxyEnv: resolveProxyEnvForSpawn,
 			shellEnv: shellSpawnEnv,
-			// Finder-launched omp has no terminal, and a sidecar that dies before
-			// it can write its own log only speaks through stderr — land the tail
-			// in gui-runtime.jsonl so it is readable after the fact.
-			reportFailure: report => {
-				writeRuntimeLog(
-					{
-						source: "sidecar-restart",
-						message: report.reason,
-						details: { attempt: report.attempt, maxAttempts: report.maxAttempts, stderr: report.stderr },
-					},
-					{ cwd: report.cwd },
-				);
-			},
+			reportFailure: reportSidecarFailure,
 		});
 		// Ready-health-check applies to every pooled sidecar, not just the first.
 		sc.on("status", ({ status }) => {
@@ -386,17 +389,50 @@ app.whenReady().then(() => {
 	// serves a relay for it, and its pages outlive sidecar restarts.
 	const host = new BrowserHost();
 	browserHost = host;
+	sidecarPool.uiResponder = (sidecar, request) => schedulerHost?.answerToolPrompt(sidecar, request) ?? false;
 	sidecarPool.sidecarLifecycle = {
 		ready: tab => {
 			if (tab.kind === "agent") void host.link(tab);
+			schedulerHost?.tabReady(tab);
 		},
-		down: tabId => host.unlink(tabId),
+		down: tabId => {
+			host.unlink(tabId);
+			schedulerHost?.tabDown(tabId);
+		},
 		released: tabId => host.release(tabId),
 	};
 	// A closed window's tabs have to leave the saved session with it, or the next
 	// launch resurrects a window the user deliberately shut.
 	windowManager.subscribeWindowClosed(() => persistTabLayouts());
 	sessionIndex = new SessionIndex(undefined, initialCwd);
+	// Scheduled tasks run in their own sidecars, outside the tab pool: no window,
+	// a fresh session, and argv the task's tool policy fixes (plan/23 §3).
+	try {
+		schedulerHost = new SchedulerHost({
+			dbPath: join(app.getPath("userData"), "scheduler.db"),
+			createRunSidecar: spec =>
+				new SidecarManager({
+					binaryPath: bundledOmp ?? "",
+					packaged: app.isPackaged,
+					sourceCli: sourceCli ?? undefined,
+					cwd: spec.cwd,
+					kind: "agent",
+					fresh: true,
+					runPolicy: { flags: spec.flags, deny: spec.deny },
+					proxyEnv: resolveProxyEnvForSpawn,
+					shellEnv: shellSpawnEnv,
+					reportFailure: reportSidecarFailure,
+				}),
+			deleteSession: sessionPath => sessionIndex.deleteSession(sessionPath),
+			windowManager,
+			spawnWindow,
+			log: (message, details) => writeRuntimeLog({ source: "scheduler", message, details }),
+		});
+	} catch (error) {
+		// A damaged or newer scheduler.db leaves tasks off; the rest of the app runs.
+		writeRuntimeLog({ source: "scheduler", ...errorMessage(error) });
+		schedulerHost = null;
+	}
 	statsClient = new StatsClient();
 	// Built-in stats dashboard: spawned from the SAME bundled binary. No
 	// external `omp stats` process is required (closed loop).
@@ -433,7 +469,9 @@ app.whenReady().then(() => {
 		benchmarkEnv: async () => ({ ...process.env, ...(await shellSpawnEnv()), ...(await resolveProxyEnvForSpawn()) }),
 		spawnWindow,
 		initialCwd: resolveInitialCwd,
+		schedulerHost,
 	});
+	schedulerHost?.start();
 
 	// Global shortcut: Cmd+Shift+O — toggle focused window, else show the most
 	// recent, else spawn one (multi-window decision tree).
@@ -515,6 +553,7 @@ app.on("window-all-closed", () => {
 installQuitGuard(
 	() => (sidecarPool ? sidecarPool.tabInventory() : []),
 	() => {
+		schedulerHost?.dispose();
 		statsServer?.kill();
 		sidecarPool?.disposeAll();
 		browserHost?.disposeAll();
@@ -524,4 +563,5 @@ installQuitGuard(
 		conversationIndex?.close();
 		destroyTray();
 	},
+	() => schedulerHost?.scheduler.liveRunCount ?? 0,
 );

@@ -3,6 +3,7 @@
  * All RPC commands delegate to ipcRenderer.invoke(IPC_COMMANDS.RPC_COMMAND, ...).
  * Event subscriptions return unsubscribe functions.
  */
+
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type {
 	ConversationSearchResponse,
@@ -72,6 +73,21 @@ import type {
 	SessionInfoUpdateFrame,
 	SubagentFrame,
 } from "../shared/rpc-types";
+import type {
+	DraftProblem,
+	RunProgress,
+	ScheduleRequestOutcome,
+	SchedulerInsights,
+	SchedulerLimits,
+	SchedulerOpenTarget,
+	SchedulerSnapshot,
+	ScheduleTaskRequest,
+	TaskConfig,
+	TaskDraft,
+	TaskRevision,
+	TaskRun,
+	TaskSaveResult,
+} from "../shared/scheduler-types";
 
 function rpcCommand(cmd: RpcCommand, timeoutMs?: number): Promise<RpcResponse> {
 	return ipcRenderer.invoke(IPC_COMMANDS.RPC_COMMAND, {
@@ -255,6 +271,54 @@ const api: OmpApi = {
 		},
 	},
 
+	scheduler: {
+		snapshot: () => ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_GET_SNAPSHOT) as Promise<SchedulerSnapshot>,
+		validate: (draft: TaskDraft, editingId?: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_VALIDATE, { draft, editingId }) as Promise<DraftProblem[]>,
+		create: (draft: TaskDraft) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_CREATE, { draft }) as Promise<TaskSaveResult>,
+		update: (taskId: string, config: TaskConfig) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_UPDATE, { taskId, config }) as Promise<TaskSaveResult>,
+		setEnabled: (taskId: string, enabled: boolean) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_SET_ENABLED, { taskId, enabled }) as Promise<TaskSaveResult>,
+		archive: (taskId: string, cancelLive: boolean) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_ARCHIVE, { taskId, cancelLive }) as Promise<void>,
+		remove: (taskId: string) => ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_DELETE, { taskId }) as Promise<boolean>,
+		runNow: (taskId: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_RUN_NOW, { taskId }) as Promise<TaskRun | null>,
+		cancelRun: (runId: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_CANCEL_RUN, { runId }) as Promise<boolean>,
+		review: (runId: string, decision: "accepted" | "rejected", note?: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_REVIEW, { runId, decision, note }) as Promise<TaskRun | null>,
+		setPaused: (paused: boolean) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_SET_PAUSED, { paused }) as Promise<void>,
+		setLimits: (patch: Partial<Pick<SchedulerLimits, "maxConcurrentRuns" | "retainDays">>) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_SET_LIMITS, { patch }) as Promise<void>,
+		insights: (periodDays: number, taskId?: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_INSIGHTS, { periodDays, taskId }) as Promise<SchedulerInsights>,
+		getRun: (runId: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_GET_RUN, { runId }) as Promise<TaskRun | null>,
+		taskRuns: (taskId: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_TASK_RUNS, { taskId }) as Promise<TaskRun[]>,
+		revisions: (taskId: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_REVISIONS, { taskId }) as Promise<TaskRevision[]>,
+		respondRequest: (requestId: string, outcome: ScheduleRequestOutcome) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_RESPOND_REQUEST, { requestId, outcome }) as Promise<void>,
+		pendingRequests: () =>
+			ipcRenderer.invoke(IPC_COMMANDS.SCHEDULER_PENDING_REQUESTS) as Promise<ScheduleTaskRequest[]>,
+		onSnapshot: (callback: (snapshot: SchedulerSnapshot) => void) =>
+			subscribe<SchedulerSnapshot>(IPC_EVENTS.SCHEDULER_SNAPSHOT, callback),
+		onProgress: (callback: (runId: string, progress: RunProgress) => void) =>
+			subscribe<{ runId: string; progress: RunProgress }>(IPC_EVENTS.SCHEDULER_PROGRESS, data =>
+				callback(data.runId, data.progress),
+			),
+		onOpen: (callback: (target: SchedulerOpenTarget) => void) =>
+			subscribe<SchedulerOpenTarget>(IPC_EVENTS.SCHEDULER_OPEN, callback),
+		onRequest: (callback: (request: ScheduleTaskRequest) => void) =>
+			subscribe<ScheduleTaskRequest>(IPC_EVENTS.SCHEDULER_REQUEST, callback),
+		onRequestClosed: (callback: (requestId: string) => void) =>
+			subscribe<{ requestId: string }>(IPC_EVENTS.SCHEDULER_REQUEST_CLOSED, data => callback(data.requestId)),
+	},
 	sessions: {
 		list: (scope: "local" | "global") =>
 			ipcRenderer.invoke(IPC_COMMANDS.SESSIONS_LIST, { scope }) as Promise<SessionInfo[]>,

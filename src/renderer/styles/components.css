@@ -1718,3 +1718,43 @@
 .omp-tab-scroller::-webkit-scrollbar {
 	display: none;
 }
+
+/* ---------------------------------------------------------------------------
+ * Scheduled tasks — Insights bars and meters grow from their baseline once
+ * per mount; the per-bar delay (inline) staggers the chart left to right.
+ * The global reduced-motion rule collapses both to their final frame; the
+ * stagger is dropped there too, or late bars would sit empty until it ends.
+ * ------------------------------------------------------------------------- */
+.omp-insights-bar {
+	transform-origin: bottom;
+	animation: omp-insights-grow-y var(--omp-motion-med) var(--omp-ease-enter) both;
+}
+
+.omp-insights-meter {
+	transform-origin: left;
+	animation: omp-insights-grow-x var(--omp-motion-med) var(--omp-ease-enter) both;
+}
+
+@keyframes omp-insights-grow-y {
+	from {
+		transform: scaleY(0);
+	}
+	to {
+		transform: scaleY(1);
+	}
+}
+
+@keyframes omp-insights-grow-x {
+	from {
+		transform: scaleX(0);
+	}
+	to {
+		transform: scaleX(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.omp-insights-bar {
+		animation-delay: 0s !important;
+	}
+}

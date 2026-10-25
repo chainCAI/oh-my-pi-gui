@@ -486,7 +486,7 @@ describe("SidecarManager", () => {
 		const binaryPath = path.join(tempDir, "fake-sidecar.ts");
 		await fs.writeFile(
 			binaryPath,
-			`#!/usr/bin/env bun\nprocess.stderr.write("dyld: Library not loaded: pi_natives\\n  Referenced by: omp\\n");\nsetTimeout(() => process.exit(4), 120);\n`,
+			`#!/usr/bin/env bun\nprocess.stderr.write("\\x1b[31mdyld: Library not loaded: pi_natives\\x1b[39m\\n  Referenced by: omp\\n");\nsetTimeout(() => process.exit(4), 120);\n`,
 		);
 		await fs.chmod(binaryPath, 0o755);
 
@@ -505,10 +505,15 @@ describe("SidecarManager", () => {
 			expect(reason).toContain("dyld: Library not loaded: pi_natives");
 			// Stack-ish continuation lines stay out of the one-line reason.
 			expect(reason).not.toContain("Referenced by");
+			// The reason is shown as plain text; omp's color codes stay in the raw report.
+			expect(reason).not.toContain("\x1b");
 
 			const report = reportFailure.mock.calls[0]?.[0] as SidecarFailureReport;
 			expect(report).toMatchObject({ attempt: 1, maxAttempts: 3, cwd: tempDir });
-			expect(report.stderr).toEqual(["dyld: Library not loaded: pi_natives", "  Referenced by: omp"]);
+			expect(report.stderr).toEqual([
+				"\x1b[31mdyld: Library not loaded: pi_natives\x1b[39m",
+				"  Referenced by: omp",
+			]);
 		} finally {
 			sidecar.dispose();
 			await fs.rm(tempDir, { recursive: true, force: true });

@@ -42,6 +42,21 @@ import type {
 	ThinkingLevel,
 	TodoPhase,
 } from "./rpc-types";
+import type {
+	DraftProblem,
+	RunProgress,
+	ScheduleRequestOutcome,
+	SchedulerInsights,
+	SchedulerLimits,
+	SchedulerOpenTarget,
+	SchedulerSnapshot,
+	ScheduleTaskRequest,
+	TaskConfig,
+	TaskDraft,
+	TaskRevision,
+	TaskRun,
+	TaskSaveResult,
+} from "./scheduler-types";
 
 // ============================================================================
 // IPC Channels (main → renderer events)
@@ -58,6 +73,16 @@ export const IPC_EVENTS = {
 	TAB_STATUS: "tab:status",
 	/** Extension UI request from agent */
 	EXTENSION_UI: "extension-ui:request",
+	/** Scheduled tasks (plan/23): the ledger or a task changed. */
+	SCHEDULER_SNAPSHOT: "scheduler:snapshot",
+	/** A live scheduled run's progress (turns, last tool). */
+	SCHEDULER_PROGRESS: "scheduler:progress",
+	/** Open the Tasks window at a task or run (notification click). */
+	SCHEDULER_OPEN: "scheduler:open",
+	/** An agent tab proposed a task through `schedule_task`; the user confirms it. */
+	SCHEDULER_REQUEST: "scheduler:request",
+	/** The proposal was answered elsewhere or its tab went away. */
+	SCHEDULER_REQUEST_CLOSED: "scheduler:request-closed",
 	/** Host tool call request */
 	HOST_TOOL_CALL: "host-tool:call",
 	/** Host URI request */
@@ -129,6 +154,24 @@ export const IPC_COMMANDS = {
 	RPC_COMMAND_FOR_TAB: "rpc:command-for-tab",
 	/** Respond to extension UI request */
 	EXTENSION_UI_RESPOND: "extension-ui:respond",
+	SCHEDULER_GET_SNAPSHOT: "scheduler:get-snapshot",
+	SCHEDULER_VALIDATE: "scheduler:validate",
+	SCHEDULER_CREATE: "scheduler:create",
+	SCHEDULER_UPDATE: "scheduler:update",
+	SCHEDULER_SET_ENABLED: "scheduler:set-enabled",
+	SCHEDULER_ARCHIVE: "scheduler:archive",
+	SCHEDULER_DELETE: "scheduler:delete",
+	SCHEDULER_RUN_NOW: "scheduler:run-now",
+	SCHEDULER_CANCEL_RUN: "scheduler:cancel-run",
+	SCHEDULER_REVIEW: "scheduler:review",
+	SCHEDULER_SET_PAUSED: "scheduler:set-paused",
+	SCHEDULER_SET_LIMITS: "scheduler:set-limits",
+	SCHEDULER_INSIGHTS: "scheduler:insights",
+	SCHEDULER_GET_RUN: "scheduler:get-run",
+	SCHEDULER_TASK_RUNS: "scheduler:task-runs",
+	SCHEDULER_REVISIONS: "scheduler:revisions",
+	SCHEDULER_RESPOND_REQUEST: "scheduler:respond-request",
+	SCHEDULER_PENDING_REQUESTS: "scheduler:pending-requests",
 	/** Send host tool result */
 	HOST_TOOL_RESULT: "host-tool:result",
 	/** Send host tool update */
@@ -328,6 +371,7 @@ export type MenuAction =
 	| "open-extensions"
 	| "open-inventory"
 	| "open-pr-center"
+	| "open-scheduled-tasks"
 	| "open-debug"
 	| "export-html"
 	| "handoff"
@@ -1355,6 +1399,35 @@ export interface OmpApi {
 		sendHostToolResult(result: HostToolResult): void;
 		sendHostToolUpdate(update: HostToolUpdate): void;
 		sendHostUriResult(result: HostUriResult): void;
+	};
+	/** Scheduled tasks (plan/23), owned by the main-process scheduler. */
+	scheduler: {
+		snapshot(): Promise<SchedulerSnapshot>;
+		validate(draft: TaskDraft, editingId?: string): Promise<DraftProblem[]>;
+		create(draft: TaskDraft): Promise<TaskSaveResult>;
+		update(taskId: string, config: TaskConfig): Promise<TaskSaveResult>;
+		setEnabled(taskId: string, enabled: boolean): Promise<TaskSaveResult>;
+		archive(taskId: string, cancelLive: boolean): Promise<void>;
+		/** Permanently delete an archived task with its runs, sessions and branches. */
+		remove(taskId: string): Promise<boolean>;
+		runNow(taskId: string): Promise<TaskRun | null>;
+		cancelRun(runId: string): Promise<boolean>;
+		review(runId: string, decision: "accepted" | "rejected", note?: string): Promise<TaskRun | null>;
+		setPaused(paused: boolean): Promise<void>;
+		setLimits(patch: Partial<Pick<SchedulerLimits, "maxConcurrentRuns" | "retainDays">>): Promise<void>;
+		insights(periodDays: number, taskId?: string): Promise<SchedulerInsights>;
+		getRun(runId: string): Promise<TaskRun | null>;
+		taskRuns(taskId: string): Promise<TaskRun[]>;
+		revisions(taskId: string): Promise<TaskRevision[]>;
+		/** Answer an agent's `schedule_task` draft (the confirm card). */
+		respondRequest(requestId: string, outcome: ScheduleRequestOutcome): Promise<void>;
+		/** Drafts still waiting for this window's user (after a reload). */
+		pendingRequests(): Promise<ScheduleTaskRequest[]>;
+		onSnapshot(callback: (snapshot: SchedulerSnapshot) => void): () => void;
+		onProgress(callback: (runId: string, progress: RunProgress) => void): () => void;
+		onOpen(callback: (target: SchedulerOpenTarget) => void): () => void;
+		onRequest(callback: (request: ScheduleTaskRequest) => void): () => void;
+		onRequestClosed(callback: (requestId: string) => void): () => void;
 	};
 	sessions: {
 		list(scope: "local" | "global"): Promise<SessionInfo[]>;

@@ -62,6 +62,7 @@ import type { MemoryWatcher } from "./memory-watcher";
 import { createMenu } from "./menu";
 import { deleteModelsProvider, listModelsProviders, modelsPath, upsertModelsProvider } from "./models-config";
 import { runtimeLogPath, writeRuntimeLog } from "./runtime-log";
+import type { SchedulerHost } from "./scheduler/host";
 import type { SessionIndex } from "./session-index";
 import { resolveEditorCommand } from "./shell-env";
 import type { SidecarManager } from "./sidecar";
@@ -94,6 +95,8 @@ export interface IpcDeps {
 	/** Where to start when the caller has no cwd. Never the volume root: a
 	 * Finder-launched app's `process.cwd()` is "/", which no session belongs in. */
 	initialCwd: () => string;
+	/** Scheduled tasks: owns `schedule_task` calls and hides run sessions from the sidebar. */
+	schedulerHost: SchedulerHost | null;
 }
 
 /**
@@ -391,9 +394,15 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 	// boolean tells the pool whether the tool was answered inline; only
 	// renderer-forwarded calls get request-id → origin tracking (F-UI-ORIGIN).
 	sidecarPool.hostToolExecutor = (sidecar, request, win) => {
+		if (deps.schedulerHost?.handleToolCall(sidecar, request, win, sidecarPool.tabForSidecar(sidecar))) return true;
 		const result = executeGuiHostTool(request.toolName, request.arguments);
 		if (result !== undefined) {
-			sidecar.sendSideChannel({ type: "host_tool_result", id: request.id, result });
+			// The agent reads `result` as an AgentToolResult and drops a frame without a content array.
+			sidecar.sendSideChannel({
+				type: "host_tool_result",
+				id: request.id,
+				result: { content: [{ type: "text", text: result }] },
+			});
 			return true;
 		}
 		// Unknown host tools → forward to the owning renderer.
@@ -599,7 +608,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 	// Sessions
 	ipcMain.handle(IPC_COMMANDS.SESSIONS_LIST, async (event, payload: IpcSessionsListPayload) => {
 		const scope = payload.scope === "local" ? "local" : "global";
-		return sessionIndex.list(scope, cwdFor(deps, event) ?? undefined);
+		const sessions = await sessionIndex.list(scope, cwdFor(deps, event) ?? undefined);
+		// Scheduled runs write ordinary session files; they open from the Tasks window instead.
+		const runSessions = deps.schedulerHost?.runSessionPaths();
+		return runSessions?.size ? sessions.filter(session => !runSessions.has(session.path)) : sessions;
 	});
 
 	ipcMain.handle(IPC_COMMANDS.SESSIONS_DELETE, async (_event, payload: IpcSessionsDeletePayload) => {

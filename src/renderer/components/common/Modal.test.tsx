@@ -2,9 +2,10 @@ import { parseHTML } from "linkedom";
 import { act, type ReactElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isApprovalRequest } from "../../../shared/approval-prompt";
 import { OVERLAY_EXIT_MS } from "../../hooks/use-overlay-presence";
 import { I18nProvider } from "../../lib/i18n";
-import { ApprovalDialog, isApprovalRequest } from "../dialogs/ApprovalDialog";
+import { ApprovalDialog } from "../dialogs/ApprovalDialog";
 import { DIALOG_OVERLAY_Z } from "./dialog-layer";
 import { Modal } from "./Modal";
 

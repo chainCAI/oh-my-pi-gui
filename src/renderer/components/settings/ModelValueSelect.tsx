@@ -80,9 +80,24 @@ export interface ModelValueSelectProps {
 	onCommit: (value: string) => void;
 	/** Trigger text shown while value is "" (defaults to the unset label). */
 	placeholder?: string;
+	/** `field` sizes the trigger like the shared `Input`, for use inside a form. */
+	size?: "compact" | "field";
 }
 
-export function ModelValueSelect({ kind, value, disabled, onCommit, placeholder }: ModelValueSelectProps) {
+const TRIGGER_CLASS = {
+	compact:
+		"flex w-full items-center gap-1.5 rounded-md border border-(--omp-border-muted) bg-(--omp-input-bg) px-2.5 py-1.5 text-left text-xs transition-colors duration-100 focus:border-(--omp-border-accent) focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+	field: "flex w-full items-center gap-2 rounded-lg border border-(--omp-input-border) bg-(--omp-input-bg) px-3 py-[9px] text-left text-omp-lg leading-[1.45] shadow-(--omp-shadow-sm) transition-[border-color,box-shadow] duration-150 hover:border-(--omp-border-strong) focus:border-(--omp-input-focus-border) focus:shadow-[0_0_0_3px_var(--omp-input-glow)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+};
+
+export function ModelValueSelect({
+	kind,
+	value,
+	disabled,
+	onCommit,
+	placeholder,
+	size = "compact",
+}: ModelValueSelectProps) {
 	const t = useT();
 	const refreshAvailableModels = useModelStore(state => state.refreshAvailableModels);
 	const refreshProviders = useModelStore(state => state.refreshProviders);
@@ -227,14 +242,14 @@ export function ModelValueSelect({ kind, value, disabled, onCommit, placeholder 
 			<button
 				aria-expanded={open}
 				aria-haspopup="listbox"
-				className="flex w-full items-center gap-1.5 rounded-md border border-(--omp-border-muted) bg-(--omp-input-bg) px-2.5 py-1.5 text-left text-xs transition-colors duration-100 focus:border-(--omp-border-accent) focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+				className={TRIGGER_CLASS[size]}
 				disabled={disabled}
 				onClick={() => (open ? setOpen(false) : openPanel())}
 				ref={triggerRef}
 				type="button"
 			>
 				<span
-					className={`min-w-0 flex-1 truncate font-mono ${value === "" ? "text-(--omp-dim)" : "text-(--omp-text)"}`}
+					className={`min-w-0 flex-1 truncate ${value === "" ? "text-(--omp-dim)" : "text-(--omp-text)"} ${value === "" && size === "field" ? "" : "font-mono"}`}
 				>
 					{value === "" ? (placeholder ?? t("modelValue.unset")) : value}
 				</span>

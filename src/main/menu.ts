@@ -297,6 +297,10 @@ export function createMenu(windowManager: WindowManager, spawnWindow: SpawnWindo
 					click: () => sendMenuAction(windowManager, spawnWindow, "open-pr-center"),
 				},
 				{
+					label: mainT("menu.scheduledTasks", language),
+					click: () => sendMenuAction(windowManager, spawnWindow, "open-scheduled-tasks"),
+				},
+				{
 					label: mainT("menu.workspaceDirs", language),
 					click: () => sendMenuAction(windowManager, spawnWindow, "open-workspace-dirs"),
 				},

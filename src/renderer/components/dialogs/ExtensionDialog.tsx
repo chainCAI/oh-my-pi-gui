@@ -15,6 +15,7 @@ import { json } from "@codemirror/lang-json";
 import { EditorView } from "@codemirror/view";
 import { Check, ExternalLink } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isApprovalRequest } from "../../../shared/approval-prompt";
 import type { ExtensionAskDialogResult, ExtensionUIRequest } from "../../../shared/rpc-types";
 import { AnsiText } from "../../lib/ansi";
 import { cx } from "../../lib/format";
@@ -23,7 +24,7 @@ import { MarkdownRenderer } from "../../lib/markdown";
 import { removeExtensionRequest, useAllPendingRequests, useExtensionUiStore } from "../../stores/extension-ui";
 import { toast } from "../../stores/toast";
 import { Button, Input, Modal } from "../common";
-import { ApprovalDialog, isApprovalRequest } from "./ApprovalDialog";
+import { ApprovalDialog } from "./ApprovalDialog";
 
 /** Requests handled elsewhere (store/router) — never rendered as dialogs. */
 const NON_DIALOG_METHODS = new Set(["notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "cancel"]);

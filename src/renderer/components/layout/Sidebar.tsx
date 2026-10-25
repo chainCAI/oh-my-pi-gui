@@ -5,6 +5,7 @@ import {
 	Bot,
 	Brain,
 	BriefcaseBusiness,
+	CalendarClock,
 	CheckCheck,
 	ChevronRight,
 	Code2,
@@ -61,6 +62,7 @@ import { compileKeymap, KEYMAP_ACTIONS, onEscape } from "../../lib/keymap";
 import { sessionDisplayTitle } from "../../lib/session-title";
 import { useTabRpc } from "../../lib/tab-rpc";
 import { tabSignalPresentation } from "../../lib/tab-signal";
+import { useSchedulerStore } from "../../stores/scheduler";
 import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { usePendingSkillReviews } from "../../stores/skill-review";
@@ -226,6 +228,7 @@ export function Sidebar() {
 	const openThemePicker = useUiStore(s => s.openThemePicker);
 	const openSessionPicker = useUiStore(s => s.openSessionPicker);
 	const pendingSkillReviews = usePendingSkillReviews();
+	const pendingTaskReviews = useSchedulerStore(state => state.snapshot?.reviewCount ?? 0);
 
 	useEffect(() => {
 		void window.omp.sidecar
@@ -853,6 +856,14 @@ export function Sidebar() {
 			label: t("titlebar.prCenter"),
 			shortcut: actionChords.get("pr.center")?.[0],
 			onClick: () => useUiStore.getState().openPrCenter(),
+		},
+		{
+			id: "scheduled-tasks",
+			icon: CalendarClock,
+			label: t("tasks.title"),
+			title: pendingTaskReviews > 0 ? t("tasks.sidebar.review", { count: pendingTaskReviews }) : undefined,
+			badge: pendingTaskReviews,
+			onClick: () => useSchedulerStore.getState().openTasks(pendingTaskReviews > 0 ? { view: "review" } : undefined),
 		},
 	];
 	const secondaryNavigation: NavigationItem[] = [

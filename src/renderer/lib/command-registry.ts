@@ -35,6 +35,7 @@ import { newSessionNow } from "../hooks/use-session-switch";
 import { openHandoffDialog } from "../stores/fork-handoff";
 import { useMessagesStore } from "../stores/messages";
 import { useModelStore } from "../stores/model";
+import { useSchedulerStore } from "../stores/scheduler";
 import { type SessionStore, useSessionStore } from "../stores/session";
 import { useSettingsStore } from "../stores/settings";
 import { useSidebarPrefs } from "../stores/sidebar-prefs";
@@ -1566,6 +1567,13 @@ export function buildCommandMenu(ctx: CommandRegistryContext): CommandMenuItem[]
 		description: t("cmd.prCenter.desc"),
 		category: "view",
 		affordance: { kind: "window", open: () => ctx.openPrCenter() },
+	});
+	add({
+		name: "scheduled-tasks",
+		label: t("cmd.scheduledTasks"),
+		description: t("cmd.scheduledTasks.desc"),
+		category: "view",
+		affordance: { kind: "window", open: () => useSchedulerStore.getState().openTasks() },
 	});
 
 	// ═══════════════════════════════════════════════════════════════════

@@ -7,8 +7,9 @@ import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import Store from "electron-store";
-import { parseLaunchProfile, profileToFlags, stripDenylistedFlags } from "../shared/launch-profile";
+import { type FlagDenylist, parseLaunchProfile, profileToFlags, stripDenylistedFlags } from "../shared/launch-profile";
 import { DEFAULT_ROLE_MODEL_SELECTOR, parseModelRestoreFailure } from "../shared/model-restore";
 import type {
 	AgentSessionEvent,
@@ -54,7 +55,8 @@ const STDERR_REASON_CHARS = 240;
  */
 function stderrExcerpt(lines: string[]): string {
 	for (const line of lines) {
-		const trimmed = line.trim();
+		// omp colors its fatal line; the reason is shown as plain text.
+		const trimmed = stripVTControlCharacters(line).trim();
 		if (!trimmed) continue;
 		return trimmed.length > STDERR_REASON_CHARS ? `${trimmed.slice(0, STDERR_REASON_CHARS - 1)}…` : trimmed;
 	}
@@ -107,6 +109,11 @@ export interface SidecarOptions {
 	fresh?: boolean;
 	/** Session kind: "agent" (default) or "chat" (tool-free conversation). Immutable per sidecar. */
 	kind?: "agent" | "chat";
+	/**
+	 * Scheduled runs (plan/23): code-controlled policy flags, and the extra
+	 * flags a launch profile may not set because they would widen the policy.
+	 */
+	runPolicy?: { flags: string[]; deny: FlagDenylist };
 	/** When set, spawn the workspace source CLI via bun instead of the installed binary. */
 	sourceCli?: string;
 	/**
@@ -320,12 +327,14 @@ export class SidecarManager extends EventEmitter {
 		else if (this.#freshLaunchPending) args.push("--no-auto-resume");
 		if (this.#bootModelFallback) args.push("--model", DEFAULT_ROLE_MODEL_SELECTOR);
 		if (this.#options.kind === "chat") args.push("--chat");
+		const runPolicy = this.#options.runPolicy;
+		if (runPolicy) args.push(...runPolicy.flags);
 		// User-controllable flags ride the extraFlags seam + the launch profile.
 		// Strip the code-controlled-flag denylist (pair-aware) over BOTH, then
 		// append: neither can override the code-controlled argv above, while a
 		// profile value that merely looks like a protected flag survives intact.
 		const userFlags = [...(extraFlags ?? []), ...loadLaunchProfileFlags(cwd)];
-		args.push(...stripDenylistedFlags(userFlags));
+		args.push(...stripDenylistedFlags(userFlags, runPolicy?.deny));
 
 		// Source sidecar (monorepo dev): run the workspace coding-agent from
 		// source via bun so in-repo RPC fixes are live in the running GUI.

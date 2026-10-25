@@ -34,10 +34,10 @@ import { ThemePickerDialog } from "./components/dialogs/ThemePickerDialog";
 import { WorkspaceDirsDialog } from "./components/dialogs/WorkspaceDirsDialog";
 import { WorktreeCloseDialog } from "./components/dialogs/WorktreeCloseDialog";
 import { WorktreeDialog } from "./components/dialogs/WorktreeDialog";
+import { ConfigWarningsBanner } from "./components/layout/ConfigWarningsBanner";
 import { PanelContainer } from "./components/layout/PanelContainer";
 import { Sidebar } from "./components/layout/Sidebar";
 import { SidecarBanner } from "./components/layout/SidecarBanner";
-import { ConfigWarningsBanner } from "./components/layout/ConfigWarningsBanner";
 import { SplitWorkspace } from "./components/layout/SplitWorkspace";
 import { TabBar } from "./components/layout/TabBar";
 import { TitleBar } from "./components/layout/TitleBar";
@@ -79,6 +79,7 @@ import {
 import { startVoiceAutoSpeak } from "./lib/voice";
 import { openHandoffDialog } from "./stores/fork-handoff";
 import { useModelStore } from "./stores/model";
+import { useSchedulerStore } from "./stores/scheduler";
 import { useSessionStore } from "./stores/session";
 import { SessionRuntimeProvider } from "./stores/session-runtime-context";
 import { useSettingsStore } from "./stores/settings";
@@ -119,6 +120,13 @@ const ConversationSearchDialog = lazy(() =>
 const MemoryWindow = lazy(() => import("./components/memory/MemoryWindow").then(m => ({ default: m.MemoryWindow })));
 const PrCenterWindow = lazy(() =>
 	import("./components/panels/PrCenterWindow").then(m => ({ default: m.PrCenterWindow })),
+);
+const TasksWindow = lazy(() => import("./components/tasks/TasksWindow").then(m => ({ default: m.TasksWindow })));
+const TaskEditorDialog = lazy(() =>
+	import("./components/tasks/TaskEditorDialog").then(m => ({ default: m.TaskEditorDialog })),
+);
+const ScheduleRequestDialog = lazy(() =>
+	import("./components/tasks/ScheduleRequestDialog").then(m => ({ default: m.ScheduleRequestDialog })),
 );
 const ProviderConfigDialog = lazy(() =>
 	import("./components/settings/ProviderConfigDialog").then(m => ({ default: m.ProviderConfigDialog })),
@@ -180,6 +188,8 @@ export function App() {
 	useSessionTabs();
 	// Terminal output and browser state for every tab, plus drawer reveals.
 	useWorkspaceSurfaces();
+	// Scheduled tasks: the main-process snapshot, live run progress, agent drafts.
+	useEffect(() => useSchedulerStore.getState().connect(), []);
 	const sidebarVisible = useUiStore(s => s.sidebarVisible);
 	const panelVisible = useUiStore(s => s.panelVisible);
 	const theme = useUiStore(s => s.theme);
@@ -722,6 +732,10 @@ export function App() {
 				ui.openPrCenter();
 				return;
 			}
+			if (action === "open-scheduled-tasks") {
+				useSchedulerStore.getState().openTasks();
+				return;
+			}
 			if (action === "open-debug") {
 				ui.openDebug();
 				return;
@@ -831,6 +845,9 @@ export function App() {
 				<ModesPanel open={modesOpen} onClose={closeModes} initialTab={modesTab} />
 				<AgentHubWindow open={agentHubOpen} onClose={closeAgentHub} initialTab={agentHubTab} />
 				<PrCenterWindow />
+				<TasksWindow />
+				<TaskEditorDialog />
+				<ScheduleRequestDialog />
 				<MemoryWindow />
 				<ConversationSearchDialog />
 				<ProviderConfigDialog

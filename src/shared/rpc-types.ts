@@ -1702,6 +1702,9 @@ export interface HostToolDefinition {
 	label?: string;
 	description: string;
 	parameters: Record<string, unknown>;
+	hidden?: boolean;
+	/** "essential" lists the tool to the model directly; the agent's default hides it behind tool search. */
+	loadMode?: "essential" | "discoverable";
 }
 
 export interface HostToolCallRequest {
@@ -1719,19 +1722,26 @@ export interface HostToolCancelRequest {
 	targetId: string;
 }
 
-/** Sent by the host to complete a pending host tool call. */
+/** A host tool's output as the agent reads it (an AgentToolResult). */
+export interface HostToolOutput {
+	content: { type: "text"; text: string }[];
+	/** Structured outcome kept on the tool result, for the transcript card. */
+	details?: Record<string, unknown>;
+}
+
+/** Sent by the host to complete a pending host tool call. The agent drops a frame whose `result` has no content array. */
 export interface HostToolResult {
 	type: "host_tool_result";
 	id: string;
-	result?: string;
-	error?: string;
+	result: HostToolOutput;
+	isError?: boolean;
 }
 
 /** Sent by the host to stream a partial tool update. */
 export interface HostToolUpdate {
 	type: "host_tool_update";
 	id: string;
-	update: string;
+	partialResult: HostToolOutput;
 }
 
 export interface HostUriSchemeDefinition {

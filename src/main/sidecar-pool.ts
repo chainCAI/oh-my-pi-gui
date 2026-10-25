@@ -164,6 +164,11 @@ export class SidecarPool {
 	 */
 	hostToolExecutor: ((sidecar: SidecarManager, request: HostToolCallRequest, win: BrowserWindow) => boolean) | null =
 		null;
+	/**
+	 * Main-process answerer for UI requests no window should see (an approval
+	 * prompt for a host tool that asks the user itself). True when answered.
+	 */
+	uiResponder: ((sidecar: SidecarManager, request: ExtensionUIRequest) => boolean) | null = null;
 	/** Main-process persistence hook. The primary window installs this at startup. */
 	onWindowTabsChanged: ((win: BrowserWindow, layout: PersistedTabLayout | null) => void) | null = null;
 	/**
@@ -401,6 +406,7 @@ export class SidecarPool {
 		// the renderer never saw. The renderer queues by owning tabId, so the
 		// request resurfaces with the tab (or in the global dialog surface).
 		sidecar.on("extensionUi", (request: ExtensionUIRequest) => {
+			if (this.uiResponder?.(sidecar, request)) return;
 			// Only response-bearing requests need an origin route. Fire-and-forget
 			// UI updates never reply, so retaining them here leaks the owning tab.
 			if (BLOCKING_UI_METHODS[request.method]) this.#requestOwners.set(request.id, entry);
@@ -656,6 +662,17 @@ export class SidecarPool {
 		const owner = this.#sessionOwners.get(sessionPath);
 		if (!owner || owner.tabId === tabId) return null;
 		return owner;
+	}
+
+	/** The tab a sidecar serves: its id, kind and current session file. */
+	tabForSidecar(
+		sidecar: SidecarManager,
+	): { tabId: string; kind: "agent" | "chat"; sessionFile: string | null } | null {
+		for (const entry of this.#byTabId.values()) {
+			if (entry.sidecar === sidecar)
+				return { tabId: entry.tabId, kind: entry.kind, sessionFile: entry.sessionFile ?? null };
+		}
+		return null;
 	}
 
 	/**

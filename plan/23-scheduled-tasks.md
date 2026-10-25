@@ -1,6 +1,6 @@
 # 23 — Scheduled Tasks: creation from conversations, runs, reports, review
 
-**Status**: design, revised after a code check (2026-10-25). Not started.
+**Status**: P1–P4 implemented (2026-10-25), uncommitted. §14 lists where the build differs from this design; §12 stays deferred.
 **Scope**: GUI only. Every agent primitive this needs already ships:
 - `rpc-ui` sidecars
 - tools provided by the GUI: `set_host_tools` is already in the RPC client, though nothing calls it yet, and `host_tool_call` is already routed by `sidecarPool.hostToolExecutor`
@@ -447,4 +447,29 @@ Cut from the first version on review. Each is worth building once the basics hav
 ## 13. Open questions
 
 1. **Where the confirm card lives.** It could render inline in the transcript, next to the tool call (closest to the conversation), or as a modal (harder to miss). The current lean is inline, plus a sidebar dot if the tab is in the background.
+   *Built as a modal* (§14): the tool call row stays in the transcript and reads "waiting for you" until the dialog closes.
 2. **`write` approval mode in worktrees.** If `write` still prompts for common bash commands, `workspace` runs will be denied often. P1's approval test should measure this. If it happens, `workspace` may need `yolo`, which the worktree already contains.
+   *Measured*: under `write`, every bash call prompts, so an unattended `workspace` run edits files but cannot run commands; the refusals are listed on the run. The task's shell check still runs, from the scheduler. Kept as is; switching `workspace` to `yolo` is a one-line change in `runPolicyFlags` if runs need to build or test themselves.
+
+---
+
+## 14. As built (2026-10-25)
+
+Differences from the design above, and what implementing it turned up.
+
+| Area | Design | Built |
+|---|---|---|
+| Next-fire | `croner` | `src/shared/schedule.ts`: a small cron parser plus zone-aware wall-time search, no dependency. Backtested against an independent matcher over every minute of 2026 in 16 zones (including Chatham, Lord Howe, Troll) and 15 expressions: 727,886 fires, 0 mismatches. |
+| Catch-up | missed slots recorded on wake and restart | One `missed` record per gap, carrying the last slot reached too late, on both paths; a slot inside the grace window still runs. A relaunch starts from the latest slot in the ledger, not only the heartbeat, so a slot that fired after the last beat is not run or recorded twice. |
+| Tasks UI | a page | A full-size modal (Tasks, Runs, Review, Insights tabs) opened from the sidebar, the command palette and the menu. |
+| Confirm card | inline in the transcript | A modal dialog; see §13.1. |
+| Accept | merge/PR hand-off | Accept keeps the run's worktree and branch (retention and task deletion keep the branch too); merging is left to the user. Reject removes both. |
+| Run sessions | hidden from sidebar and search | Hidden from the sidebar and session list; search still finds them. |
+| Quit/update | updater hold | The quit guard asks before cancelling live runs; no updater change. The review count shows as the dock badge (`app.setBadgeCount`). |
+| Archive | restore | Restoring an archived task leaves it paused. |
+| Host tools | `set_host_tools` | Both tools load with `loadMode: "essential"`. omp gives GUI host tools the exec approval tier and has no way for a definition to declare a lower one, so the GUI answers its own tools' prompts: the runner approves `task_report`, and `sidecarPool.uiResponder` approves `schedule_task` (its confirm card is the real approval). A per-tool `approval` field in the agent's host-tool definition would be cleaner. The host-tool result shape the pool sent was wrong and had never been exercised; fixed. |
+| `read_only` tools | read/search tools | `read,glob,grep,lsp,web_search,todo`. `find` (needs a judge model) and `ast_grep` (off by default) made omp refuse the command line with exit code 2. |
+| Startup errors | transient retry | An exit-2 command-line rejection is a setup problem (`blocked_config`), not retried, and stops at the first restart; omp's ANSI colors are stripped from the reason. |
+| Time picker | native time input | Hour and minute selects (5-minute steps) next to a date input, so the field matches the other selects and reads the same in every locale. |
+| Insights | tiles and two charts | As designed; KPI cards align their rows with CSS subgrid, bars grow in on open and stay still under reduced motion. |
+| Flag | `scheduler.enabled` | No flag: everything shipped at once. |

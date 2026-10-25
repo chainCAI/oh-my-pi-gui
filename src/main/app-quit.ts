@@ -11,6 +11,7 @@ let approved = false;
 let asking = false;
 let cleanedUp = false;
 let inventory: () => WindowTabFact[] = () => [];
+let runningTasks: () => number = () => 0;
 
 /** True after the user (or a restart prompt) approved the quit. */
 export function isQuitting(): boolean {
@@ -24,15 +25,20 @@ export function requestQuit(): void {
 
 /** What a quit right now would cost. The resource-change restart quotes it. */
 export function quitRisk(): QuitRisk {
-	return assessQuitRisk(inventory());
+	return assessQuitRisk(inventory(), runningTasks());
 }
 
 /**
  * Register the `before-quit` gate. `tabInventory` reports what the sidecars are
  * doing, `teardown` runs exactly once per approved quit.
  */
-export function installQuitGuard(tabInventory: () => WindowTabFact[], teardown: () => void): void {
+export function installQuitGuard(
+	tabInventory: () => WindowTabFact[],
+	teardown: () => void,
+	scheduledRuns: () => number = () => 0,
+): void {
 	inventory = tabInventory;
+	runningTasks = scheduledRuns;
 	app.on("before-quit", event => {
 		if (approved) {
 			if (cleanedUp) return;
@@ -58,11 +64,18 @@ export function installQuitGuard(tabInventory: () => WindowTabFact[], teardown: 
 			defaultId: 1,
 			cancelId: 1,
 			message: mainT("quit.workingTitle", language),
-			detail: mainT("quit.workingBody", language, {
-				working: risk.workingTabs,
-				total: risk.totalTabs,
-				windows: risk.workingWindows,
-			}),
+			detail: [
+				risk.workingTabs > 0
+					? mainT("quit.workingBody", language, {
+							working: risk.workingTabs,
+							total: risk.totalTabs,
+							windows: risk.workingWindows,
+						})
+					: null,
+				risk.runningTasks > 0 ? mainT("quit.runningTasks", language, { count: risk.runningTasks }) : null,
+			]
+				.filter(line => line !== null)
+				.join("\n\n"),
 		};
 		void (owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options))
 			.then(result => {

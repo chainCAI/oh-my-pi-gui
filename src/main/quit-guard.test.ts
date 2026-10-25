@@ -16,7 +16,7 @@ describe("quit guard risk assessment", () => {
 	it("counts only the in-flight tabs and the windows that hold them", () => {
 		expect(
 			assessQuitRisk([fact(1, "a", true), fact(1, "b", false), fact(2, "c", true), fact(3, "d", false)]),
-		).toEqual({ workingTabs: 2, totalTabs: 4, workingWindows: 2 });
+		).toEqual({ workingTabs: 2, totalTabs: 4, workingWindows: 2, runningTasks: 0 });
 	});
 
 	it("names one window once even when several of its tabs are working", () => {
@@ -27,5 +27,9 @@ describe("quit guard risk assessment", () => {
 		expect(quitNeedsConfirmation(assessQuitRisk([]))).toBe(false);
 		expect(quitNeedsConfirmation(assessQuitRisk([fact(1, "a", false)]))).toBe(false);
 		expect(quitNeedsConfirmation(assessQuitRisk([fact(1, "a", true)]))).toBe(true);
+	});
+
+	it("asks while a scheduled task runs even with every tab idle", () => {
+		expect(quitNeedsConfirmation(assessQuitRisk([fact(1, "a", false)], 1))).toBe(true);
 	});
 });
