@@ -131,7 +131,7 @@ describe("AgentsDockCard", () => {
 		expect(containerText()).toBe("");
 	});
 
-	it("lists every known agent with the live/total count badge", async () => {
+	it("lists every known agent with the working/total count badge", async () => {
 		useSubagentsStore
 			.getState()
 			.setSnapshots([
@@ -142,8 +142,9 @@ describe("AgentsDockCard", () => {
 			]);
 		await mount(<AgentsDockCard />);
 
-		// Live = running + parked; the terminal completed row stays listed.
-		expect(containerText()).toContain("3/4");
+		// Only working agents count: parked ones wait (plan/24 §4.1). The
+		// terminal completed row stays listed.
+		expect(containerText()).toContain("1/4");
 		expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(4);
 		expect(containerText()).toContain("scout");
 	});

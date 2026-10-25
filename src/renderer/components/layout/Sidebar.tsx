@@ -7,6 +7,7 @@ import {
 	BriefcaseBusiness,
 	CalendarClock,
 	CheckCheck,
+	ChevronDown,
 	ChevronRight,
 	Code2,
 	Coins,
@@ -69,6 +70,7 @@ import { usePendingSkillReviews } from "../../stores/skill-review";
 import { useTabsStore } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
+import { SessionAgentsScope, type SidebarAgentsInfo } from "../agents/SidebarAgents";
 import { Button } from "../common";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { anchorFromEvent, ContextMenu, type ContextMenuAnchor } from "../common/ContextMenu";
@@ -561,6 +563,17 @@ export function Sidebar() {
 		"omp-sidebar-action flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
 
 	const renderSessionRow = (session: SessionInfo) => {
+		// Sessions open in a tab list this turn's agents under them (plan/24 §3.1).
+		const tab = tabForSession(session);
+		if (!tab) return sessionRowElement(session, null);
+		return (
+			<SessionAgentsScope key={session.path} sessionKey={session.path} tabId={tab.id}>
+				{agents => sessionRowElement(session, agents)}
+			</SessionAgentsScope>
+		);
+	};
+
+	const sessionRowElement = (session: SessionInfo, agents: SidebarAgentsInfo | null) => {
 		const active = session.id === sessionId;
 		const tabSignal = sessionTabSignal(session);
 		const waiting = active && awaitingConfirmation;
@@ -589,6 +602,7 @@ export function Sidebar() {
 				role="button"
 				tabIndex={0}
 				aria-pressed={selecting ? selected : undefined}
+				aria-expanded={agents && !selecting ? agents.expanded : undefined}
 				onClick={event => {
 					if (selecting || event.metaKey || event.ctrlKey || (event.shiftKey && selectionAnchor.current)) {
 						clickToSelect(session, event);
@@ -602,6 +616,11 @@ export function Sidebar() {
 					// Only the row itself: Enter inside a nested control (rename
 					// input, action buttons) must not also switch the session.
 					if (event.target !== event.currentTarget) return;
+					if (agents && !selecting && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+						event.preventDefault();
+						if (agents.expanded !== (event.key === "ArrowRight")) agents.toggle();
+						return;
+					}
 					if (selecting && (event.key === "Enter" || event.key === " ")) {
 						event.preventDefault();
 						clickToSelect(session, event);
@@ -615,13 +634,29 @@ export function Sidebar() {
 				data-session-kind={session.kind ?? "agent"}
 				className={cx(
 					"omp-sidebar-session-row omp-color-fade group flex h-[30px] cursor-pointer items-center rounded-lg px-2 select-none",
-					selected || (active && !selecting)
+					selected || (active && !selecting && !agents?.pageShown)
 						? "bg-[var(--omp-selected-bg)]"
 						: "hover:bg-[var(--omp-sidebar-item-hover)]",
 				)}
 			>
 				{/* The status slot lines titles up under the group icon; idle rows leave it empty. */}
-				<span aria-hidden="true" data-sidebar-session-icon className="mr-2 flex w-4 shrink-0 justify-center">
+				<span data-sidebar-session-icon className="mr-2 flex w-4 shrink-0 justify-center">
+					{agents && !selecting && (
+						// The sidebar has no free column for a chevron: the signal slot
+						// shows it while the row is hovered or focused (plan/24 §3.1).
+						<button
+							type="button"
+							tabIndex={-1}
+							aria-label={agents.expanded ? t("agents.sidebar.collapse") : t("agents.sidebar.expand")}
+							onClick={event => {
+								event.stopPropagation();
+								agents.toggle();
+							}}
+							className="hidden h-4 w-4 items-center justify-center rounded text-[var(--omp-dim)] group-hover:flex group-focus-visible:flex hover:text-[var(--omp-text)]"
+						>
+							{agents.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+						</button>
+					)}
 					{selecting ? (
 						<SelectIcon
 							size={14}
@@ -633,7 +668,11 @@ export function Sidebar() {
 							role="img"
 							aria-label={signalLabel}
 							title={signalLabel}
-							className={cx("omp-signal-light", signalActive && "omp-signal-light--active")}
+							className={cx(
+								"omp-signal-light",
+								signalActive && "omp-signal-light--active",
+								agents && "group-hover:hidden group-focus-visible:hidden",
+							)}
 							data-idle={
 								// Past sessions that simply finished carry no signal; unread
 								// completions (an open tab) and anything live or failed do.
@@ -671,6 +710,23 @@ export function Sidebar() {
 						)}
 						title={title}
 					/>
+				)}
+				{agents && !agents.expanded && !renaming && (
+					<button
+						type="button"
+						aria-label={t("agents.sidebar.pill", { count: agents.count })}
+						title={t("agents.sidebar.pill", { count: agents.count })}
+						onClick={event => {
+							event.stopPropagation();
+							agents.toggle();
+						}}
+						className="omp-sidebar-agent-pill ml-1.5 shrink-0 hover:text-[var(--omp-text)]"
+					>
+						{agents.working && (
+							<span aria-hidden className="h-[5px] w-[5px] rounded-full bg-[var(--omp-accent)]" />
+						)}
+						{agents.count}
+					</button>
 				)}
 				{!renaming && recency > 0 && (
 					<span className="omp-sidebar-time ml-2 shrink-0 text-omp-xs tabular-nums text-[var(--omp-dim)]">

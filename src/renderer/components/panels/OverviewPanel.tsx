@@ -23,9 +23,9 @@ import { useSubagentsStore } from "../../stores/subagents";
 import { useActiveTabKind } from "../../stores/tabs";
 import { useTodoStore } from "../../stores/todo";
 import { useUiStore } from "../../stores/ui";
+import { subagentActivity } from "../agents/agent-activity";
 import { Badge, type BadgeVariant, Button, Spinner } from "../common";
 import { ContextBreakdown } from "../layout/ContextBreakdown";
-import { isLiveSubagentStatus } from "./subagent-graph";
 
 /** Files listed in the Changes card before it points at the full view. */
 const CHANGES_PREVIEW = 6;
@@ -237,7 +237,7 @@ function RunningCard() {
 	const phases = useTodoStore(state => state.phases);
 
 	const liveAgents = [...subagents.values()]
-		.filter(agent => isLiveSubagentStatus(agent.status))
+		.filter(agent => subagentActivity(agent) === "working")
 		.sort((a, b) => a.index - b.index);
 	const sideQuestions = btwRecords.filter(record => getBtwLatestTurn(record).status === "running");
 	const tasks = phases.flatMap(phase => phase.tasks);
@@ -260,12 +260,16 @@ function RunningCard() {
 					)}
 					{liveAgents.length > 0 && (
 						<li>
-							<div className="text-(--omp-text)">
+							<button
+								className="w-full truncate text-start text-(--omp-text) hover:text-(--omp-link)"
+								onClick={() => setPanelTab("agents")}
+								type="button"
+							>
 								{t("overview.running.subagents", {
 									count: liveAgents.length,
 									plural: plural(liveAgents.length),
 								})}
-							</div>
+							</button>
 							<ul className="mt-1 space-y-0.5 ps-3">
 								{liveAgents.slice(0, RUNNING_PREVIEW).map(agent => (
 									<li className="truncate text-omp-sm text-(--omp-dim)" key={agent.id}>

@@ -1,5 +1,6 @@
 import type { UiTodoPhase } from "../../../stores/todo";
-import { isLiveSubagentStatus, type SubagentListRow } from "../../panels/subagent-graph";
+import { subagentActivity } from "../../agents/agent-activity";
+import type { SubagentListRow } from "../../panels/subagent-graph";
 
 export const TODO_SUMMARY_THRESHOLD = 10;
 export const TODO_COMPLETED_PREVIEW = 3;
@@ -67,15 +68,13 @@ export function buildAgentDockSummary(rows: SubagentListRow[]): AgentDockSummary
 	};
 
 	for (const { agent } of rows) {
-		if (isLiveSubagentStatus(agent.status) || agent.status === "waiting" || agent.status === "failed") {
+		if (subagentActivity(agent) !== "done" && subagentActivity(agent) !== "stopped") {
 			addWithAncestors(agent.id);
 		}
 	}
 
 	const recentTerminal = rows
-		.filter(
-			({ agent }) => !isLiveSubagentStatus(agent.status) && agent.status !== "waiting" && agent.status !== "failed",
-		)
+		.filter(({ agent }) => subagentActivity(agent) === "done" || subagentActivity(agent) === "stopped")
 		.toSorted((a, b) => b.agent.lastUpdate - a.agent.lastUpdate || b.agent.index - a.agent.index);
 	for (const { agent } of recentTerminal) {
 		if (visibleIds.size >= AGENT_SUMMARY_LIMIT) break;

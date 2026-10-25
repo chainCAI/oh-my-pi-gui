@@ -4,6 +4,7 @@ import {
 	Check,
 	CircleAlert,
 	Copy,
+	CornerDownRight,
 	FileText,
 	GitBranch,
 	Pencil,
@@ -12,7 +13,7 @@ import {
 	Terminal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { AgentMessage, ImageContent, MessageContent, ToolCallContent } from "../../../shared/rpc-types";
 import { AnsiText, hasAnsi } from "../../lib/ansi";
 import { copyText, cx, formatClock, formatTokens } from "../../lib/format";
@@ -30,6 +31,7 @@ import { toolEntryKey } from "../../stores/tools";
 import { type RunningIndicator, ToolCard } from "../tools/ToolCard";
 import { CustomMessageCard, isCustomMessageCardType } from "./CustomMessageCard";
 import { ThinkingBlock } from "./ThinkingBlock";
+import { useReadOnlyTranscript } from "./transcript-mode";
 import { UsageRow } from "./UsageRow";
 
 export interface MessageBubbleProps {
@@ -76,6 +78,7 @@ function MessageError({ message, repeats = 1 }: { message: AgentMessage; repeats
 	const t = useT();
 	const rpc = useTabRpc();
 	const [retrying, setRetrying] = useState(false);
+	const readOnly = useReadOnlyTranscript();
 	const isLatest = useMessagesStore(s => (s.liveMessages.at(-1) ?? s.messages.at(-1)) === message);
 	const idle = useSessionStore(s => !s.isStreaming && s.retryInfo === null && s.status === "ready");
 	const retry = async () => {
@@ -92,7 +95,7 @@ function MessageError({ message, repeats = 1 }: { message: AgentMessage; repeats
 			setRetrying(false);
 		}
 	};
-	const retryButton = isLatest && idle && (
+	const retryButton = !readOnly && isLatest && idle && (
 		<button
 			type="button"
 			disabled={retrying}
@@ -167,6 +170,7 @@ function ExecutionBubble({ message }: { message: AgentMessage }) {
 	// on completion, mirroring the bash flow.
 	const running = message.running === true;
 	const [abortSent, setAbortSent] = useState(false);
+	const readOnly = useReadOnlyTranscript();
 	const python = message.role === "pythonExecution";
 	const input = python ? message.code : message.command;
 	const status = running
@@ -199,7 +203,7 @@ function ExecutionBubble({ message }: { message: AgentMessage }) {
 					>
 						{status}
 					</span>
-					{running && (
+					{running && !readOnly && (
 						<button
 							type="button"
 							disabled={abortSent}
@@ -322,6 +326,47 @@ function ContextBubble({ message }: { message: AgentMessage }) {
 }
 
 /**
+ * A delegated prompt is often long and full of scaffolding: three lines until
+ * the reader asks for all of it (plan/24 §5.4).
+ */
+function ClampedAssignment({ children }: { children: ReactNode }) {
+	const t = useT();
+	const ref = useRef<HTMLDivElement>(null);
+	const [expanded, setExpanded] = useState(false);
+	const [overflows, setOverflows] = useState(false);
+	useLayoutEffect(() => {
+		const element = ref.current;
+		if (!element || expanded) return;
+		const measure = () => setOverflows(element.scrollHeight > element.clientHeight + 1);
+		measure();
+		if (typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(measure);
+		observer.observe(element);
+		return () => observer.disconnect();
+	}, [expanded]);
+	return (
+		<>
+			<div
+				className={cx(!expanded && "omp-assignment-clamp", !expanded && overflows && "omp-assignment-cut")}
+				ref={ref}
+			>
+				{children}
+			</div>
+			{(overflows || expanded) && (
+				<button
+					aria-expanded={expanded}
+					className="omp-pressable mt-1 text-omp-sm font-medium text-[var(--omp-link)] hover:underline"
+					onClick={() => setExpanded(value => !value)}
+					type="button"
+				>
+					{expanded ? t("agents.page.showLess") : t("agents.page.showAll")}
+				</button>
+			)}
+		</>
+	);
+}
+
+/**
  * One finalized message. User messages sit right-aligned; assistant messages
  * render text, thinking, images, and tool cards. Standalone toolResult messages
  * are folded into their matching card through the tools store.
@@ -340,6 +385,8 @@ export const MessageBubble = memo(function MessageBubble({
 	const [branching, setBranching] = useState(false);
 	const switchPending = useSessionStore(state => state.switchPending !== null);
 	const isStreaming = useSessionStore(state => state.isStreaming);
+	// A subagent page: copy stays, edit and branch would act on the main session.
+	const readOnly = useReadOnlyTranscript();
 	if (message.role === "bashExecution" || message.role === "pythonExecution") {
 		return <ExecutionBubble message={message} />;
 	}
@@ -423,8 +470,27 @@ export const MessageBubble = memo(function MessageBubble({
 	};
 
 	if (isUser) {
+		const userBlocks = userMentions.blocks.map((block, i) => {
+			if (block.type === "text") {
+				return (
+					<div key={i} className="text-omp-xl leading-[1.6] text-[var(--omp-text)]">
+						<MarkdownRenderer content={block.text} singleDollarTextMath={false} />
+					</div>
+				);
+			}
+			if (block.type === "image") {
+				return <InlineImage key={i} image={block} />;
+			}
+			return null;
+		});
 		return (
 			<div className="omp-user-turn group flex flex-col items-end px-6 py-2.5">
+				{readOnly && (
+					<div className="omp-assignment-from mb-1.5 flex min-w-0 max-w-full items-center gap-1 text-omp-xs text-[var(--omp-dim)]">
+						<CornerDownRight aria-hidden className="shrink-0" size={12} />
+						<span className="truncate">{readOnly.authorLabel}</span>
+					</div>
+				)}
 				<div
 					className="omp-transcript-content omp-user-bubble relative rounded-xl border border-[var(--omp-user-msg-border)] bg-[var(--omp-user-msg-bg)] px-3.5 py-3"
 					style={{ boxShadow: "var(--omp-shadow-sm)" }}
@@ -439,7 +505,7 @@ export const MessageBubble = memo(function MessageBubble({
 						</span>
 					) : null}
 					<div className="omp-user-bubble-layout">
-						<span className="omp-user-bubble-author">{t("live.you")}</span>
+						<span className="omp-user-bubble-author">{readOnly ? readOnly.authorLabel : t("live.you")}</span>
 						<div className="omp-user-bubble-content">
 							{isSteering && (
 								<div className="mb-1.5 flex items-center gap-1.5 text-omp-xs font-bold text-[var(--omp-custom-msg-label)]">
@@ -463,19 +529,7 @@ export const MessageBubble = memo(function MessageBubble({
 									))}
 								</div>
 							)}
-							{userMentions.blocks.map((block, i) => {
-								if (block.type === "text") {
-									return (
-										<div key={i} className="text-omp-xl leading-[1.6] text-[var(--omp-text)]">
-											<MarkdownRenderer content={block.text} singleDollarTextMath={false} />
-										</div>
-									);
-								}
-								if (block.type === "image") {
-									return <InlineImage key={i} image={block} />;
-								}
-								return null;
-							})}
+							{readOnly ? <ClampedAssignment>{userBlocks}</ClampedAssignment> : userBlocks}
 						</div>
 					</div>
 				</div>
@@ -489,7 +543,7 @@ export const MessageBubble = memo(function MessageBubble({
 					>
 						{copied ? <Check size={13} className="text-[var(--omp-success)]" /> : <Copy size={13} />}
 					</button>
-					{!isSteering && (
+					{!isSteering && !readOnly && (
 						<button
 							type="button"
 							onClick={() => void handleEdit()}
@@ -501,16 +555,18 @@ export const MessageBubble = memo(function MessageBubble({
 							<Pencil size={13} />
 						</button>
 					)}
-					<button
-						type="button"
-						onClick={() => void handleBranch()}
-						disabled={branching || switchPending}
-						aria-label={t("chat.branchFromHere")}
-						title={t("chat.branchFromHere")}
-						className="omp-pressable flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-wait disabled:opacity-50"
-					>
-						<GitBranch size={13} />
-					</button>
+					{!readOnly && (
+						<button
+							type="button"
+							onClick={() => void handleBranch()}
+							disabled={branching || switchPending}
+							aria-label={t("chat.branchFromHere")}
+							title={t("chat.branchFromHere")}
+							className="omp-pressable flex h-6 w-6 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)] disabled:cursor-wait disabled:opacity-50"
+						>
+							<GitBranch size={13} />
+						</button>
+					)}
 				</div>
 			</div>
 		);
@@ -591,7 +647,7 @@ export const MessageBubble = memo(function MessageBubble({
 						>
 							{copied ? <Check size={13} className="text-[var(--omp-success)]" /> : <Copy size={13} />}
 						</button>
-						{isAssistant && (
+						{isAssistant && !readOnly && (
 							<button
 								type="button"
 								onClick={() => void handleBranch()}

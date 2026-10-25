@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import type { MenuAction, MenuActionPayload, RunProgressState } from "../shared/ipc-types";
 import { nextLanguage } from "../shared/languages";
+import { AgentHoverCardLayer } from "./components/agents/AgentHoverCard";
 import { ToastStack } from "./components/common";
 import { ActiveToolsDialog } from "./components/dialogs/ActiveToolsDialog";
 import { BranchPickerDialog } from "./components/dialogs/BranchPickerDialog";
@@ -866,6 +867,7 @@ export function App() {
 				{feedbackOpen && <FeedbackDialog />}
 			</Suspense>
 			<ToastStack />
+			<AgentHoverCardLayer />
 		</div>
 	);
 	return focusedRuntime ? (

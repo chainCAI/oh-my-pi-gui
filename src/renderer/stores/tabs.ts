@@ -849,9 +849,18 @@ export function useSessionTabs(): void {
 			if (payload.status !== "ready") return;
 			const state = useTabsStore.getState();
 			const tab = state.tabs.find(entry => entry.id === payload.tabId);
-			if (visibleTabIds(state).includes(payload.tabId)) {
-				const runtime = ensureTabRuntime(payload.tabId);
-				void runtime.command({ type: "set_subagent_subscription", level: SUBAGENT_SUBSCRIPTION_LEVEL });
+			const visible = visibleTabIds(state).includes(payload.tabId);
+			// Every ready tab streams its subagent frames: the sidebar lists the
+			// agents of background tabs too (plan/24 §7). Idempotent server-side.
+			// A background tab needs a tab-addressed command; the active-tab
+			// fallback would land on the wrong sidecar.
+			if (visible || typeof window.omp.rpc.commandForTab === "function") {
+				void ensureTabRuntime(payload.tabId).command({
+					type: "set_subagent_subscription",
+					level: SUBAGENT_SUBSCRIPTION_LEVEL,
+				});
+			}
+			if (visible) {
 				if (!tab?.pendingSessionPath && previousStatus !== "ready" && previousStatus !== "running") {
 					// Light TAB_STATUS is registered before the full active-tab channel.
 					// If ready raced SET_ACTIVE_TAB, the full ready event was already

@@ -191,11 +191,12 @@ describe("panels under running state", () => {
 		expect(document.body.textContent).toContain("Read-only research");
 		expect(document.body.textContent).not.toContain("# Target");
 
-		const row = Array.from(document.querySelectorAll("button")).find(b => b.textContent?.includes("scout"));
-		expect(row).toBeDefined();
-		if (!row) return;
+		// The row's chevron folds the transcript open; the row itself opens the page.
+		const chevron = document.querySelector<HTMLButtonElement>('button[aria-label="Show the transcript here"]');
+		expect(chevron).not.toBeNull();
+		if (!chevron) return;
 		await act(async () => {
-			row.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+			chevron.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
 		});
 		await flush();
 		expect(getSubagentMessages).toHaveBeenCalledWith("sub-1", "/tmp/sub-1.jsonl", 0);

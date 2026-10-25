@@ -19,9 +19,12 @@ import { useTabGuard } from "../../../hooks/use-tab-guard";
 import { cx, formatCost, formatTokens } from "../../../lib/format";
 import { useT } from "../../../lib/i18n";
 import { useNowTick } from "../../../lib/now-tick";
+import { useAgentPagesStore } from "../../../stores/agent-pages";
 import { useMessagesStore } from "../../../stores/messages";
 import { useSessionStore } from "../../../stores/session";
+import { useRuntimeTabId } from "../../../stores/session-runtime-context";
 import { useSubagentsStore } from "../../../stores/subagents";
+import { subagentActivity } from "../../agents/agent-activity";
 import { Badge } from "../../common";
 import { SubagentDag } from "../../panels/SubagentDag";
 import { SubagentTranscript } from "../../panels/SubagentTranscript";
@@ -49,12 +52,15 @@ const SubagentRow = memo(function SubagentRow({
 	depth,
 	expanded,
 	onToggle,
+	onOpen,
 	now,
 }: {
 	agent: SubagentSnapshot;
 	depth: number;
 	expanded: boolean;
 	onToggle: () => void;
+	/** Open the agent's page; beside the conversation with ⌥ (plan/24 §3.6). */
+	onOpen: (beside: boolean) => void;
 	now: number;
 }) {
 	const t = useT();
@@ -89,38 +95,52 @@ const SubagentRow = memo(function SubagentRow({
 						live ? "bg-(--omp-link)" : agent.status === "failed" ? "bg-(--omp-error)" : "bg-(--omp-border)",
 					)}
 				/>
-				<button
-					aria-expanded={expanded}
-					className="flex w-full items-start gap-1.5 py-2 pr-2.5 pl-2 text-left"
-					onClick={onToggle}
-					type="button"
-				>
-					<ChevronRight
-						className="omp-disclosure-chevron mt-0.5 shrink-0 text-(--omp-dim)"
-						size={12}
-						style={{ transform: expanded ? "rotate(90deg)" : undefined }}
-					/>
-					<span className="min-w-0 flex-1">
-						<span className="flex min-w-0 items-center gap-1.5">
-							<span className="min-w-0 flex-1 truncate text-omp-sm font-medium text-(--omp-text)" title={title}>
-								{title}
+				<div className="flex w-full items-start">
+					<button
+						aria-expanded={expanded}
+						aria-label={t("agents.dock.toggleTranscript")}
+						className="omp-pressable mt-1.5 ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-(--omp-dim) hover:bg-(--omp-selected-bg) hover:text-(--omp-text)"
+						onClick={onToggle}
+						title={t("agents.dock.toggleTranscript")}
+						type="button"
+					>
+						<ChevronRight
+							className="omp-disclosure-chevron shrink-0"
+							size={12}
+							style={{ transform: expanded ? "rotate(90deg)" : undefined }}
+						/>
+					</button>
+					<button
+						className="flex min-w-0 flex-1 items-start gap-1.5 py-2 pr-2.5 pl-1 text-left"
+						onClick={event => onOpen(event.altKey)}
+						title={t("agents.openHint")}
+						type="button"
+					>
+						<span className="min-w-0 flex-1">
+							<span className="flex min-w-0 items-center gap-1.5">
+								<span
+									className="min-w-0 flex-1 truncate text-omp-sm font-medium text-(--omp-text)"
+									title={title}
+								>
+									{title}
+								</span>
+								<Badge dot={meta.live} pulse={meta.live} variant={meta.variant}>
+									{t(meta.labelKey)}
+								</Badge>
 							</span>
-							<Badge dot={meta.live} pulse={meta.live} variant={meta.variant}>
-								{t(meta.labelKey)}
-							</Badge>
+							<span className="mt-1 flex min-w-0 items-center gap-1 text-omp-xxs text-(--omp-dim)">
+								<Bot className="shrink-0 text-(--omp-status-subagents)" size={10} />
+								<span className="shrink-0">{agent.agent}</span>
+								<span className="shrink-0 tabular-nums">#{agent.index + 1}</span>
+								{model && <span className="min-w-0 truncate">· {model}</span>}
+								{usage && <span className="shrink-0 tabular-nums">· {usage}</span>}
+								{elapsed !== null && (
+									<span className="ml-auto shrink-0 tabular-nums">{formatElapsed(elapsed)}</span>
+								)}
+							</span>
 						</span>
-						<span className="mt-1 flex min-w-0 items-center gap-1 text-omp-xxs text-(--omp-dim)">
-							<Bot className="shrink-0 text-(--omp-status-subagents)" size={10} />
-							<span className="shrink-0">{agent.agent}</span>
-							<span className="shrink-0 tabular-nums">#{agent.index + 1}</span>
-							{model && <span className="min-w-0 truncate">· {model}</span>}
-							{usage && <span className="shrink-0 tabular-nums">· {usage}</span>}
-							{elapsed !== null && (
-								<span className="ml-auto shrink-0 tabular-nums">{formatElapsed(elapsed)}</span>
-							)}
-						</span>
-					</span>
-				</button>
+					</button>
+				</div>
 				{detail && (
 					<div className="truncate px-6 pb-2 text-omp-xs text-(--omp-muted)" title={detail}>
 						{detail}
@@ -182,7 +202,7 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 
 	const agents = useMemo(() => [...subagents.values()].sort((a, b) => a.index - b.index), [subagents]);
 	const hasRunning = agents.some(agent => isLiveSubagentStatus(agent.status));
-	const runningCount = agents.filter(agent => isLiveSubagentStatus(agent.status)).length;
+	const runningCount = agents.filter(agent => subagentActivity(agent) === "working").length;
 	const now = useNowTick(hasRunning);
 
 	useEffect(() => {
@@ -221,6 +241,13 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 			toggle(id);
 		},
 		[focusCard, focused, managed, toggle],
+	);
+	const tabId = useRuntimeTabId();
+	const openPage = useCallback(
+		(id: string, beside: boolean) => {
+			if (tabId) useAgentPagesStore.getState().open(tabId, id, { beside });
+		},
+		[tabId],
 	);
 	const changeView = useCallback(
 		(next: PanelView) => {
@@ -261,6 +288,7 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 							expanded={showFull && expanded.has(agent.id)}
 							key={agent.id}
 							now={now}
+							onOpen={beside => openPage(agent.id, beside)}
 							onToggle={() => openAgent(agent.id)}
 						/>
 					))}

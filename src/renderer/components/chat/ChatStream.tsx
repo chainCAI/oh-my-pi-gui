@@ -69,6 +69,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { TranscriptFindBar } from "./TranscriptFindBar";
 import { TranscriptLoading } from "./TranscriptLoading";
 import { findRangesInRow, findTranscriptMatches, paintFindHighlights } from "./transcript-find";
+import { useReadOnlyTranscript } from "./transcript-mode";
 
 // TanStack's end check needs one CSS pixel for fractional scrollTop rounding.
 // User intent is enforced separately by switching away from end anchoring.
@@ -97,6 +98,8 @@ export function ChatStream() {
 function SessionTranscript() {
 	const t = useT();
 	const tabId = useRuntimeTabId();
+	// A subagent page: someone else's history, with nothing to start or review.
+	const readOnly = useReadOnlyTranscript();
 	const messages = useMessagesStore(s => s.messages);
 	const liveMessages = useMessagesStore(s => s.liveMessages);
 	const displayMessages = useMemo(() => [...messages, ...liveMessages], [messages, liveMessages]);
@@ -170,7 +173,7 @@ function SessionTranscript() {
 	// What the latest run changed on disk, once it has settled: closes the turn
 	// with one line leading to the review drawer. Tool events stream in at a high
 	// rate mid-run, so the map is only subscribed while idle.
-	const toolsTab = useActiveTabKind() !== "chat";
+	const toolsTab = useActiveTabKind() !== "chat" && readOnly === null;
 	const lastPromptAt = useMemo(() => {
 		const prompt = displayMessages.findLast(message => message.role === "user");
 		return prompt ? messageTimestampMs(prompt) : null;
@@ -286,7 +289,7 @@ function SessionTranscript() {
 	const tabHasHistory = useTabsStore(state =>
 		tabAwaitsTranscript(state.tabs.find(candidate => candidate.id === tabId)),
 	);
-	const awaitingTranscript = status === "starting" && tabHasHistory;
+	const awaitingTranscript = status === "starting" && (tabHasHistory || readOnly !== null);
 
 	const virtualizer = useVirtualizer({
 		count: rows.length,
@@ -790,7 +793,7 @@ function SessionTranscript() {
 						</div>
 					)}
 					{awaitingTranscript && rows.length === 0 && !switchPending && <TranscriptLoading />}
-					{!awaitingTranscript && rows.length === 0 && !isStreaming && !switchPending && (
+					{!awaitingTranscript && rows.length === 0 && !isStreaming && !switchPending && readOnly === null && (
 						<div className="omp-empty-canvas flex min-h-full flex-col justify-center pb-20">
 							<div className="omp-empty-logo mb-6 flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--omp-border-muted)] bg-[var(--omp-selected-bg)] text-[var(--omp-accent)]">
 								<PiLogo size={22} />

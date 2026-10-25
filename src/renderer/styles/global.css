@@ -669,13 +669,18 @@ kbd,
 	-webkit-app-region: no-drag;
 }
 
+/* Seven views share the header: only the selected one prints its name, and
+   a narrow drawer keeps icons only. */
 .omp-inspector-tab-label {
+	display: none;
+}
+
+[aria-pressed="true"] > .omp-inspector-tab-label {
 	display: inline;
 }
 
-/* Five views share the header: a narrow drawer keeps their icons only. */
-@container omp-inspector (max-width: 480px) {
-	.omp-inspector-tab-label {
+@container omp-inspector (max-width: 400px) {
+	[aria-pressed="true"] > .omp-inspector-tab-label {
 		display: none;
 	}
 }

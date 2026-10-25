@@ -39,6 +39,7 @@ import { useNowTick } from "../../lib/now-tick";
 import { useSessionStore } from "../../stores/session";
 import { useSubagentsStore } from "../../stores/subagents";
 import { toast } from "../../stores/toast";
+import { subagentActivity } from "../agents/agent-activity";
 import { Badge, Button, Input, Modal, Spinner, type TabItem, Tabs } from "../common";
 import { type AgentSettingsRpc, type AgentSettingsState, useAgentSettings } from "./agent-hub-settings";
 import { SubagentTranscript } from "./SubagentTranscript";
@@ -986,7 +987,7 @@ export function AgentHubWindow({ open, onClose, initialTab = "definitions" }: Ag
 	const settings = useAgentSettings(open, tab === "definitions");
 	const runningCount = useSubagentsStore(s => {
 		let count = 0;
-		for (const agent of s.subagents.values()) if (isLiveSubagentStatus(agent.status)) count += 1;
+		for (const agent of s.subagents.values()) if (subagentActivity(agent) === "working") count += 1;
 		return count;
 	});
 

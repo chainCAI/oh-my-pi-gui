@@ -85,7 +85,7 @@ export function formatElapsed(ms: number): string {
 }
 
 /** Ids of `task` tool calls found in a message list (main session or a subagent transcript). */
-export function extractTaskToolCallIds(messages: AgentMessage[]): string[] {
+export function extractTaskToolCallIds(messages: readonly AgentMessage[]): string[] {
 	const ids: string[] = [];
 	for (const message of messages) {
 		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;

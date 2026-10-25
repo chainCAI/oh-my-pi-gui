@@ -7,7 +7,7 @@ import { useTabsStore } from "./tabs";
 
 export type { ThemeMode };
 
-export type PanelTab = "overview" | "btw" | "diff" | "files" | "terminal" | "browser";
+export type PanelTab = "overview" | "agents" | "btw" | "diff" | "files" | "terminal" | "browser";
 /** Edit → Find, Find Next and Find Previous, as the window routes them. */
 export type FindCommand = "find" | "next" | "previous";
 export interface FindRequest {

@@ -1092,7 +1092,31 @@ describe("useSessionTabs hook", () => {
 		expect(useTabsStore.getState().tabs.find(tab => tab.id === "t1")?.pendingSessionPath).toBe("/s.json");
 	});
 
-	it("subscribes subagent frames on a tab's ready only while it is active (F-HYDRATE)", async () => {
+	it("subscribes a background tab's subagent frames through its own sidecar (plan/24)", async () => {
+		seedTabs();
+		useSessionStore.setState({ sessionId: "active" });
+		const commandForTab = vi.fn(async () => ({ type: "response" as const, command: "", success: true as const }));
+		Object.assign(omp.rpc, { commandForTab });
+		try {
+			await mount();
+			commandForTab.mockClear();
+			omp.rpc.setSubagentSubscription.mockClear();
+
+			await act(async () => {
+				emitTabStatus({ kind: "agent", tabId: "t1", cwd: "/beta", status: "ready" });
+			});
+			expect(commandForTab).toHaveBeenCalledWith(
+				"t1",
+				{ type: "set_subagent_subscription", level: "progress" },
+				undefined,
+			);
+			expect(omp.rpc.setSubagentSubscription).not.toHaveBeenCalled();
+		} finally {
+			delete (omp.rpc as { commandForTab?: unknown }).commandForTab;
+		}
+	});
+
+	it("subscribes subagent frames on a tab's ready only while it is active without tab-addressed commands (F-HYDRATE)", async () => {
 		seedTabs();
 		useSessionStore.setState({ sessionId: "active" });
 		await mount();

@@ -12,9 +12,13 @@ import {
 import { useSessionList } from "../../hooks/use-session-list";
 import { cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
+import { useAgentPagesStore } from "../../stores/agent-pages";
+import { useSessionStore } from "../../stores/session";
 import { SessionRuntimeProvider } from "../../stores/session-runtime-context";
 import { ensureTabRuntime } from "../../stores/tab-runtime";
 import { type SplitAxis, type SplitPlacement, tabDisplayTitle, useTabsStore } from "../../stores/tabs";
+import { AgentBeside } from "../agents/AgentBeside";
+import { AgentPage } from "../agents/AgentPage";
 import { ChatStream } from "../chat/ChatStream";
 import { WorkspaceDock } from "../chat/dock/WorkspaceDock";
 import { InputArea } from "./InputArea";
@@ -110,17 +114,54 @@ function SessionPane({ tabId, split, label }: { tabId: string; split: boolean; l
 						</button>
 					</header>
 				)}
-				<div className="relative flex min-h-0 flex-1 flex-col">
-					<ChatStream />
-					<div className="omp-composer-region relative shrink-0 bg-transparent pt-2">
-						<div className="omp-composer-shell relative w-full">
-							<WorkspaceDock />
-						</div>
-					</div>
-				</div>
-				<InputArea />
+				<SessionPaneBody label={label} tabId={tabId} />
 			</section>
 		</SessionRuntimeProvider>
+	);
+}
+
+/**
+ * The conversation, or one of the tab's subagent pages in its place, or a
+ * page beside it (plan/24 §7). The conversation unmounts while a page is
+ * shown; its saved transcript view and draft bring it back as it was.
+ */
+function SessionPaneBody({ tabId, label }: { tabId: string; label: string }) {
+	const shownPage = useAgentPagesStore(state => state.shown[tabId] ?? null);
+	const besidePage = useAgentPagesStore(state => state.beside[tabId] ?? null);
+	const sessionId = useSessionStore(state => state.sessionId);
+	// Pages belong to a session: a new session in this tab closes them.
+	useEffect(() => {
+		const recorded = useAgentPagesStore.getState().sessions[tabId];
+		if (recorded && sessionId && recorded !== sessionId) useAgentPagesStore.getState().drop(tabId);
+	}, [sessionId, tabId]);
+
+	if (shownPage) return <AgentPage agentId={shownPage} key={shownPage} tabId={tabId} />;
+	const conversation = (
+		<>
+			<div className="relative flex min-h-0 flex-1 flex-col">
+				<ChatStream />
+				<div className="omp-composer-region relative shrink-0 bg-transparent pt-2">
+					<div className="omp-composer-shell relative w-full">
+						<WorkspaceDock />
+					</div>
+				</div>
+			</div>
+			<InputArea />
+		</>
+	);
+	if (!besidePage) return conversation;
+	return (
+		<AgentBeside
+			conversation={
+				<>
+					<header className="flex h-8 shrink-0 items-center gap-2 border-b border-[var(--omp-border-muted)] px-3 text-omp-sm">
+						<span className="min-w-0 flex-1 truncate font-medium text-[var(--omp-text)]">{label}</span>
+					</header>
+					{conversation}
+				</>
+			}
+			page={<AgentPage agentId={besidePage} beside key={besidePage} tabId={tabId} />}
+		/>
 	);
 }
 

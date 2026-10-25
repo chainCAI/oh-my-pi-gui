@@ -1,7 +1,8 @@
 /**
  * Graphical subagent DAG: nodes are subagents (status-colored, live elapsed),
  * edges are spawn relationships, anchored at a synthetic main-session node.
- * Click a node to inspect its transcript in the detail pane below the canvas.
+ * Click a node to inspect its transcript in the detail pane below the canvas,
+ * or, given `onOpen`, to open the agent's page (the drawer's Agents tab).
  *
  * Layout is a hand-rolled layered tidy tree (depth columns left→right,
  * parents centered on children) rendered as HTML nodes over an SVG edge
@@ -9,7 +10,7 @@
  */
 
 import { Bot, RefreshCw, Terminal, X } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, memo, useEffect, useMemo, useState } from "react";
 import type { SubagentSnapshot } from "../../../shared/rpc-types";
 import { cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
@@ -63,7 +64,7 @@ const DagAgentNode = memo(function DagAgentNode({
 	y: number;
 	selected: boolean;
 	now: number;
-	onSelect: () => void;
+	onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
 	const t = useT();
 	const meta = statusMeta(agent.status);
@@ -131,7 +132,15 @@ function MainNode({ x, y }: { x: number; y: number }) {
 	);
 }
 
-export function SubagentDag() {
+export function SubagentDag({
+	include,
+	onOpen,
+}: {
+	/** Only these agents (the roster's This turn); every agent when omitted. */
+	include?: ReadonlySet<string>;
+	/** Open the agent's page instead of the inline transcript. */
+	onOpen?: (agentId: string, beside: boolean) => void;
+} = {}) {
 	const t = useT();
 	const subagents = useSubagentsStore(state => state.subagents);
 	const loadError = useSubagentsStore(state => state.error);
@@ -140,7 +149,11 @@ export function SubagentDag() {
 	const messages = useMessagesStore(state => state.messages);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 
-	const agents = useMemo(() => [...subagents.values()].sort((a, b) => a.index - b.index), [subagents]);
+	const agents = useMemo(
+		() =>
+			[...subagents.values()].filter(agent => !include || include.has(agent.id)).sort((a, b) => a.index - b.index),
+		[include, subagents],
+	);
 	const hasRunning = agents.some(agent => isLiveSubagentStatus(agent.status));
 	const now = useNowTick(hasRunning);
 
@@ -211,7 +224,11 @@ export function SubagentDag() {
 								agent={node.agent}
 								key={node.id}
 								now={now}
-								onSelect={() => setSelectedId(node.id === selectedId ? null : node.id)}
+								onSelect={event =>
+									onOpen
+										? onOpen(node.id, event.altKey)
+										: setSelectedId(node.id === selectedId ? null : node.id)
+								}
 								selected={node.id === selectedId}
 								x={node.x}
 								y={node.y}
@@ -252,7 +269,7 @@ export function SubagentDag() {
 				</div>
 			) : (
 				<div className="shrink-0 space-y-0.5 border-t border-(--omp-border-muted) px-3 py-1.5">
-					<div className="text-omp-xs text-(--omp-dim)">{t("dag.clickNode")}</div>
+					<div className="text-omp-xs text-(--omp-dim)">{onOpen ? t("agents.openHint") : t("dag.clickNode")}</div>
 					{layout.unresolved.length > 0 && (
 						<div className="text-omp-xxs text-(--omp-dim) italic">
 							{t("dag.unresolved", {

@@ -7,6 +7,7 @@
  * tab left to close, so ⌘W closes the window like every other tabbed app.
  */
 
+import { useAgentPagesStore } from "../stores/agent-pages";
 import { useSessionStore } from "../stores/session";
 import { type SessionTab, useTabsStore } from "../stores/tabs";
 import { useUiStore } from "../stores/ui";
@@ -27,8 +28,8 @@ export function tabNeedsCloseConfirm(tab: SessionTab, live: LiveTabRuntime): boo
 }
 
 /** What a close request ended up doing. `"window"` = the last tab, so ⌘W closed
- *  its window instead. */
-export type TabCloseOutcome = "closed" | "worktree-prompt" | "armed" | "window" | "nothing";
+ *  its window instead; `"page"` = a subagent page was shown, so ⌘W closed it. */
+export type TabCloseOutcome = "closed" | "worktree-prompt" | "armed" | "window" | "page" | "nothing";
 
 /** Execute a close the user already committed to (chip ✓, or ⌘W on an armed tab). */
 export function performTabClose(tab: SessionTab): TabCloseOutcome {
@@ -48,6 +49,13 @@ export function closeActiveTab(): TabCloseOutcome {
 	const session = useSessionStore.getState();
 	const target = tabs.find(tab => tab.id === activeTabId);
 	if (!target) return "nothing";
+	// A selected child chip closes like a tab and shows its session (plan/24 §3.2).
+	const pages = useAgentPagesStore.getState();
+	const page = pages.shown[target.id];
+	if (page) {
+		pages.close(target.id, page);
+		return "page";
+	}
 	if (tabs.length <= 1) {
 		window.close();
 		return "window";

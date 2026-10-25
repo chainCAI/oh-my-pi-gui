@@ -1758,3 +1758,52 @@
 		animation-delay: 0s !important;
 	}
 }
+
+/* A subagent page's assignment (plan/24 §5.4): three lines of the prompt,
+   faded at the cut, until the reader asks for all of it. */
+.omp-assignment-clamp {
+	max-height: calc(3 * 1.6 * var(--text-omp-xl));
+	overflow: hidden;
+}
+
+.omp-assignment-cut {
+	mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+
+/* Agents under their session in the sidebar (plan/24 §5.3): elbow guides from
+   each parent's signal dot, in the border tone the sidebar canvas can show. */
+.omp-sidebar-agent-elbow {
+	position: absolute;
+	top: 0;
+	height: 50%;
+	width: 8px;
+	border-bottom-left-radius: 6px;
+	border-left: 1px solid var(--omp-border);
+	border-bottom: 1px solid var(--omp-border);
+	pointer-events: none;
+}
+
+.omp-sidebar-agent-guide {
+	position: absolute;
+	top: 50%;
+	bottom: 0;
+	border-left: 1px solid var(--omp-border);
+	pointer-events: none;
+}
+
+.omp-sidebar-agent-guide--full {
+	top: 0;
+}
+
+.omp-sidebar-agent-pill {
+	display: inline-flex;
+	height: 16px;
+	align-items: center;
+	gap: 4px;
+	border: 1px solid var(--omp-border);
+	border-radius: 999px;
+	padding: 0 6px;
+	font-size: var(--text-omp-xxs);
+	font-variant-numeric: tabular-nums;
+	color: var(--omp-muted);
+}

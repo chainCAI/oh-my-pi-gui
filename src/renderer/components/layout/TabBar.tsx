@@ -21,6 +21,7 @@ import {
 	X,
 } from "lucide-react";
 import {
+	Fragment,
 	type DragEvent as ReactDragEvent,
 	type MouseEvent as ReactMouseEvent,
 	useEffect,
@@ -35,6 +36,7 @@ import { sessionHasContent } from "../../lib/session-title";
 import { scrollStripOnWheel } from "../../lib/strip-scroll";
 import { type LiveTabRuntime, performTabClose, tabNeedsCloseConfirm } from "../../lib/tab-close";
 import { tabSignalPresentation } from "../../lib/tab-signal";
+import { useAgentPagesStore } from "../../stores/agent-pages";
 import type { ComposerStore } from "../../stores/composer";
 import { useComposerStore } from "../../stores/composer";
 import type { MessagesStore } from "../../stores/messages";
@@ -47,6 +49,7 @@ import { sessionRuntimeStore } from "../../stores/session-runtime-context";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { type SessionTab, tabDisplayTitle, useTabsStore, visibleTabIds } from "../../stores/tabs";
 import { useUiStore } from "../../stores/ui";
+import { AgentPageChips } from "../agents/AgentPageChips";
 import { anchorFromEvent, ContextMenu, type ContextMenuAnchor } from "../common/ContextMenu";
 
 /** Auto-cancel window for the armed close confirm (injectable for tests). */
@@ -86,15 +89,22 @@ function TabChip({
 	const activeRuntime = useSessionStore(s => (active ? s.isStreaming || s.isCompacting : false));
 	const signal = tabSignalPresentation(tab, activeRuntime);
 	const signalLabel = t(signal.labelKey);
+	// A shown subagent page takes the selection; its session keeps the visible ring.
+	const pageShown = useAgentPagesStore(s => (s.shown[tab.id] ?? null) !== null);
+	const selected = active && !pageShown;
+	const select = () => {
+		if (pageShown) useAgentPagesStore.getState().show(tab.id, null);
+		void switchTab(tab.id);
+	};
 
 	return (
 		<div
 			id={`omp-tab-${tab.id}`}
 			role="tab"
 			draggable
-			aria-selected={active}
+			aria-selected={selected}
 			tabIndex={active ? 0 : -1}
-			onClick={() => void switchTab(tab.id)}
+			onClick={select}
 			onContextMenu={onContextMenu}
 			onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
 				event.dataTransfer.effectAllowed = "move";
@@ -107,7 +117,7 @@ function TabChip({
 				// activate that button, not switch tabs.
 				if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
 					event.preventDefault();
-					void switchTab(tab.id);
+					select();
 					return;
 				}
 				if (
@@ -121,9 +131,9 @@ function TabChip({
 			title={`${label} — ${workspaceLabel}${tab.worktree ? ` — ${tab.worktree.branch}` : ""}`}
 			className={cx(
 				"no-drag group relative flex h-8 w-auto min-w-28 max-w-52 shrink-0 cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 text-omp-md select-none",
-				active
+				selected
 					? "bg-[var(--omp-selected-bg)] font-medium text-[var(--omp-text)]"
-					: visible
+					: visible || active
 						? "bg-[var(--omp-selected-bg)]/55 text-[var(--omp-text)] ring-1 ring-inset ring-[var(--omp-border)]"
 						: "text-[var(--omp-muted)] hover:bg-[var(--omp-sidebar-item-hover)] hover:text-[var(--omp-text)]",
 			)}
@@ -375,34 +385,36 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 						const workspaceLabel =
 							tab.kind === "chat" ? t("sidebar.chats") : (groupAliases[tab.cwd] ?? basename(tab.cwd) ?? tab.cwd);
 						return (
-							<TabChip
-								key={tab.id}
-								tab={tab}
-								active={tab.id === activeTabId}
-								visible={visible}
-								label={label}
-								workspaceLabel={workspaceLabel}
-								confirmingClose={armedCloseTab?.tabId === tab.id}
-								closeNeedsConfirm={tabNeedsCloseConfirm(tab, liveRuntime)}
-								onArmClose={() => armCloseTab(tab.id)}
-								onConfirmClose={() => confirmClose(tab.id)}
-								onCancelClose={cancelCloseTab}
-								onContextMenu={event => setTabMenu({ anchor: anchorFromEvent(event), tabId: tab.id })}
-								onKeyboardNavigate={key => {
-									const index = tabOrder.indexOf(tab.id);
-									const targetIndex =
-										key === "Home"
-											? 0
-											: key === "End"
-												? tabOrder.length - 1
-												: (index + (key === "ArrowLeft" ? -1 : 1) + tabOrder.length) % tabOrder.length;
-									const target = tabOrder[targetIndex];
-									if (target) {
-										void useTabsStore.getState().switchTab(target);
-										requestAnimationFrame(() => document.getElementById(`omp-tab-${target}`)?.focus());
-									}
-								}}
-							/>
+							<Fragment key={tab.id}>
+								<TabChip
+									tab={tab}
+									active={tab.id === activeTabId}
+									visible={visible}
+									label={label}
+									workspaceLabel={workspaceLabel}
+									confirmingClose={armedCloseTab?.tabId === tab.id}
+									closeNeedsConfirm={tabNeedsCloseConfirm(tab, liveRuntime)}
+									onArmClose={() => armCloseTab(tab.id)}
+									onConfirmClose={() => confirmClose(tab.id)}
+									onCancelClose={cancelCloseTab}
+									onContextMenu={event => setTabMenu({ anchor: anchorFromEvent(event), tabId: tab.id })}
+									onKeyboardNavigate={key => {
+										const index = tabOrder.indexOf(tab.id);
+										const targetIndex =
+											key === "Home"
+												? 0
+												: key === "End"
+													? tabOrder.length - 1
+													: (index + (key === "ArrowLeft" ? -1 : 1) + tabOrder.length) % tabOrder.length;
+										const target = tabOrder[targetIndex];
+										if (target) {
+											void useTabsStore.getState().switchTab(target);
+											requestAnimationFrame(() => document.getElementById(`omp-tab-${target}`)?.focus());
+										}
+									}}
+								/>
+								<AgentPageChips parentLabel={label} tabActive={tab.id === activeTabId} tabId={tab.id} />
+							</Fragment>
 						);
 					})}
 				</div>

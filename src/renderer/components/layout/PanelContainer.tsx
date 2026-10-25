@@ -1,4 +1,4 @@
-import { Diff, FolderTree, Globe, LayoutDashboard, MessageCircleQuestion, SquareTerminal, X } from "lucide-react";
+import { Bot, Diff, FolderTree, Globe, LayoutDashboard, MessageCircleQuestion, SquareTerminal, X } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActiveTabRouteReady } from "../../hooks/use-active-tab-route";
@@ -6,6 +6,7 @@ import { cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useActiveTabKind, useTabsStore } from "../../stores/tabs";
 import { CHAT_PANEL_TABS, type PanelTab, useUiStore } from "../../stores/ui";
+import { AgentRoster, useAgentsTabSignal } from "../agents/AgentRoster";
 import { PanelErrorBoundary } from "../common";
 import { BrowserPanel } from "../panels/BrowserPanel";
 import { BtwPanel } from "../panels/BtwPanel";
@@ -32,6 +33,7 @@ function defaultPanelWidth(): number {
 
 const TABS: { id: PanelTab; labelKey: string; icon: typeof Diff }[] = [
 	{ id: "overview", labelKey: "panel.tabs.overview", icon: LayoutDashboard },
+	{ id: "agents", labelKey: "panel.tabs.agents", icon: Bot },
 	{ id: "btw", labelKey: "panel.tabs.btw", icon: MessageCircleQuestion },
 	{ id: "diff", labelKey: "panel.tabs.diff", icon: Diff },
 	{ id: "files", labelKey: "panel.tabs.files", icon: FolderTree },
@@ -74,6 +76,7 @@ export function PanelContainer() {
 	const browsing = visiblePanelTab === "browser";
 	const maxWidth = browsing ? BROWSER_MAX_WIDTH : MAX_WIDTH;
 	const hostShare = browsing ? BROWSER_HOST_SHARE : HOST_SHARE;
+	const agentsSignal = useAgentsTabSignal();
 
 	const [width, setWidth] = useState(defaultPanelWidth);
 	const [widthHydrated, setWidthHydrated] = useState(false);
@@ -165,7 +168,17 @@ export function PanelContainer() {
 						return (
 							<button
 								key={id}
-								aria-label={t(labelKey)}
+								aria-label={
+									id === "agents" && agentsSignal.tone
+										? t("agents.tab.label", {
+												label: t(labelKey),
+												state:
+													agentsSignal.tone === "error"
+														? t("agents.sidebar.moreFailed", { count: agentsSignal.failed })
+														: t("agents.sidebar.moreWorking", { count: agentsSignal.working }),
+											})
+										: t(labelKey)
+								}
 								title={t(labelKey)}
 								aria-pressed={active}
 								type="button"
@@ -174,6 +187,15 @@ export function PanelContainer() {
 							>
 								<Icon size={14} />
 								<span className="omp-inspector-tab-label">{t(labelKey)}</span>
+								{id === "agents" && !active && agentsSignal.tone && (
+									<span
+										aria-hidden
+										className={cx(
+											"absolute top-1 right-1 h-1.5 w-1.5 rounded-full",
+											agentsSignal.tone === "error" ? "bg-[var(--omp-error)]" : "bg-[var(--omp-accent)]",
+										)}
+									/>
+								)}
 							</button>
 						);
 					})}
@@ -190,6 +212,7 @@ export function PanelContainer() {
 			<div className="min-h-0 flex-1 overflow-hidden">
 				<PanelErrorBoundary key={`${activeTabId ?? "no-tab"}:${visiblePanelTab}`}>
 					{visiblePanelTab === "overview" && <OverviewPanel />}
+					{visiblePanelTab === "agents" && <AgentRoster />}
 					{visiblePanelTab === "btw" && <BtwPanel />}
 					{visiblePanelTab === "diff" && <DiffPanel />}
 					{visiblePanelTab === "files" && <FilesPanel />}

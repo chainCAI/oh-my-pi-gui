@@ -186,7 +186,7 @@ Everything on the card comes from the snapshot and `progress`, so it never reads
 | "8 more" in the sidebar, "Open in sidebar" in the dock card | Opens the drawer's Agents tab | — |
 | A page's breadcrumb segment | Opens that ancestor's page, or the session | — |
 
-The dock card's inline transcript expansion stays; it uses the shared reader (§6.3).
+The dock card's inline transcript expansion stays, behind its own chevron at the start of the row, so the rest of the row can open the page (§6.3).
 
 ---
 
@@ -222,7 +222,7 @@ The dock card's inline transcript expansion stays; it uses the shared reader (§
 4. Keep each member's ancestors. An ancestor that isn't a member stays as a muted context row, so no row is ever an indented orphan; this reuses `buildAgentDockSummary`'s ancestor walk.
 5. Advisors (`kind: "advisor"`) have no tool call; they count while working.
 
-Siblings are ordered working → waiting → failed → done → stopped, with spawn index as the tie-break. Ancestors of working rows start expanded.
+Siblings are ordered working → waiting → failed → done → stopped, with spawn index as the tie-break. A subtree ranks by its most active member, so a context row above a working agent sorts with the working rows and survives the sidebar's five-row cut. Ancestors of working rows start expanded.
 
 **All** is today's spawn-order tree. Nothing is hidden or reordered.
 
@@ -323,7 +323,7 @@ Frames `window-page` (dark, 1280 × 800), `window-beside` (light) and `page-fail
 **Transcript column**: the conversation's own column (`max-w-[760px]`, centred) and spacing.
 1. **Assignment**: the first bubble is the delegated prompt, labelled "From \<parent\>", where the parent is the parent agent's title, or "the conversation" for a root agent. It is collapsed to three lines with "Show all", because a delegated prompt is often long and full of scaffolding. Markdown, read-only.
 2. **Messages, thinking and tool cards**: the main conversation's components (§6.1), so a subagent's diff or bash output looks exactly like the parent's.
-3. **Live tail**: while the agent works, the column ends with its running tool, drawn as a pending `ToolCard` from `progress` (`currentTool`, its args, the time since `currentToolStartMs`), and the intent under it in `.omp-shimmer-text`. The transcript file holds only committed messages, so this is the page's only "now".
+3. **Live tail**: while the agent works, a row just above the agent bar shows its running tool from `progress` (a spinner, `currentTool` and its args, the time since `currentToolStartMs`) and the intent in `.omp-shimmer-text`. It sits outside the transcript, so it never moves the reader's scroll as messages arrive. The transcript file holds only committed messages, so this is the page's only "now".
 4. **Result**: once the agent ends, its final message is the last bubble; the agent bar's top line says where it went (below).
 5. **Error card** (failed agents): where the run stopped, as the conversation shows a failed turn. It has an error-dim fill, an alert icon, a one-line summary in error tone ("Stopped after 3 attempts") and the message in secondary text.
 
@@ -425,13 +425,14 @@ Motion follows plan/22: two durations, and no layout animation.
 
 ### 6.1 Reuse, not a second renderer
 
-`TranscriptReader` renders a subagent's messages with the main conversation's components:
+The page renders the conversation's own `ChatStream` under an overlay runtime (`createAgentPageRuntime`):
 
-- **Tool cards**: `ToolCard` reads results from the tab's `tools` store. The reader wraps its subtree in `SessionRuntimeProvider` with a copy of the tab's runtime whose `tools` entry is a **private** store (`createToolsStore()`), filled by `hydrateMessages(messages, { turnIsLive })`. Every renderer in `tools/index.tsx` then works unchanged: diffs, bash output, nested task trees. Commands still go to the tab's sidecar.
-- **Messages**: `MessageBubble` gains `readOnly`, which hides edit, fork and retry; those act on the *main* session. Copy stays.
+- **Stores**: the overlay copies the tab's runtime. Subagents, the spawn graph, settings and model are the tab's own. Session, messages, tools, queue, todo, composer, side questions, plan approval and extension UI are **private** stores, filled from the agent's transcript (`hydrateMessages(messages, { turnIsLive })` for tools). Every renderer in `tools/index.tsx` then works unchanged: diffs, bash output, nested task trees. The overlay is cached per page and never registered, so window-level lookups by tab id still find the session.
+- **Commands**: only `get_*` reads pass through to the tab's sidecar; everything else is refused, so nothing on a page can act on the session.
+- **Messages**: `ReadOnlyTranscriptContext` hides edit, fork and retry in `MessageBubble`, and the conversation-only parts of `ChatStream` (the empty state, the tools-tab extras); those act on the *main* session. Copy stays.
 - **Thinking**: `ThinkingBlock` with `live={false}` reads only the finished text. It still subscribes to one flag in the tab's messages store ("has streamed text started"), which is cheap and harmless here.
 - **Assignment**: the subagent's first user message is the delegated prompt. It renders as the "From \<parent\>" bubble (§5.4), collapsed, with markdown.
-- **Live tail**: while the agent works, the reader ends with the running tool and intent built from `progress` (§5.4).
+- **Live tail**: while the agent works, a row above the agent bar shows the running tool and intent built from `progress` (§5.4).
 
 The private store is the contract to protect: a subagent's tool entries must never land in the main tab's `tools` store, or the main transcript would show foreign cards. The overlay reaches only components that read the store through the hook. A static `useToolsStore.getState()` follows the *focused* runtime instead. No production renderer calls it today (only tests do), and the leak test in §10 keeps it that way.
 
@@ -451,7 +452,7 @@ The first open reads the whole file in one response (§1). The refresh affordanc
 ### 6.3 Where it is used
 
 - **The page**: the full reader, from the Assignment bubble to the live tail.
-- **Dock card inline expansion**: the same reader without the Assignment bubble, height-capped by the dock's existing scroll owner.
+- **Dock card inline expansion**: today's `SubagentTranscript`, unchanged, behind the row's chevron. Moving it to the overlay runtime is follow-up work.
 - **Hub transcript drawer**: until P3 retires the Hub tab.
 
 ---
@@ -477,12 +478,12 @@ interface AgentPagesState {
 
 - **Routing**: main's active tab stays the parent session whether its conversation or a page is shown. `routeTabView`, `visibleTabIds` and `SET_ACTIVE_TAB` don't change, so the parent's sidecar keeps streaming into its stores.
 - **Selecting a child chip**: sets `shown[parent] = agentId` and, if the parent isn't active, switches to the parent first. Selecting the parent's chip sets `shown[parent] = null`.
-- **The session pane**: renders the conversation or the page by `shown`, and keeps the conversation mounted but hidden while a page is shown, so its scroll, draft and streaming state are untouched.
+- **The session pane**: renders the conversation or the page by `shown`. The conversation unmounts while a page is shown and comes back as it was: `ChatStream` saves its scroll anchor to the session store's transcript view on unmount (the path tab switching uses), the draft lives in the tab's composer store, and streaming state lives in the tab's stores.
 - **Beside**: `beside[parent]` renders the session pane as a two-pane split. It is refused while the window split holds two tabs.
 - **Split view between tabs**: each pane follows its own tab's `shown`. Child chips of both tabs show in the strip.
 - **Closing**: closing a session tab deletes its entries. An agent that leaves the roster leaves its page open (§5.6).
 - **Persistence**: none in v1. Pages close with the window (§12.1).
-- **Background tabs**: the sidebar lists agents for every open tab, so P3 sets the `progress` subscription on every ready tab, not only on shown or hydrated ones (§1). Frame coalescing (§8) carries the cost.
+- **Background tabs**: the sidebar lists agents for every open tab, so P3 sets the `progress` subscription on every ready tab, not only on shown or hydrated ones (§1). It goes through the tab-addressed command (`commandForTab`); without one, only the shown tab subscribes, because the active-tab fallback would reach the wrong sidecar. Frame coalescing (§8) carries the cost.
 
 ---
 
@@ -519,6 +520,12 @@ interface AgentPagesState {
 | **P3 — Sidebar, hover card and consolidation** (~1.5 d) | Agents under their session in the sidebar (§5.3) with the pill and "N more"; the `progress` subscription on every ready tab; the hover card on every agent row; `⌥A` and `/hub` open the drawer tab; pause in the roster's ⋯; Hub tab removed | The sidebar's five-row cut keeps ancestors and counts hidden working agents; a collapsed row's pill matches the drawer's This turn count; a background tab's agents appear without showing the tab. The hover card opens after 400 ms, swaps between rows without a delay and never reads a transcript. The existing Hub abort/revive tests move to the agent bar and still pass; shortcut and command routes open the tab; the Definitions tab is unaffected. Visual review against `sidebar-rows`. |
 
 Each phase ships with a changelog entry under `[Unreleased]` and a reply on #23 once a build can be tried.
+
+**Status (2026-10-26).** Built in the order the issue's reporter ranked it (page and sidebar first, the drawer tab last): activity and This turn, the page in a child tab with the agent bar, Stop/Revive, the breadcrumb and Open beside, the sidebar rows with the pill and "N more", the hover card on sidebar and roster rows, and the Agents tab with This turn/All, Graph, the ⋯ menu, the paused banner, the states and the tab dot. Still to do:
+- task tool cards' agent rows open pages, and the hover card on dock and task card rows;
+- "Open in sidebar" in the dock card;
+- retiring the Hub tab: `⌥A` and `/hub` still open the Agent Hub window;
+- frame coalescing and the synthetic load gate (§8), the new-steps pill on pages, and the visual review at 480 and 720 px.
 
 ---
 

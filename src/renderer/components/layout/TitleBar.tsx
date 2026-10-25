@@ -24,6 +24,7 @@ import { onEscape } from "../../lib/keymap";
 import { isRecording, subscribeRecording, toggleRecording } from "../../lib/recording";
 import { sessionDisplayTitle } from "../../lib/session-title";
 import { useTabRpc } from "../../lib/tab-rpc";
+import { useAgentPagesStore, useShownAgentPage } from "../../stores/agent-pages";
 import { useMessagesStore } from "../../stores/messages";
 import { type SessionStore, useSessionStore } from "../../stores/session";
 import { sessionRuntimeStore, useRuntimeTabId } from "../../stores/session-runtime-context";
@@ -31,6 +32,7 @@ import { useActiveTabKind } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
 import { useToolsStore } from "../../stores/tools";
 import { useUiStore } from "../../stores/ui";
+import { AgentCrumbs, AgentTitleFacts, AgentTitleStatus } from "../agents/AgentTitle";
 import { ContextMenu, type ContextMenuAnchor, type ContextMenuItem } from "../common/ContextMenu";
 import { WorkspaceDialog } from "../dialogs/WorkspaceDialog";
 import { sessionCacheHitPercent, sessionExecutionDurationMs } from "./session-metrics";
@@ -43,6 +45,8 @@ export function TitleBar() {
 	const tabRpc = useTabRpc();
 	const t = useT();
 	const tabId = useRuntimeTabId();
+	// A shown subagent page puts its agent in the breadcrumb and its facts in the slots.
+	const pageAgentId = useShownAgentPage(tabId);
 	const sessionId = useSessionStore(s => s.sessionId);
 	const sessionName = useSessionStore(s => s.sessionName);
 	const cwd = useSessionStore(s => s.cwd);
@@ -379,28 +383,42 @@ export function TitleBar() {
 				) : (
 					<button
 						type="button"
-						title={t("titlebar.rename")}
+						title={pageAgentId ? t("agents.title.showConversation") : t("titlebar.rename")}
 						onClick={() => {
+							if (pageAgentId && tabId) {
+								useAgentPagesStore.getState().show(tabId, null);
+								return;
+							}
 							setDraft(sessionName ?? "");
 							setEditingName(true);
 						}}
-						className="omp-pressable min-w-0 max-w-72 truncate rounded-lg px-2 py-1.5 text-omp-lg font-semibold text-[var(--omp-text)] hover:bg-[var(--omp-selected-bg)]"
+						className={cx(
+							"omp-pressable min-w-0 max-w-72 truncate rounded-lg px-2 py-1.5 text-omp-lg hover:bg-[var(--omp-selected-bg)]",
+							pageAgentId
+								? "font-medium text-[var(--omp-muted)] hover:text-[var(--omp-text)]"
+								: "font-semibold text-[var(--omp-text)]",
+						)}
 					>
 						{displayName}
 					</button>
 				)}
+				{pageAgentId && tabId && <AgentCrumbs agentId={pageAgentId} tabId={tabId} />}
 			</div>
 
-			<div className="omp-titlebar-status no-drag flex shrink-0 items-center gap-1.5 px-1 text-omp-sm font-medium text-[var(--omp-muted)]">
-				<span
-					role="img"
-					aria-label={statusLabel}
-					title={statusLabel}
-					className={cx("omp-signal-light", statusActive && "omp-signal-light--active")}
-					style={{ color: statusColor }}
-				/>
-				<span className="omp-titlebar-status-label">{statusLabel}</span>
-			</div>
+			{pageAgentId ? (
+				<AgentTitleStatus agentId={pageAgentId} />
+			) : (
+				<div className="omp-titlebar-status no-drag flex shrink-0 items-center gap-1.5 px-1 text-omp-sm font-medium text-[var(--omp-muted)]">
+					<span
+						role="img"
+						aria-label={statusLabel}
+						title={statusLabel}
+						className={cx("omp-signal-light", statusActive && "omp-signal-light--active")}
+						style={{ color: statusColor }}
+					/>
+					<span className="omp-titlebar-status-label">{statusLabel}</span>
+				</div>
+			)}
 
 			{planModeEnabled && (
 				<span
@@ -427,7 +445,8 @@ export function TitleBar() {
 
 			{/* One quiet readout: only figures that carry information are printed
 			    (a row of zeros is noise); the full breakdown is in the tooltip. */}
-			{metricParts.length > 0 && (
+			{pageAgentId && <AgentTitleFacts agentId={pageAgentId} />}
+			{!pageAgentId && metricParts.length > 0 && (
 				<span
 					className="omp-session-metrics no-drag flex shrink-0 items-center gap-1.5 px-1.5 font-mono text-omp-sm tabular-nums text-[var(--omp-dim)]"
 					title={metricsTitle}
