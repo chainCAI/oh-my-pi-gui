@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>omp GUI — One window. Every session in parallel.</title>
-<meta name="description" content="A responsive desktop GUI for the omp coding agent: parallel sessions plus native Skills, MCP, security, SSH host, and update management. macOS arm64 / x64, Windows x64 and Linux x64." />
+<meta name="description" content="A responsive desktop GUI for the omp coding agent: parallel sessions, scheduled tasks, and native Skills, MCP, security, SSH host, and update management. macOS arm64 / x64, Windows x64 and Linux x64." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -80,7 +80,7 @@
     border-bottom-color: var(--line);
   }
   .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 72px; }
-  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; }
   .brand-mark {
     width: 32px; height: 32px; border-radius: 9px;
     background: linear-gradient(135deg, #123f39, #1a6b60);
@@ -88,7 +88,7 @@
     display: grid; place-items: center; color: var(--accent);
     box-shadow: 0 0 24px rgba(52, 211, 190, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
-  .nav-links { display: flex; gap: 34px; align-items: center; }
+  .nav-links { display: flex; gap: 28px; align-items: center; white-space: nowrap; }
   .nav-links a { color: var(--muted); font-size: 14px; font-weight: 500; transition: color 0.25s; position: relative; }
   .nav-links a:hover { color: var(--text); }
   .nav-links a::after {
@@ -336,8 +336,10 @@
   .reveal-late { transition-delay: 0.12s; }
   .reveal-later { transition-delay: 0.24s; }
 
-  @media (max-width: 940px) {
+  @media (max-width: 1000px) {
     .nav-links { display: none; }
+  }
+  @media (max-width: 940px) {
     .split, .split.flip { grid-template-columns: 1fr; gap: 48px; }
     .split.flip .split-text { order: 0; }
     .cards { grid-template-columns: 1fr; }
@@ -373,35 +375,36 @@
       omp GUI
     </a>
     <div class="nav-links">
-      <a href="#tabs">Session Tabs</a>
-      <a href="#dock">Conversation Dock</a>
+      <a href="#tabs">Sessions</a>
+      <a href="#dock">Dock</a>
+      <a href="#tasks">Tasks</a>
       <a href="#management">Management</a>
       <a href="#native">Native</a>
       <a href="#updates">Updates</a>
       <a href="#install">Install</a>
       <a href="https://github.com/nornzach/oh-my-pi-gui">GitHub</a>
     </div>
-    <a class="btn btn-primary btn-sm" href="#install">Choose a build <span data-omp-version>v0.9.25</span></a>
+    <a class="btn btn-primary btn-sm" href="#install">Choose a build <span data-omp-version>v0.9.27</span></a>
   </div>
 </nav>
 
 <header class="hero" id="top">
   <div class="container">
-    <div class="hero-badge rise d1"><span class="dot"></span><span data-omp-version>v0.9.25</span> · <span data-omp-release-date>Oct 2026</span> — bundled agent, Apple Silicon, Intel, Windows &amp; Linux</div>
+    <div class="hero-badge rise d1"><span class="dot"></span><span data-omp-version>v0.9.27</span> · <span data-omp-release-date>Oct 2026</span> — bundled agent, Apple Silicon, Intel, Windows &amp; Linux</div>
     <h1 class="rise d2">One window.<br /><span class="grad">Every session in parallel.</span></h1>
     <p class="sub rise d3">The desktop GUI for the omp coding agent. Every session tab runs its own agent process — your work keeps moving in the background while you switch. All of the TUI's power, none of its walls.</p>
     <div class="hero-cta rise d4">
-      <a class="btn btn-primary" data-omp-dmg="arm64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-arm64.dmg">
+      <a class="btn btn-primary" data-omp-dmg="arm64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27-arm64.dmg">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download for macOS <span class="btn-sub">Apple Silicon</span>
       </a>
-      <a class="btn btn-ghost" data-omp-dmg="x64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.dmg">Intel build <span class="btn-sub">macOS x64</span></a>
-      <a class="btn btn-ghost" data-omp-win href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-setup.exe">Windows build <span class="btn-sub">x64 installer</span></a>
+      <a class="btn btn-ghost" data-omp-dmg="x64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27.dmg">Intel build <span class="btn-sub">macOS x64</span></a>
+      <a class="btn btn-ghost" data-omp-win href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27-setup.exe">Windows build <span class="btn-sub">x64 installer</span></a>
     </div>
     <p class="hero-fine rise d5">Bundled sidecar — no agent, bun, or Node to install · <a href="https://github.com/nornzach/oh-my-pi-gui/releases">All releases</a> · <a href="#install">Build from source</a></p>
     <div class="hero-shot-wrap rise d5">
       <div class="hero-shot" id="tilt">
-        <img src="assets/11-felt-quality.webp" alt="omp GUI — warm paper canvas with a unified teal accent family" loading="eager" />
+        <img src="assets/overview.webp" alt="omp GUI with a finished conversation and the Overview tab: context by category, workspace, changed files, running subagents and MCP servers" loading="eager" />
       </div>
     </div>
   </div>
@@ -413,6 +416,9 @@
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/></svg>Independent agent processes</span>
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Background execution</span>
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Structured job coordination</span>
+    <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="4" width="18" height="17" rx="3"/><line x1="3" y1="9" x2="21" y2="9"/><path d="M12 13v3l2 1"/></svg>Scheduled tasks</span>
+    <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="15" y1="4" x2="15" y2="20"/></svg>Overview drawer</span>
+    <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Find in conversation</span>
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>Live voice mode</span>
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Real-time collaboration</span>
     <span class="chip"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>Structured debug console</span>
@@ -464,8 +470,8 @@
       </div>
     </div>
     <figure class="shot reveal reveal-late">
-      <img src="assets/01-session-tabs.webp" alt="Three session tabs running in parallel" loading="lazy" />
-      <figcaption>Three tabs, three agent processes — two running concurrently.</figcaption>
+      <img src="assets/split-view.webp" alt="Two sessions side by side in a split view" loading="lazy" />
+      <figcaption>Two tabs side by side — each one runs its own agent process.</figcaption>
     </figure>
   </div>
 </section>
@@ -489,12 +495,46 @@
     </div>
     <div class="duo reveal reveal-late">
       <figure class="shot">
-        <img src="assets/09-dock-summary.webp" alt="Bounded Todo and Agents summaries sharing one dock scroll owner" loading="lazy" />
-        <figcaption>Summary mode keeps urgent work visible without squeezing the composer.</figcaption>
+        <img src="assets/dock-agents.webp" alt="Agents card above the composer with each subagent's model, tokens, cost and current step" loading="lazy" />
+        <figcaption>The Agents card shows each subagent's model, cost and current step above the composer.</figcaption>
       </figure>
       <figure class="shot">
-        <img src="assets/10-dock-agents-focus.webp" alt="Agents card expanded into the focused full-list view" loading="lazy" />
-        <figcaption>Focused mode reveals every agent and collapses sibling cards to headers.</figcaption>
+        <img src="assets/agent-hub.webp" alt="Agent Hub listing completed, running and parked subagents with pause and abort controls" loading="lazy" />
+        <figcaption>Agent Hub lists every subagent with pause, abort and revive controls.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="tasks" style="padding-top: 40px;">
+  <div class="container split">
+    <div class="split-text reveal">
+      <span class="eyebrow">Scheduled Tasks</span>
+      <h2>Recurring work that runs in the background</h2>
+      <p class="lead">Ask the agent to do something on a schedule ("check the dashboard every weekday at 9") and confirm the task it drafts, or create one from the sidebar. Every run ends with a short report.</p>
+      <div class="points">
+        <div class="point">
+          <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+          <div><strong>Read-only or its own worktree</strong><p>Read-only runs only look. Workspace runs edit in a separate Git worktree, can run a shell check, and wait in a review queue before anything reaches your branch.</p></div>
+        </div>
+        <div class="point">
+          <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+          <div><strong>Insights</strong><p>Runs per day, success rate, cost by task and recent failures over 7, 30 or 90 days.</p></div>
+        </div>
+        <div class="point">
+          <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <div><strong>No surprise catch-up</strong><p>Tasks run while omp is open. Slots the computer slept through are recorded as missed, never replayed.</p></div>
+        </div>
+      </div>
+    </div>
+    <div class="duo reveal reveal-late">
+      <figure class="shot">
+        <img src="assets/scheduled-tasks.webp" alt="Scheduled tasks window with a weekday dashboard check and its run history" loading="lazy" />
+        <figcaption>Each task keeps its schedule, access level and run history.</figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="assets/task-insights.webp" alt="Scheduled task insights with runs per day, success rate and cost by task" loading="lazy" />
+        <figcaption>Insights sums up the last 30 days across every task.</figcaption>
       </figure>
     </div>
   </div>
@@ -545,7 +585,7 @@
         </div>
       </div>
       <div class="card reveal reveal-late">
-        <img src="assets/07-command-palette.webp" alt="Command palette in Chinese" loading="lazy" />
+        <img src="assets/command-palette-zh.webp" alt="Command palette in Chinese" loading="lazy" />
         <div class="card-body">
           <h3><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Command palette</h3>
           <p>Every command, dialog and setting one keystroke away — fully localized, English and Chinese included.</p>
@@ -560,7 +600,7 @@
     <div class="split-text reveal">
       <span class="eyebrow">Context &amp; Usage</span>
       <h2>Context you can actually audit</h2>
-      <p class="lead">Per-file token breakdowns, tool-call frequency and live cost — the numbers behind every session, rendered natively.</p>
+      <p class="lead">Context use by category — messages, tool schemas, system prompt, skills and free space — plus per-file breakdowns and live cost, the numbers behind every session.</p>
       <div class="points">
         <div class="point">
           <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
@@ -570,11 +610,15 @@
           <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
           <div><strong>Context report</strong><p>Exactly which files and tools are eating your window.</p></div>
         </div>
+        <div class="point">
+          <span class="ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="15" y1="4" x2="15" y2="20"/></svg></span>
+          <div><strong>Overview tab</strong><p>Context by category, the workspace, changed files, running subagents and MCP servers beside the conversation.</p></div>
+        </div>
       </div>
     </div>
     <figure class="shot reveal reveal-late">
-      <img src="assets/08-context-report.webp" alt="Context report with token bars" loading="lazy" />
-      <figcaption>Context report — sorted token bars per source, with a copyable breakdown.</figcaption>
+      <img src="assets/context-breakdown.webp" alt="Context popover with token use by category" loading="lazy" />
+      <figcaption>Context by category from the status bar, with the full report one click away.</figcaption>
     </figure>
   </div>
 </section>
@@ -601,13 +645,13 @@
       <h2>Up and running in a minute</h2>
       <p class="lead" style="margin-left: auto; margin-right: auto;">Grab the build for your platform. The agent, its runtime and everything else are already inside.</p>
       <div class="cta-row">
-        <a class="btn btn-primary" data-omp-dmg="arm64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-arm64.dmg">
+        <a class="btn btn-primary" data-omp-dmg="arm64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27-arm64.dmg">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Apple Silicon <span class="btn-sub">arm64</span>
         </a>
-        <a class="btn btn-ghost" data-omp-dmg="x64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.dmg">Intel <span class="btn-sub">x64</span></a>
-        <a class="btn btn-ghost" data-omp-win href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25-setup.exe">Windows <span class="btn-sub">x64 installer</span></a>
-        <a class="btn btn-ghost" data-omp-linux href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.25/omp-0.9.25.AppImage">Linux <span class="btn-sub">x64 AppImage</span></a>
+        <a class="btn btn-ghost" data-omp-dmg="x64" href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27.dmg">Intel <span class="btn-sub">x64</span></a>
+        <a class="btn btn-ghost" data-omp-win href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27-setup.exe">Windows <span class="btn-sub">x64 installer</span></a>
+        <a class="btn btn-ghost" data-omp-linux href="https://github.com/nornzach/oh-my-pi-gui/releases/download/v0.9.27/omp-0.9.27.AppImage">Linux <span class="btn-sub">x64 AppImage</span></a>
         <a class="btn btn-ghost" href="https://github.com/nornzach/oh-my-pi-gui/releases">All releases</a>
       </div>
       <div class="install-note">

@@ -5,6 +5,7 @@ import { _electron as electron, expect, type Page } from "@playwright/test";
 import { en } from "../src/renderer/locales/en";
 import { zh } from "../src/renderer/locales/zh";
 import { projectFiles, showcaseTimestamp } from "./showcase-data";
+import { seedScheduledTasks } from "./showcase-tasks";
 
 const root = path.resolve(import.meta.dir, "..");
 const realHome = os.homedir();
@@ -61,6 +62,7 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 			`${entries.map(entry => JSON.stringify(entry)).join("\n")}\n`,
 		);
 	}
+	const taskTitles = seedScheduledTasks(path.join(desktop, "scheduler.db"), project, language, Date.now());
 	const app = await electron.launch({
 		args: [path.join(root, "out", "main", "index.js"), project, `--user-data-dir=${desktop}`],
 		cwd: project,
@@ -96,7 +98,8 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 		await page.setViewportSize({ width: 1440, height: 960 });
 		await expect(page.locator("textarea").first()).toBeVisible();
 		await page.getByRole("button", { name: t["onboarding.later"], exact: true }).click();
-		await expect(page.getByTitle(t["input.model"], { exact: true })).toBeEnabled();
+		const modelButton = page.getByTitle(new RegExp(`^${escapeRegExp(t["input.model"])}: `));
+		await expect(modelButton).toBeEnabled();
 		await expect(page.getByText(titles[0], { exact: true }).first()).toBeVisible();
 
 		async function shot(name: string): Promise<void> {
@@ -123,6 +126,17 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 					)
 					.toBeGreaterThanOrEqual(3);
 			}
+			// shortenPath only knows /Users and /home homes, so the temporary project
+			// folder cannot read as ~; show it as it reads on a real machine.
+			await page.evaluate(
+				([shown, display]) => {
+					const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+					for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+						if (shown.includes(node.textContent ?? "")) node.textContent = display;
+					}
+				},
+				[[project, middleEllipsis(project)], "~/projects/aurora-web"] as const,
+			);
 			const text = await page.locator("body").innerText();
 			if (privateText.some(value => text.includes(value)) || /\/(?:Users|home)\/(?!demo\b)[^\s/]+/.test(text)) {
 				throw new Error(`Privacy check failed for ${language}/${name}`);
@@ -132,9 +146,15 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 			console.log(`Captured ${language}/${name}`);
 		}
 		async function nav(key: string): Promise<void> {
-			const expand = page.getByRole("button", { name: t["sidebar.navigation.expand"], exact: true });
-			if (await expand.isVisible()) await expand.click();
-			await page.getByRole("button", { name: t[key], exact: true }).first().click();
+			// A row's accessible name includes its shortcut hint, so match the label text.
+			const item = page
+				.getByRole("button")
+				.filter({ has: page.getByText(t[key], { exact: true }) })
+				.first();
+			if (await item.isVisible()) return item.click();
+			// App-wide tools live in the sidebar's More menu.
+			await page.getByRole("button", { name: t["sidebar.navigation.expand"], exact: true }).click();
+			await page.getByRole("menuitem", { name: t[key] }).click();
 		}
 		async function close(): Promise<void> {
 			await page.keyboard.press("Escape");
@@ -142,10 +162,15 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 		}
 
 		await shot("01-conversation");
-		await nav("titlebar.workspace");
+		// The drawer toggle is named for the change count once the tree is dirty.
+		const drawerLabel = [t["titlebar.togglePanel"], t["titlebar.review.changes"]].map(templatePattern).join("|");
+		await page.getByRole("button", { name: new RegExp(`^(?:${drawerLabel})$`) }).click();
+		const overview = page.getByRole("button", { name: t["panel.tabs.overview"], exact: true });
+		await expect(overview).toHaveAttribute("aria-pressed", "true");
+		await expect(page.locator(".omp-inspector")).toContainText(t["overview.context.title"]);
+		await shot("13-overview");
 		await page.getByRole("button", { name: t["panel.tabs.diff"], exact: true }).click();
 		const inspector = page.locator(".omp-inspector");
-		await inspector.getByRole("button", { name: "M src/components/Preferences.tsx", exact: true }).click();
 		await expect(inspector).toContainText('aria-labelledby="preferences-title"');
 		const separator = await inspector.getByRole("separator").boundingBox();
 		if (!separator) throw new Error("Workspace resize handle is missing");
@@ -156,7 +181,7 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 		await shot("02-workspace");
 		await page.getByRole("button", { name: t["panel.close"], exact: true }).click();
 
-		await page.getByTitle(t["input.model"], { exact: true }).click();
+		await modelButton.click();
 		await expect(page.getByPlaceholder(t["modelPicker.placeholder"])).toBeVisible();
 		await shot("03-models");
 		await close();
@@ -208,8 +233,27 @@ async function captureLocale(language: "en" | "zh"): Promise<void> {
 
 		await captureSplit(page, t);
 		await shot("11-split");
+
+		// The scheduler runs on the real clock, so these scenes come after the fixed-clock ones.
+		await page.clock.setSystemTime(Date.now());
+		await nav("tasks.title");
+		const tasks = page.getByRole("dialog");
+		// With a run awaiting review the window opens on Review; show the task list.
+		await tasks.getByRole("tab", { name: t["tasks.view.tasks"], exact: true }).click();
+		await expect(tasks).toContainText(taskTitles[0]);
+		await shot("14-tasks");
+		await tasks.getByRole("tab", { name: t["tasks.view.insights"] }).click();
+		await expect(tasks).toContainText(taskTitles[1]);
+		await shot("15-task-insights");
+		await close();
+	} catch (error) {
+		const failure = path.join(os.tmpdir(), `omp-showcase-failure-${language}.png`);
+		await (await app.firstWindow()).screenshot({ path: failure }).catch(() => {});
+		console.error(`Failure screenshot: ${failure}`);
+		throw error;
 	} finally {
-		await app.close();
+		const closed = await Promise.race([app.close().then(() => true), Bun.sleep(10_000).then(() => false)]);
+		if (!closed) app.process().kill("SIGKILL");
 		await fs.rm(temporary, { recursive: true, force: true });
 	}
 }
@@ -221,6 +265,22 @@ async function captureSplit(page: Page, t: Record<string, string>): Promise<void
 	await page.getByRole("tab").first().click({ button: "right" });
 	await page.getByText(t["tabs.menu.splitRight"], { exact: true }).click();
 	await expect(page.locator("textarea")).toHaveCount(2);
+}
+
+/** How shortenPath (src/renderer/lib/format.ts) cuts a path it cannot shorten to ~. */
+function middleEllipsis(value: string, max = 56): string {
+	if (value.length <= max) return value;
+	const keep = Math.floor((max - 1) / 2);
+	return `${value.slice(0, keep)}…${value.slice(-keep)}`;
+}
+
+/** A locale template as a pattern: each `{param}` matches anything. */
+function templatePattern(template: string): string {
+	return escapeRegExp(template).replace(/\\\{\w+\\\}/g, ".*");
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 for (const language of ["en", "zh"] as const) await captureLocale(language);

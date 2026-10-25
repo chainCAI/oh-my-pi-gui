@@ -5,14 +5,20 @@ const locale = process.env.OMP_SHOWCASE_LANG === "zh" ? "zh" : "en";
 const data = createShowcaseData(locale, process.env.OMP_SHOWCASE_PROJECT ?? process.cwd());
 
 if (process.argv.includes("stats")) {
+	const headers = { "x-omp-stats-dashboard": "1" };
+	// The dashboard syncs quietly on open; each status poll reports a newer finished sync.
+	let lastSyncedAt = 0;
 	const server = Bun.serve({
 		hostname: "127.0.0.1",
 		port: 0,
 		fetch(request) {
 			const pathname = new URL(request.url).pathname;
-			return Response.json(data.stats[pathname] ?? [], {
-				headers: { "x-omp-stats-dashboard": "1" },
-			});
+			if (pathname === "/api/sync" || pathname === "/api/status") {
+				if (pathname === "/api/status") lastSyncedAt++;
+				const sync = { phase: "idle", current: 0, total: 0, processed: 0, lastSyncedAt, error: null };
+				return Response.json({ version: 1, sync }, { headers });
+			}
+			return Response.json(data.stats[pathname] ?? [], { headers });
 		},
 	});
 	process.stdout.write(`http://127.0.0.1:${server.port}\n`);

@@ -2,13 +2,28 @@
 
 ## [Unreleased]
 
+## [0.9.27] - 2026-10-25
+
 ### Added
 
 - **Scheduled tasks**: ask the agent to do something on a schedule ("check the dashboard every weekday at 9") and it drafts a task you confirm, edit or decline, or create one from **Scheduled tasks** in the sidebar. Tasks run on their own in the background, read-only or in their own git worktree, end with a short report, can run a shell check, and land in a review queue when they changed files. Runs, reviews and an insights page (success rate, cost, runs per day, recent failures) live in the same window, with notifications and a dock badge for what needs you. Slots the computer slept through are recorded as missed, never replayed.
-
 - **Overview tab in the right drawer**: opening the drawer now lands on an overview of the session. It shows how full the context is, the folder, branch and model, uncommitted files, what is running (the agent, subagents, side questions, todo progress), and the state of each MCP server, with links to the full views. Chat tabs show only context, workspace and running work.
 - **Context breakdown by category**: `/context` and the usage popover beside Send now show one stacked bar and a row per category (messages, tool schemas, system prompt, system context, skills) with tokens and share of the window, plus the auto-compact buffer and free space, matching the compaction threshold the strategy bar shows.
 - **Side questions in the right drawer**: a Side questions tab lists this session's `/btw` topics and shows each full thread, where you can follow up, stop, copy, or branch an answer into the main conversation. `/btw` on its own opens the tab, and closing the `/btw` window no longer stops the answer: it keeps streaming in the drawer. — thanks [@Sakura1618](https://github.com/Sakura1618) ([#21](https://github.com/nornzach/oh-my-pi-gui/pull/21))
+- **Select sessions in bulk**: turn on Select in the sidebar, or ⌘-click and ⇧-click sessions, then archive, unarchive or delete them together. ⌘A selects every shown session and ⌫ deletes; deleting asks first, counts off its progress and leaves running sessions alone. Archived sessions move to their own collapsible section.
+- **Find in the conversation**: Edit → Find (⌘F) opens a find bar over the transcript with a match count; Enter and ⇧Enter (or ⌘G and ⇧⌘G) step through the matches. In the browser panel ⌘F still searches the page.
+
+### Fixed
+
+- Sessions no longer drop out of the sidebar when a slow list read answers after a newer one.
+- A session whose first line is longer than 4 KB keeps its folder instead of landing in a nameless group.
+- The sidebar no longer holds thousands of files open: it watches session files only and lets go of logs older than a day.
+- Opening a global search result lands on the matching message instead of stopping short of it.
+
+### Changed
+
+- The shortcuts window labels the menu-bar shortcuts and lists the find and session-selection keys.
+- Bundled agent rebuilt from monorepo `6484c767`, with no change in behavior: upstream main has no new commits since 0.9.26 (still past v18.12.6), plus the fork's RPC queue fix.
 
 ## [0.9.26] - 2026-10-24
 
