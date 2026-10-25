@@ -1,26 +1,34 @@
-# 24 — Agents view: a docked monitor, activity first, rich transcripts
+# 24 — Agents view: every subagent gets a page, activity first
 
-**Status**: design (2026-10-25). Not started.
-**Source**: [nornzach/oh-my-pi-gui#23](https://github.com/nornzach/oh-my-pi-gui/issues/23). The reporter runs sessions with dozens of subagents nested several levels deep.
+**Status**: design, revised 2026-10-26. Not started.
+**Source**: [nornzach/oh-my-pi-gui#23](https://github.com/nornzach/oh-my-pi-gui/issues/23). The reporter runs sessions with dozens of subagents nested several levels deep. In a follow-up they said they mostly care about the current turn.
 **Scope**: GUI only. Everything this needs is already on the wire:
-- `parentSubagentId` on every nested snapshot
-- `AgentProgress`: current tool, tool args preview, last intent, context use, retry state
+- `parentSubagentId` on every nested snapshot, and `parentToolCallId` on root agents
+- `AgentProgress`: current tool, tool args preview, recent tools, last intent, context use, retry state
 - `get_subagent_messages` from a byte offset
 
 The sidecar needs no rebuild.
-**Out of scope**: token-level live streaming of subagent output (§10), and changing what the agent reports.
+**Out of scope**: token-level live streaming of subagent output (§11), messaging a subagent directly, and changing what the agent reports.
 **Prototype**: [`mockups/24-agents-view.html`](mockups/24-agents-view.html) draws every screen in this plan with the GUI's own tokens, in light and dark. §5 is its written contract.
+
+**What changed in this revision.** The first draft opened a subagent's transcript inside the drawer, a column 360 to 840 px wide. Codex and Claude Code give each subagent a full page that reads exactly like the main conversation, and list subagents under their session in the sidebar. This revision does the same:
+- the page replaces the drawer detail;
+- the sidebar lists agents under their session;
+- a hover card previews an agent without opening it;
+- "This turn" replaces "Active" as the default filter.
+
+The roster, activity model, transcript reuse and performance work are unchanged.
 
 ---
 
 ## 0. What we are building
 
 The issue asks for three things:
-1. **A docked view.** The agent list sits in a sidebar, so the conversation stays visible while you watch it.
+1. **A docked view.** You can watch agents without covering the conversation.
 2. **Activity first.** Agents that are working come before parked, idle and finished ones, without losing the parent-child tree.
 3. **Rich transcripts.** A subagent's transcript reads like the main conversation, with tool cards, thinking and formatted messages, not plain text.
 
-North star: *one roster and one transcript reader, shown in the places that need them.* Today the same agents appear in four places with four implementations. This plan adds one real monitor and makes the other places reuse it. It does not add a fifth list.
+North star: *a subagent is a page, as a session is a page.* A page has its own tab and a full-width transcript, and it is reached from wherever the agent is listed. Opening one never disturbs the conversation that spawned it. Today the same agents appear in four places with four implementations. This plan adds one roster and one page, and makes the other places link to them. It does not add a fifth list.
 
 ---
 
@@ -28,6 +36,8 @@ North star: *one roster and one transcript reader, shown in the places that need
 
 | Surface | File | What it does | Gap for #23 |
 |---|---|---|---|
+| Sidebar | `layout/Sidebar.tsx` | Sessions grouped by workspace; each row shows the open tab's signal (`tabForSession`, `sessionTabSignal`) | Agents are not listed at all |
+| Tab strip | `layout/TabBar.tsx` | One chip per pooled sidecar tab (`SessionTab`); the main process owns the list (`GET_TABS`) | No way to show anything but a session |
 | Dock card above the composer | `chat/dock/AgentsDockCard.tsx` | Tree in spawn order (`buildSubagentList`), List/Graph toggle, a 5-row preview (`buildAgentDockSummary` keeps live and failed agents plus their ancestors), in-dock "view all" focus, inline transcripts | Shares a dock capped at 45% of the window height with todos, plan and queue; no activity ordering |
 | Agent Hub → Hub tab | `panels/AgentHubWindow.tsx` (`HubTab`) | Flat list, live agents first (`hubStatusOrder`); status counts; pause or resume agents, abort the turn, abort or revive one agent; transcript slide-over | A **modal**: it covers the conversation. The flat list loses the hierarchy. |
 | Task tool card | `tools/TaskRenderer.tsx` | Live tree for one `task` call, inside the transcript | Scrolls away with the conversation |
@@ -37,12 +47,16 @@ North star: *one roster and one transcript reader, shown in the places that need
 Findings that shape the design:
 
 - **"Live" doesn't mean "working".** `isLiveSubagentStatus` treats `started`, `running`, `pending`, `idle` and `parked` all as live. So the dock badge (`3/40`), the Overview "N running" line, the pulsing badge and the Hub ordering all lump parked and idle agents in with working ones. This is the heart of ask 2.
-- **The wire carries what an agent is doing; the rows drop it.** `progress.currentTool`, `currentToolArgs` (already a short preview, such as a path or a command), `currentToolStartMs`, `lastIntent`, `retryState`/`retryFailure` and `contextTokens`/`contextWindow` all arrive. The dock row shows only `description`, model, tokens, cost and elapsed time.
+- **The wire carries what an agent is doing; the rows drop it.** `progress.currentTool`, `currentToolArgs` (already a short preview, such as a path or a command), `currentToolStartMs`, `recentTools`, `lastIntent`, `retryState`/`retryFailure` and `contextTokens`/`contextWindow` all arrive. The dock row shows only `description`, model, tokens, cost and elapsed time.
 - **The hierarchy needs no transcripts.** `parentSubagentId` is explicit on nested snapshots. The tool-call ownership fallback only matters for frames that predate it.
+- **Turn membership needs no new field.** A root agent's `parentToolCallId` is the id of a `task` tool call in the main transcript, and that call belongs to one turn. Nested agents inherit their root's turn through `parentSubagentId`.
+- **Every open tab already has live agent data.** Main forwards each sidecar's subagent frames with its tab id, and the renderer applies them to that tab's own subagents store, visible or not. One gap: the subscription is set when a tab is shown or hydrated, so a tab that booted in the background and was never shown stays silent until then (`session-hydration.ts`).
+- **Sessions that aren't open in a tab have no live data.** Their agents can only be read back from session files.
+- **A page can't be a `SessionTab`.** A `SessionTab` is a pooled sidecar that main tracks, restores and routes to. A subagent has no sidecar of its own; its page reads through its parent tab's sidecar.
 - **The transcript read is incremental.** `readRpcSubagentTranscript` returns every complete line after `fromByte` in one response. Polling from `nextByte` costs only the new bytes.
 - **A refresh bug.** A caught-up transcript keeps its refresh button only while `status === "started"`. An agent reporting `running` loses it.
 - **Frame rate.** The agent coalesces progress to at most one frame per 150 ms per agent. Each frame is one IPC message and one subagents-store write, which builds a new `Map` (`hooks/use-rpc-events.ts`). With 40 working agents that can mean hundreds of store writes a second, each re-deriving the tree.
-- **History.** 0.7.3 deliberately moved the drawer's Agents tab into the dock ("live execution state moved into the conversation"). The dock card is the right *glance*. The issue asks for a *monitor*, a different job, so this plan keeps the dock card and adds the monitor instead of moving the card back.
+- **History.** 0.7.3 deliberately moved the drawer's Agents tab into the dock ("live execution state moved into the conversation"). The dock card is the right *glance*. The issue asks for a *monitor* and for *reading*, which are different jobs, so this plan keeps the dock card and adds the other two instead of moving the card back.
 - **The event stream stays off.** `SUBAGENT_SUBSCRIPTION_LEVEL` is `progress`. The `events` level streams a full message snapshot per token for every subagent and flooded the pipe in #19.
 - **The drawer header is already full.** Six views share it, and above 480 px every tab prints its label. With the real labels that strip needs about 645 px in English and 676 px in Russian, so between 480 px and that width it already scrolls sideways (`overflow-x-auto` in `layout/PanelContainer.tsx`) and hides tabs. A seventh tab raises the need to about 730 and 764 px (measured in the prototype with the locale strings; Chinese needs 554).
 
@@ -52,34 +66,127 @@ Findings that shape the design:
 
 | Decision | Choice | Rejected, and why |
 |---|---|---|
-| Where the monitor lives | A new **Agents** tab in the right drawer, on agent tabs only | A separate window needs cross-window store sync for a per-tab runtime. A non-modal Hub is the wrong primitive, and the modal also holds Definitions. Moving the dock card back would undo 0.7.3 for everyone, including sessions with two agents. |
-| Roster implementation | One `AgentRoster` component: list, rows, filters. The drawer tab uses it, and in P3 it replaces the Hub tab | A third roster beside the dock and the Hub |
-| How much a row says | A title, one "now" line and one time. Model, tokens, cost, context and the assignment move to the detail (§5.1) | Three-line rows carrying eight facts each. At 40 agents nothing stands out, and the list stops being scannable. |
+| Where a subagent is read | Its own **page**, the conversation's full column, in a child tab next to its session's tab (§3.2) | The drawer detail of the first draft: a 360–840 px column that never reads like the conversation. A modal: it covers the conversation. A separate window: it needs cross-window store sync for a per-tab runtime. |
+| What a page tab is | A renderer-owned **child** of a session tab. Main's tab list, routing and restore never see it (§7). | A `SessionTab` per agent: it would need a sidecar per agent, or a special case in every one of the 19 places that read `SessionTab`. |
+| How many page tabs | One **preview** page per session, replaced by the next one you open; Keep open pins it | A tab per click: forty agents would bury the tab strip |
+| Navigation | Agents listed **under their session in the sidebar**, this turn's only, at most 5 rows (§3.1) | All agents in the sidebar: it would grow without bound. Agents only in the drawer: the reporter wants them in view while they run. |
+| Monitor | The drawer **Agents** tab: the full roster with filters, Graph and bulk actions (§3.4). Its rows open pages. | Putting filters and bulk actions in the sidebar: the sidebar navigates, it doesn't manage |
+| Quick look | A **hover card** on any agent row (§3.5) | Opening a page to check one fact. An expanding row: it moves the list under the pointer. |
+| Default filter | **This turn**, which means the latest turn, plus anything older still working (§4.2) | Active (working, waiting, failed): it keeps every parked agent from earlier turns in view, which the reporter doesn't care about |
+| Roster implementation | One `AgentRoster` component: list, rows, filters. The drawer tab uses it; the sidebar uses its row and projection; in P3 it replaces the Hub tab. | A third roster beside the dock and the Hub |
+| How much a row says | A title, one "now" line and one time. Model, tokens, cost, context and the assignment live on the page (§5.1). | Three-line rows carrying eight facts each. At 40 agents nothing stands out, and the list stops being scannable. |
 | Status signal | The existing 6 px signal dot, static | A pulse on every working row: ten pulsing dots are noise, and plan/22 keeps motion for "needs you" |
-| Tab indicator | A dot on the Agents icon: accent while agents work, error after a failure you haven't seen | A count on the tab. It repeats the toolbar's number, and a second number that disagrees (working vs active) has to be reconciled. |
 | Drawer header with seven tabs | Only the selected tab prints its label; the others are icons with tooltips, at every width | Today's rule (every label above 480 px) already scrolls tabs out of view (§1). A higher breakpoint would have to sit near 770 px to fit Russian, so labels would show only close to the drawer's 840 px maximum, and a per-locale breakpoint breaks with every new string. |
-| Transcript implementation | One `TranscriptReader` built on the main conversation's `MessageBubble` and `ToolCard`, used by the drawer, the dock's inline expansion and the Hub | A separate set of "lite" renderers that drift from the main ones |
-| Live transcript updates | Poll `get_subagent_messages` from `nextByte` every 2 s for the **one open** transcript while its agent works | The `events` subscription (#19). A per-agent subscription (needs an agent change; §10). |
+| Transcript implementation | One `TranscriptReader` built on the main conversation's `MessageBubble` and `ToolCard`, used by the page and the dock's inline expansion | A separate set of "lite" renderers that drift from the main ones |
+| Live page updates | Poll `get_subagent_messages` from `nextByte` every 1 s for the **shown** pages while their agents work | The `events` subscription (#19). A per-agent subscription (needs an agent change; §11). |
 | Frame cost | Coalesce subagent frames per animation frame into one store write | Throttling in the agent: it is shared with the TUI and already at 150 ms |
 
 ---
 
-## 3. The docked Agents view (ask 1)
+## 3. Where agents appear
 
-A drawer tab `agents`, placed after Overview. It isn't in `CHAT_PANEL_TABS`, because chat tabs have no tools and no subagents.
+```
+┌ sidebar ────────────────┬──────────────────────────────────────────────────────────────────┐
+│ aurora-web              │ [● Harden the auth flow] [↳ ● Find every verifyToken caller ×] + │  tab strip
+│ ● Harden the auth flow  │ … › Map the auth surface › Find every verifyToken caller ● Working│  title bar
+│ ├ ● Map the auth surf…  │                                                                  │
+│ │ ├ ● Find every veri…  │        ┌──────────── the conversation's column ───────────┐       │
+│ │ ├ ● Read the sessio…  │        │                    ↳ From Map the auth surface   │       │
+│ │ └ ○ Check the token…  │        │          Find every call site of verifyToken() … │       │
+│ ├ ● Rewrite the login…  │        │ I'll start with a repository-wide search …       │       │
+│ └ 8 more · 4 working ·… │        │ ✓ grep   verifyToken src/                         │       │
+│ ● Fix the flaky e2… (●3)│        │ ◌ grep   verifyToken packages/            0:12    │       │
+│                         │        └──────────────────────────────────────────────────┘       │
+│                         │        ┌ agent bar, where the composer sits ───────────────┐      │
+│                         │        │ ↳ Takes instructions from Map the auth surface     │      │
+│                         │        │ explore  claude-sonnet-4.5         [■ Stop agent] ⋯│      │
+│                         │        └────────────────────────────────────────────────────┘      │
+│                         │          14 steps                               ━━── 31% of 200k   │
+└─────────────────────────┴──────────────────────────────────────────────────────────────────┘
+```
 
-- **Content**: a list (filtered Active or All, §4) or the Graph (the existing `SubagentDag`, which has room here once the drawer is widened to 360–840 px).
-- **Detail**: selecting a row opens that agent's detail inside the tab (§5.3). Back or Esc returns to the list with its scroll position, filter, expansion and selection kept.
-- **Entry points**:
-  - the drawer toggle
-  - an "Open in sidebar" button in the dock card header
-  - the subagent line in Overview → Running
-  - from P3: each agent row on a task tool card, `⌥A` and `/hub`
+| Place | Job | Shows |
+|---|---|---|
+| Sidebar, under the session | Navigate | This turn's agents, at most 5 rows, live |
+| Child tab → page | Read | One agent's whole transcript, full width, live |
+| Page beside the conversation | Read while watching the parent | The same page in a pane split with its session |
+| Drawer → Agents | Monitor and manage | The whole roster: filters, Graph, pause, stop |
+| Hover card | Check one agent without opening it | Status, now-line, the last three steps |
+| Dock card | Glance from the composer | Unchanged |
+
+### 3.1 Sidebar: agents under their session
+
+A session row that has agents in this turn can expand. Expanded, its agents nest under it as 28 px rows joined by elbow guides, the same row the roster uses (§5.2) without the now-line.
+
+- **Which agents**: the This turn projection (§4.2) in tree order, siblings by activity. The first five rows show, then an "8 more" row that opens the drawer's Agents tab. When the hidden rows include working or failed agents, the row says how many: "8 more · 4 working · 1 failed", so a hidden failure is never silent.
+- **Depth**: two levels of indent. A deeper agent sits at the second level, and its page's breadcrumb gives the full path.
+- **Toggle**: the sidebar has no free column for a chevron, so the session row's 16 px signal slot shows the disclosure chevron while the row is hovered or focused, and the signal otherwise. ← and → collapse and expand the focused row.
+- **Collapsed**: the session row keeps a count pill after its title ("● 3"), led by an accent dot while any of them works. Clicking the pill expands the row. The row's own signal still means the session.
+- **Default**: a session expands the first time it spawns agents in a turn. After that your choice sticks for that session while it is open. Nothing expands or collapses on its own later, so rows never move under the pointer.
+- **Selected**: a row whose page is shown takes the sidebar's selection fill; its session row drops to the hover fill.
+- **Scope**: only sessions open in a tab list agents, because only they have live data (§1). Other sessions keep a plain row (§12.4).
+
+### 3.2 The page, in a child tab
+
+Clicking an agent anywhere (§3.6) opens its page in a **child tab** right after its session's chip. It doesn't leave the session: the conversation keeps running, its scroll and draft are kept, and its chip's signal stays live.
+
+- **Chip**: the `TabChip` shape with a ↳ (corner-down-right) glyph in place of the worktree or chat icon, then the agent's signal and title. A preview chip sets its title in italic, like an editor's preview tab.
+- **Preview**: each session has at most one preview page. Opening another agent replaces it. Double-clicking the chip, or Keep open in its menu, pins the page; a pinned page stays until closed.
+- **Order**: child chips sit right after their parent, pinned ones first, preview last. They can't be dragged away from their parent.
+- **Selection**: a selected child chip takes the active style, and its parent shows the `visible` ring, so you can see whose agent it is. Main's active tab stays the parent (§7).
+- **Closing**: × or ⌘W closes the page and shows its session. Closing a session closes its pages, and the session's close confirmation counts its working agents.
+- **Restart**: page tabs are not restored in v1 (§12.1).
+
+The page itself is drawn in §5.4: the conversation's column and components, with the agent bar where the composer sits.
+
+### 3.3 Beside the conversation
+
+⌥-clicking an agent, or Open beside in its menu, shows the page in a pane split with its session: the conversation on the left, the page on the right. This reuses the split view's divider, ratio and pane headers. It is still one tab, and its child chip shows a columns glyph.
+
+- **Already split**: when the window shows two tabs side by side, Open beside opens the page in a child tab instead. Splits don't nest.
+- **Leaving**: the page pane's × closes the page. Dragging its chip out isn't supported.
+
+### 3.4 The drawer monitor
+
+The **Agents** drawer tab is the monitor: the full roster with filters, Graph and bulk actions (§5.2). It isn't in `CHAT_PANEL_TABS`, because chat tabs have no tools and no subagents. Its rows open pages; there is no detail view inside the drawer.
+
+- **Content**: a list (This turn or All, §4.2) or the Graph (the existing `SubagentDag`).
 - **Header**: the tab-label rule in §2, which replaces the 480 px rule in `global.css` for every view, not only this one. Every tab keeps its `aria-label` and tooltip. Below 400 px the selected tab drops its label too, so the seven icons and the close button still fit the 360 px minimum.
 - **Narrow windows**: at 1000 px and below the drawer already overlays the conversation, and the tab follows that rule.
 - **Split view**: the tab shows the focused pane's runtime, like Diff and Files.
+- **A shown page**: its row has the selection fill, so the monitor and the page agree on which agent you are reading.
 
-The dock card stays as it is: the in-conversation glance, with its 5-row preview and focus mode. The design-qa.md contract for it is unchanged.
+### 3.5 Hover card
+
+Resting the pointer on an agent row for 400 ms shows a floating card (L2, 300 px wide) beside the row. It works on sidebar rows, roster rows, dock rows and task card rows. Moving to another row swaps the card at once; leaving hides it after 150 ms.
+
+```
+╭───────────────────────────────────────╮
+│ Find every verifyToken caller         │
+│ (● Working)  1m 48s · explore · sonnet│
+│ grep  verifyToken · packages/    0:12 │   now-line
+│ ✓ grep   verifyToken src/             │   last three steps,
+│ ✓ bash   rg -c "verifyToken\(" …      │   from progress.recentTools
+│ ✓ read   src/auth/session.ts          │
+│ Click to open · ⌥-click to open beside│
+╰───────────────────────────────────────╯
+```
+
+Everything on the card comes from the snapshot and `progress`, so it never reads a transcript. Keyboard focus on a row shows the same card after the same delay, and Esc hides it.
+
+### 3.6 Entry points
+
+| From | Click | ⌥-click |
+|---|---|---|
+| A sidebar agent row | Opens the page (preview) | Opens it beside |
+| A drawer roster row | Opens the page (preview) | Opens it beside |
+| A dock card row | Opens the page (preview) | Opens it beside |
+| A task tool card's agent row | Opens the page (preview) | Opens it beside |
+| Overview → Running | Opens the drawer's Agents tab | — |
+| "8 more" in the sidebar, "Open in sidebar" in the dock card | Opens the drawer's Agents tab | — |
+| A page's breadcrumb segment | Opens that ancestor's page, or the session | — |
+
+The dock card's inline transcript expansion stays; it uses the shared reader (§6.3).
 
 ---
 
@@ -100,39 +207,50 @@ The dock card stays as it is: the in-conversation glance, with its 5-row preview
 `isLiveSubagentStatus` keeps its meaning (elapsed timers, roster retention in the store). Every *count* and every *live signal* switches to activity:
 - the dock badge
 - the Overview Running line
+- the sidebar's count pill
 - the Agents tab's dot
 - the Hub's status badges
 
-### 4.2 Two filters
+### 4.2 Two filters: This turn and All
 
-- **Active**: working, waiting and failed agents, each with its ancestors. An ancestor that isn't active itself stays as a muted context row, so no row is ever an indented orphan; this reuses `buildAgentDockSummary`'s ancestor walk. Siblings are ordered working → waiting → failed, with spawn index as the tie-break. Ancestors of active rows start expanded.
-- **All**: today's spawn-order tree. Nothing is hidden or reordered.
+**This turn** is the latest turn: everything from the last user message on. While the session is idle it still means the turn that just ended, so finished agents stay in view until you send the next message.
 
-Each segment of the filter carries its count ("Active 13", "All 34"). Active counts agents, including those under a collapsed parent. This is the only number of agents the view prints.
+`subagentTurnScope(agents, messages)` builds it:
+1. Collect the ids of the tool calls in the assistant messages after the last user message, plus the streaming message.
+2. A root agent belongs to this turn when its `parentToolCallId` is in that set. A nested agent belongs to the turn of its root, found through `parentSubagentId`.
+3. Add any agent from an older turn that is still **working**. A parked agent from an older turn isn't added, because it is doing nothing.
+4. Keep each member's ancestors. An ancestor that isn't a member stays as a muted context row, so no row is ever an indented orphan; this reuses `buildAgentDockSummary`'s ancestor walk.
+5. Advisors (`kind: "advisor"`) have no tool call; they count while working.
+
+Siblings are ordered working → waiting → failed → done → stopped, with spawn index as the tie-break. Ancestors of working rows start expanded.
+
+**All** is today's spawn-order tree. Nothing is hidden or reordered.
+
+Each segment carries its count ("This turn 13", "All 34"). The count includes agents under a collapsed parent, but not context rows. This is the only number of agents the drawer prints; the sidebar pill shows the same This turn count.
 
 **Order is stable.** A row moves only when its activity group changes. Progress frames never reorder the list, so rows don't jump while you read them.
 
-The default is **Active** when more than `AGENT_SUMMARY_LIMIT` agents exist, otherwise **All** (§11.1). The choice is remembered per tab while the tab is open. An empty Active list says so and offers "Show all" (§5.4).
+This turn is the default everywhere. The drawer remembers a switch to All per tab while the tab is open. An empty This turn says so and offers "Show all" (§5.6).
 
 ---
 
 ## 5. Presentation
 
-The first draft of this plan put every fact the wire carries on every row. The result was hard to read: status was printed twice per row, every working row pulsed, counts appeared in three places and nothing set one row apart from another. This section replaces it with a visual contract. Each screen below has a frame in the prototype.
+The first draft of this plan put every fact the wire carries on every row. The result was hard to read: status was printed twice per row, every working row pulsed, counts appeared in three places and nothing set one row apart from another. This section is the visual contract that replaced it. Each screen below has a frame in the prototype.
 
 ### 5.1 Three layers of detail
 
 | Layer | Question it answers | Where | What it shows |
 |---|---|---|---|
-| **Glance** | Is anything running, or did something break? | The Agents tab's dot, the dock card, Overview → Running | A dot or a count |
-| **Scan** | Which agents are there, and what is each one doing now? | Roster rows | A signal, a title, one now-line, one time |
-| **Inspect** | What exactly has this agent done? | The detail | Facts, the assignment, the transcript, the live tail |
+| **Glance** | Is anything running, or did something break? | The Agents tab's dot, the sidebar pill, the dock card, Overview → Running | A dot or a count |
+| **Scan** | Which agents are there, and what is each one doing now? | Sidebar rows, roster rows, the hover card | A signal, a title, one now-line, one time |
+| **Inspect** | What exactly has this agent done? | The page | The assignment, the transcript, the live tail, and the facts in the title bar, agent bar and status line |
 
-Each fact has one home. Model, tokens, cost, context share and the assignment belong to the inspect layer and never appear on a row. A row carries one time; the current tool's own elapsed time is an inspect fact.
+Each fact has one home. Model, tokens, cost, context share and the assignment belong to the page and never appear on a row; the hover card shows only type and model. A row carries one time; the current tool's own elapsed time is an inspect fact.
 
 ### 5.2 Roster
 
-Frames `roster-active` (dark, 400 px) and `roster-all` (light, 520 px).
+Frames `roster-turn` (dark, 400 px) and `roster-all` (light, 520 px).
 
 ```
 ⌄ ●  Map the auth surface                      6m 40s
@@ -160,110 +278,142 @@ Frames `roster-active` (dark, 400 px) and `roster-all` (light, 520 px).
   4. failed: `retryFailure.errorMessage` or the last line of `recentOutput`, in the ordinary dim tone, because the dot and the word already carry the error
 
   A parent whose current tool is `task` shows no now-line: its children are what it is doing. Waiting, done and stopped rows stay one line.
-- **Tree**: each level indents 14 px and draws one hairline guide (`--omp-border-muted`) down from its parent's signal dot. Indentation stops growing after six levels; deeper rows keep the sixth level's indent, and the detail's crumb gives the full path. A collapsed parent shows a pill with the number of agents it hides, led by an accent dot when any of them is working.
+- **Tree**: each level indents 14 px and draws one hairline guide (`--omp-border-muted`) down from its parent's signal dot. Indentation stops growing after six levels; deeper rows keep the sixth level's indent, and the page's breadcrumb gives the full path. A collapsed parent shows a pill with the number of agents it hides, led by an accent dot when any of them is working.
+- **Open**: click opens the page, ⌥-click opens it beside, and the row of the shown page keeps the selection fill.
 - **Sanitizing**: all wire text goes through the `lib/format.ts` helpers (tabs, truncation, home-path shortening), as in tool renderers.
 
-**Toolbar** (44 px, sticky; frame `roster-active`):
-- Left: the filter, a small segmented control: "Active 13 | All 34".
+**Toolbar** (44 px, sticky; frame `roster-turn`):
+- Left: the filter, a small segmented control: "This turn 13 | All 34".
 - Right: the presentation (List | Graph) as a separate icon segmented control, so a filter and a view are never the same control. Then ⋯ with Pause agents (or Resume agents), Stop the turn, Expand all and Collapse all.
 - The toolbar gets a hairline bottom border only once the list scrolls under it.
 - While agents are paused, a warning banner sits under the toolbar: "Agents are paused" with a Resume link. Resume is the one menu action that also appears outside the menu, because it is the way out of a state the user may have forgotten entering.
 
-### 5.3 Detail
+### 5.3 Sidebar rows
 
-Frames `detail-working` (dark), `detail-scrolled` (dark) and `detail-failed` (light).
+Frame `sidebar-rows` (dark), and the sidebar in `window-page`.
 
 ```
-‹ Agents         Find every verifyToken caller        ⋯    nav bar; the title appears once the heading scrolls away
-In Map the auth surface                                    crumb, nested agents only
-Find every verifyToken caller                              heading
-(● Working)  1m 48s                                        status badge and time
-╭─────────────────────────────────────────────╮
-│ Agent    explore · claude-sonnet-4.5         │            facts card
-│ Work     14 steps · 38.2k tokens · $0.21     │
-│ Context  ━━━━──────────  31% of 200k         │
-├─────────────────────────────────────────────┤
-│ › Assignment  Find every call site of …      │
-╰─────────────────────────────────────────────╯
-Transcript
-  …messages, thinking and tool cards…
-┃ ◌ grep  verifyToken packages/          0:12             live tail: the running tool
-  Looking for callers outside the auth module              intent, shimmering
-                 ( ↓ 3 new steps )                         only while scrolled up
+●  Harden the auth flow                    2m      session row, expanded
+├ ●  Map the auth surface                          agent rows: 28 px, elbow guides
+│ ├ ●  Find every verifyToken caller
+│ ├ ●  Read the session middleware
+│ └ ○  Check the token refresh tests
+├ ●  Rewrite the login handler
+└    8 more · 4 working · 1 failed
+●  Fix the flaky e2e run   (● 3)        14m      collapsed: a count pill
 ```
 
-- **Nav bar** (44 px, sticky, with a hairline): "‹ Agents" on the left; ⋯ on the right for the agent's own actions (Stop or Revive, from P3). Once the heading scrolls out of view, the agent's title fades in, centred on the bar and truncated.
-- **Header**: sits on the canvas, not in a card.
-  - A crumb, "In \<parent\>", linking to the parent's detail. Only nested agents have one.
-  - The heading in `text-omp-lg`, semibold. It wraps rather than truncates.
-  - A subline: the status `Badge` with `dot` and without `pulse`, then the time: "1m 48s", or "after 3m 22s" once the agent has ended.
-- **Error card** (failed agents only) comes first, ahead of the facts. It has an error-dim fill, an alert icon, a one-line summary in error tone ("Stopped after 3 attempts") and the message in secondary text.
-- **Facts card**: the Overview card (`rounded-xl`, `--omp-border-muted`, `--omp-bg-elevated`) with its label and value rows, labels 64 px wide in `--omp-dim`:
-  - Agent: type · model. A fallback model says so.
-  - Work: steps · tokens · cost.
-  - Context: a 4 px bar and "31% of 200k", only when `contextWindow` is known.
-  - Assignment: a disclosure row at the card's foot, collapsed, with a one-line preview. It expands to the delegated prompt as markdown (§6.1).
-- **Transcript**: a section label, then the reader (§6).
-- **Live tail**: while the agent works, the transcript ends with its running tool, drawn as a pending `ToolCard` from `progress` (`currentTool`, its args, the time since `currentToolStartMs`), and the intent under it in `.omp-shimmer-text`. This is the detail's only "now": the header and the facts card never restate the current tool.
-- **New-steps chip**: when the reader is scrolled above the live edge and messages arrive, a pill floats at the bottom centre: "↓ 3 new steps". Clicking it scrolls to the end; reaching the end hides it.
-- **Width**: on a wide drawer the content column is capped at 44 rem and centred, so prose lines stay a readable length.
+- **Row**: the session row's height minus 2 px (28 px), the same radius and fills. The 16 px signal slot, then the title in `text-omp-sm`, then a time only for failed rows ("Failed" in error tone). Working and waiting rows carry no time: the sidebar is too narrow for two numbers per row, and the hover card has it.
+- **Tone**: working titles in `--omp-text-secondary`, everything else in `--omp-muted`. The session row stays the brightest thing in its group.
+- **Guides**: an elbow (├ └) with a rounded corner from the session's signal dot, then from each parent's dot, in `--omp-border` (the muted border disappears on the sidebar's darker canvas). The indent is 14 px per level, two levels at most.
+- **More**: "8 more" in `--omp-dim`, indented like a first-level row, with no signal. Hidden working and failed counts follow it, the failed count in error tone.
+- **Count pill**: on a collapsed session row, the pill used for a collapsed roster parent: `text-omp-xxs`, a hairline border, led by a 5 px accent dot while any agent works.
+- **Chevron**: hovered or focused, the session row's slot shows ⌄ when expanded and › when collapsed, in `--omp-dim`.
 
-### 5.4 States
+### 5.4 The page
+
+Frames `window-page` (dark, 1280 × 800), `window-beside` (light) and `page-failed` (light).
+
+**Tab chip** (§3.2): ↳, the agent's signal, the title, ×. A preview chip's title is italic. It is never wider than its parent's `max-w-52`.
+
+**Title bar**: the session's breadcrumb gains the agent: "aurora-web › Harden the auth flow › Map the auth surface › Find every verifyToken caller". For a nested agent the middle segments are its ancestors, collapsed to "…" past two; each segment opens that page. The page fills the title bar's slots the way a session does, with the agent's facts in place of the session's:
+- after the last segment, the status where the session shows "Ready": "● Working", or "● Failed" in error tone;
+- on the right, the agent's tokens, cost and time in the session's mono figures.
+
+**Transcript column**: the conversation's own column (`max-w-[760px]`, centred) and spacing.
+1. **Assignment**: the first bubble is the delegated prompt, labelled "From \<parent\>", where the parent is the parent agent's title, or "the conversation" for a root agent. It is collapsed to three lines with "Show all", because a delegated prompt is often long and full of scaffolding. Markdown, read-only.
+2. **Messages, thinking and tool cards**: the main conversation's components (§6.1), so a subagent's diff or bash output looks exactly like the parent's.
+3. **Live tail**: while the agent works, the column ends with its running tool, drawn as a pending `ToolCard` from `progress` (`currentTool`, its args, the time since `currentToolStartMs`), and the intent under it in `.omp-shimmer-text`. The transcript file holds only committed messages, so this is the page's only "now".
+4. **Result**: once the agent ends, its final message is the last bubble; the agent bar's top line says where it went (below).
+5. **Error card** (failed agents): where the run stopped, as the conversation shows a failed turn. It has an error-dim fill, an alert icon, a one-line summary in error tone ("Stopped after 3 attempts") and the message in secondary text.
+
+**Scrolling**: the conversation's own rules. The page opens at the live edge for a working agent and at the top for a finished one. Scrolled above the live edge, arriving messages show the conversation's "↓ 3 new steps" pill at the bottom centre.
+
+**Agent bar**: a read-only bar in the composer's shell and position, so the page keeps the conversation's shape.
+- Top line, where the input sits, in `--omp-dim` with ↳: "Takes instructions from Map the auth surface" while the agent works or waits, so it is clear why you can't type here; "Ended · reported to Map the auth surface" once it has ended.
+- Bottom row, where the composer's controls sit:
+  - left: the agent type with the bot icon, then the model, where the composer shows its model picker (a fallback model says so in warning tone);
+  - right: Stop agent while `(live || stale) && kind !== "advisor"`, Revive while parked and not an advisor, then ⋯ with Open beside (or Open in tab), Keep open, Copy transcript and Show in Agents.
+- Stop and Revive keep the Hub's conditions and commands (`abort_subagent`, `revive_subagent`).
+- The status line under the bar: steps on the left, and on the right the context bar and share where the session shows its own, when `contextWindow` is known.
+
+So every fact sits where its session counterpart sits: status in the title, tokens and cost on the right of the title bar, model in the bar, context in the status line.
+
+**Beside** (`window-beside`): the conversation and the page are two panes of the split view, each with the 32 px pane header. The page's header shows ↳, the agent's signal, its title and ×. The divider, ratio and minimum widths are the split view's. The column inside each pane is capped at 760 px as usual.
+
+### 5.5 Hover card
+
+Frame `sidebar-rows`.
+
+- L2: `--omp-bg-elevated`, `--omp-border`, `--omp-shadow-md`, `rounded-xl`, 300 px wide, 12 px padding.
+- The title in `text-omp-md` semibold, wrapping to two lines at most.
+- A subline: the status `Badge` with `dot`, then the time, type and model in `text-omp-xs` `--omp-dim`.
+- The now-line from §5.2, without its retry tone when the badge already says Retrying.
+- Up to three finished steps from `progress.recentTools`, newest last: a success check, the tool name in mono and its args in mono dim, one line each.
+- A footer in `text-omp-xxs` `--omp-dim`: "Click to open · ⌥-click to open beside".
+- Placed to the right of a sidebar row, and to the left of a drawer row, so it never covers the list it came from. It flips vertically to stay in the window.
+
+### 5.6 States
 
 Frame `states`, plus the glance frame `glance`.
 
 | State | Shown as |
 |---|---|
-| The session has no subagents | Centred: icon, "No subagents yet", "When the agent hands work to subagents, they appear here while they run." No toolbar. |
-| Active is empty | Centred: "Nothing is running", "Every agent in this session has finished.", and a Show all button |
+| The session has no subagents | Drawer: centred icon, "No subagents yet", "When the agent hands work to subagents, they appear here while they run." No toolbar. Sidebar: no chevron on the session row. |
+| This turn is empty | Drawer: centred "Nothing this turn", "Agents from earlier turns are under All.", and a Show all button. Sidebar: no chevron. |
 | Agents are paused | The warning banner under the toolbar (§5.2); rows keep their states |
 | `get_subagents` fails with rows on screen | An error banner, "Couldn't refresh the agents", with Retry; the rows stay |
 | `get_subagents` fails with nothing on screen | Centred: "Couldn't load the agents", "The agent didn't answer.", and Retry |
-| The transcript is still loading after 300 ms | The header and facts show at once, because they come from the snapshot. Under "Transcript", placeholder lines shaped like a reply, as `TranscriptLoading` draws them. |
-| The transcript read fails | One line under "Transcript": "Couldn't load the transcript", with Retry |
-| Another drawer tab is selected | The Agents icon carries the glance dot: accent while any agent works, error after a failure you haven't opened the tab since. Error wins. |
+| A page's transcript is still loading after 300 ms | The Assignment bubble and the agent bar show at once, because they come from the snapshot. Under them, placeholder lines shaped like a reply, as `TranscriptLoading` draws them. |
+| A page's transcript read fails | Under the Assignment: "Couldn't load the transcript", with Retry. The live tail still shows. |
+| The agent leaves the roster while its page is open | The page stays as it was, with "This agent is no longer reported by the session" above the agent bar, whose actions turn off |
+| Another drawer tab is selected | The Agents icon carries the glance dot: accent while any agent works, error after a failure you haven't opened the tab or the page since. Error wins. |
 
-### 5.5 Visual system
+### 5.7 Visual system
 
 Elevation:
 
 | Layer | Holds | Treatment |
 |---|---|---|
-| **L0 canvas** | Rows, the detail header, transcript prose | `--omp-bg-primary` |
-| **Bars** | Drawer header, toolbar, nav bar | The canvas colour, separated by a 1 px `--omp-border-muted` hairline; no shadow. The toolbar's hairline appears on scroll. |
-| **L1 cards** | Facts, error, tool cards | `--omp-bg-elevated` with `--omp-border-muted`, `rounded-xl`. Tool cards keep `ToolCard`'s own shape and shadow. |
-| **L2 floating** | The new-steps chip, menus, tooltips | Elevated fill, `--omp-border`, `--omp-shadow-md` |
+| **L0 canvas** | Rows, the page's transcript | `--omp-bg-primary` |
+| **Bars** | Drawer header, toolbar, tab strip, title bar, pane headers | The canvas colour, separated by a 1 px `--omp-border-muted` hairline; no shadow. The toolbar's hairline appears on scroll. |
+| **L1 cards** | The agent bar (the composer's shell), the error card, tool cards, message bubbles | As the conversation draws them |
+| **L2 floating** | The hover card, the new-steps pill, menus, tooltips | Elevated fill, `--omp-border`, `--omp-shadow-md` |
 | **L3 modal** | Definitions (`/agents`) | Unchanged |
 
-The roster has no cards. Cards never nest. Apart from `ToolCard`'s existing shadow, only L2 casts a shadow.
+The roster and the sidebar have no cards. Cards never nest. The page adds no surface the conversation doesn't already have.
 
 Colour gives each hue one job:
 - **Accent**: the working dot, the Working badge, the running tool's rail, the context bar and links.
 - **Error**: the failed dot and word, the Failed badge, the error card and a failed tool's rail.
 - **Warning**: the retry now-line and the paused banner.
-- **Success**: finished tool rails, as `ToolCard` draws them today.
+- **Success**: finished tool rails and the hover card's step checks, as `ToolCard` draws them today.
 
 Everything else uses text tones. No row is ever filled with a colour.
 
 Type uses the `text-omp-*` scale only:
-- `md` (13.5): row titles, fact values and prose.
-- `lg` (14.5), semibold: the detail heading.
-- `sm` (12.5): section labels, banners, the chip and the nav bar.
-- `xs` (12): now-lines, times, the crumb and badges.
+- `md` (13.5): roster titles, prose and the hover card title.
+- `sm` (12.5): sidebar agent rows, the agent bar, section labels, banners and the pill.
+- `xs` (12): now-lines, times, the breadcrumb's last segment and badges.
+- `xxs` (11): the count pill and the hover card footer.
 - Mono only for tool names, tool arguments and output.
 - Tabular figures for every time, count and amount.
 
 Motion follows plan/22: two durations, and no layout animation.
 - Rows never animate in, out or between positions. A row moves only when its activity group changes, and then it moves without animation.
-- Dots don't pulse. The shimmer runs only on the detail's live intent line, never on rows; forty shimmering rows would be noise.
-- The detail enters with an 8 px slide and a fade at `--omp-motion-med` with `--omp-ease-enter`, and Back reverses it.
-- The nav title and the new-steps chip fade at `--omp-motion-fast`.
-- With `prefers-reduced-motion`: no slide, a static muted intent line instead of the shimmer, and instant fades.
+- Dots don't pulse. The shimmer runs only on the page's live intent line, never on rows; forty shimmering rows would be noise.
+- A page swaps in like a tab does today: no slide.
+- The hover card and the new-steps pill fade at `--omp-motion-fast`.
+- With `prefers-reduced-motion`: a static muted intent line instead of the shimmer, and instant fades.
 
-### 5.6 Accessibility
+### 5.8 Accessibility
 
-- The roster is a `role="tree"`. Each row is a `treeitem` with `aria-level`, `aria-expanded` and `aria-selected`. ↑ and ↓ move. ← collapses or goes to the parent; → expands. Enter opens the detail, and Esc goes back.
+- The roster is a `role="tree"`. Each row is a `treeitem` with `aria-level`, `aria-expanded` and `aria-selected`. ↑ and ↓ move. ← collapses or goes to the parent; → expands. Enter opens the page, ⌥Enter opens it beside.
+- The sidebar's agent rows are a nested `group` under their session's item, with the same keys.
 - A row's accessible name says its state in words: "Find every verifyToken caller, working, 1 minute 48 seconds, grep verifyToken".
+- A child chip is a `tab` whose name starts with its parent: "Harden the auth flow, agent: Find every verifyToken caller, working". ⌃Tab and ⌃⇧Tab move through child chips like any tab.
+- The hover card is `role="tooltip"`, linked by `aria-describedby`; it never takes focus.
+- The agent bar's top line is the page's description, so a screen reader says why there is no input.
 - Status never depends on colour alone. Waiting is a different shape; failed and stopped rows carry a word; working rows carry a time and usually a now-line.
 - The tab's dot is part of the tab's accessible name: "Agents, 6 working" or "Agents, 1 failed".
 - One polite live region announces failures only ("Benchmark the token cache failed"). Progress is never announced.
@@ -280,72 +430,116 @@ Motion follows plan/22: two durations, and no layout animation.
 - **Tool cards**: `ToolCard` reads results from the tab's `tools` store. The reader wraps its subtree in `SessionRuntimeProvider` with a copy of the tab's runtime whose `tools` entry is a **private** store (`createToolsStore()`), filled by `hydrateMessages(messages, { turnIsLive })`. Every renderer in `tools/index.tsx` then works unchanged: diffs, bash output, nested task trees. Commands still go to the tab's sidecar.
 - **Messages**: `MessageBubble` gains `readOnly`, which hides edit, fork and retry; those act on the *main* session. Copy stays.
 - **Thinking**: `ThinkingBlock` with `live={false}` reads only the finished text. It still subscribes to one flag in the tab's messages store ("has streamed text started"), which is cheap and harmless here.
-- **Assignment**: the subagent's first user message is the delegated prompt, often long and full of scaffolding. It leaves the transcript and renders, collapsed, as the facts card's Assignment disclosure (§5.3), with markdown.
-- **Live tail**: while the agent works, the reader ends with the running tool and intent built from `progress` (§5.3). The transcript file holds only committed messages.
+- **Assignment**: the subagent's first user message is the delegated prompt. It renders as the "From \<parent\>" bubble (§5.4), collapsed, with markdown.
+- **Live tail**: while the agent works, the reader ends with the running tool and intent built from `progress` (§5.4).
 
-The private store is the contract to protect: a subagent's tool entries must never land in the main tab's `tools` store, or the main transcript would show foreign cards. The overlay reaches only components that read the store through the hook. A static `useToolsStore.getState()` follows the *focused* runtime instead. No production renderer calls it today (only tests do), and the leak test in §9 keeps it that way.
+The private store is the contract to protect: a subagent's tool entries must never land in the main tab's `tools` store, or the main transcript would show foreign cards. The overlay reaches only components that read the store through the hook. A static `useToolsStore.getState()` follows the *focused* runtime instead. No production renderer calls it today (only tests do), and the leak test in §10 keeps it that way.
 
 ### 6.2 Live follow
 
-While a detail view is open, its agent is working, and the drawer and window are visible, the reader polls `get_subagent_messages` from `nextByte` every 2 s. It appends the new messages and re-hydrates its private store. It stays pinned to the bottom when the reader is at its live edge (`isTranscriptAtLiveEdge`), and otherwise shows the new-steps chip (§5.3). Polling stops when the agent finishes, the detail closes, the tab loses focus or the window hides. One final read runs on the terminal frame.
+While a page is shown (selected in its tab, or open beside), its agent is working and the window is visible, the reader polls `get_subagent_messages` from `nextByte` every 1 s. It appends the new messages and re-hydrates its private store. It stays pinned to the bottom when the reader is at its live edge (`isTranscriptAtLiveEdge`), and otherwise shows the new-steps pill (§5.4). One final read runs on the terminal frame.
+
+Polling stops when:
+- the agent finishes;
+- the page is closed, or another tab or page is selected;
+- the window hides.
+
+A pinned page that isn't shown keeps its messages and catches up from `nextByte` when it is shown again. The 1 s interval costs one small command per shown page. Each read waits in the tab's sidecar command queue; since the coding-agent fix for #19, a running compaction or handoff no longer holds that queue. P2 checks that the poll doesn't delay the conversation's own commands.
 
 The first open reads the whole file in one response (§1). The refresh affordance follows activity, not `status === "started"`, which fixes the bug in §1.
 
 ### 6.3 Where it is used
 
-- **Drawer detail**: the full reader, under the header and facts card.
-- **Dock card inline expansion**: the same reader without the header, height-capped by the dock's existing scroll owner.
+- **The page**: the full reader, from the Assignment bubble to the live tail.
+- **Dock card inline expansion**: the same reader without the Assignment bubble, height-capped by the dock's existing scroll owner.
 - **Hub transcript drawer**: until P3 retires the Hub tab.
 
 ---
 
-## 7. Performance
+## 7. Page tabs: model and routing
 
-- **Frame coalescing**: `use-rpc-events.ts` queues subagent frames and applies them once per animation frame through `applyFrames(batch)`, a single store write per frame. IPC and the agent are unchanged.
-- **Derivations**: `buildSubagentList`, the Active projection and the counts are memoized on the store's `Map` identity. Rows are `memo`, keyed by agent object identity, so a frame re-renders only the agents it touched.
-- **No list virtualization** in this version. Most sessions show far fewer rows, and Active hides finished ones. Revisit if the gate in §9 fails at 100 agents.
+Pages are renderer state, kept beside the tabs store, never in it:
+
+```ts
+interface AgentPage {
+	agentId: string;
+	pinned: boolean;
+}
+interface AgentPagesState {
+	/** Open pages per session tab, pinned first, at most one unpinned. */
+	pages: Record<string, AgentPage[]>;
+	/** What each session tab shows: its conversation, or one of its pages. */
+	shown: Record<string, string | null>;
+	/** A page open beside its session's conversation, per session tab. */
+	beside: Record<string, string | null>;
+}
+```
+
+- **Routing**: main's active tab stays the parent session whether its conversation or a page is shown. `routeTabView`, `visibleTabIds` and `SET_ACTIVE_TAB` don't change, so the parent's sidecar keeps streaming into its stores.
+- **Selecting a child chip**: sets `shown[parent] = agentId` and, if the parent isn't active, switches to the parent first. Selecting the parent's chip sets `shown[parent] = null`.
+- **The session pane**: renders the conversation or the page by `shown`, and keeps the conversation mounted but hidden while a page is shown, so its scroll, draft and streaming state are untouched.
+- **Beside**: `beside[parent]` renders the session pane as a two-pane split. It is refused while the window split holds two tabs.
+- **Split view between tabs**: each pane follows its own tab's `shown`. Child chips of both tabs show in the strip.
+- **Closing**: closing a session tab deletes its entries. An agent that leaves the roster leaves its page open (§5.6).
+- **Persistence**: none in v1. Pages close with the window (§12.1).
+- **Background tabs**: the sidebar lists agents for every open tab, so P3 sets the `progress` subscription on every ready tab, not only on shown or hydrated ones (§1). Frame coalescing (§8) carries the cost.
 
 ---
 
-## 8. Consolidation
+## 8. Performance
+
+- **Frame coalescing**: `use-rpc-events.ts` queues subagent frames and applies them once per animation frame through `applyFrames(batch)`, a single store write per frame. IPC and the agent are unchanged.
+- **Derivations**: `buildSubagentList`, `subagentTurnScope`, the counts and the sidebar's five-row cut are memoized on the store's `Map` identity and the messages store's tool-call ids. Rows are `memo`, keyed by agent object identity, so a frame re-renders only the agents it touched.
+- **Sidebar**: the sidebar subscribes to each open tab's subagents store only while that session row is expanded; a collapsed row reads the count once per coalesced frame.
+- **Pages**: a page that isn't shown doesn't poll and doesn't re-render on frames, apart from its chip's signal.
+- **No list virtualization** in this version. Most sessions show far fewer rows, and This turn hides older ones. Revisit if the gate in §10 fails at 100 agents.
+
+---
+
+## 9. Consolidation
 
 | Surface | After this plan |
 |---|---|
-| Dock card | Unchanged role (glance). Gains "Open in sidebar", activity counts and the shared transcript reader. |
-| Drawer → Agents | **New**: the monitor |
-| Agent Hub → Hub tab | Retired in P3. `⌥A` and `/hub` open the drawer tab. Per-agent abort/revive and pause move into the roster. Definitions stays in the modal (`/agents`). |
-| Task tool card | Unchanged in the transcript; each agent row opens that agent's detail in the drawer (P3) |
+| Sidebar | **New**: this turn's agents under each open session |
+| Page | **New**: where every agent is read |
+| Drawer → Agents | **New**: the monitor; rows open pages |
+| Dock card | Unchanged role (glance). Gains "Open in sidebar", activity counts, the shared transcript reader, and rows that open pages. |
+| Agent Hub → Hub tab | Retired in P3. `⌥A` and `/hub` open the drawer tab. Per-agent stop and revive move to the page's agent bar; pause moves to the roster. Definitions stays in the modal (`/agents`). |
+| Task tool card | Unchanged in the transcript; each agent row opens that agent's page |
 | Overview → Running | Counts working agents; the line opens the drawer tab |
 
 ---
 
-## 9. Phases (~5 days)
+## 10. Phases (~6 days)
 
 | Phase | Delivers | Verification gate |
 |---|---|---|
-| **P1 — Activity and the drawer tab** (~2 d) | `subagentActivity`; counts and live signals fixed everywhere; frame coalescing; `AgentRoster` with Active/All and Graph, the row anatomy and now-lines (§5.2); the toolbar and the paused banner; the detail with its header and facts card over today's text transcript; the states (§5.4); the tab dot and the header label rule; "Open in sidebar" and the Overview link; en, zh and ru strings | Unit tests: activity mapping (including `live: false` → stopped, and unknown statuses); the Active projection keeps ancestors, orders siblings by activity and does not reorder on a progress-only frame; the now-line precedence, including the silent `task` parent. Component tests: no Agents tab on chat tabs; the tree's keyboard model. Synthetic load: 60 agents emitting progress every 150 ms for 60 s, no main-thread task over 50 ms. Visual review: the Electron review script spawns nested agents with the mock model and screenshots the tab in light and dark at 360, 480 and 720 px; each screenshot is checked against its prototype frame. |
-| **P2 — Rich transcripts** (~2 d) | `TranscriptReader`, `MessageBubble readOnly`, the private tools store, the Assignment disclosure, the live tail, the new-steps chip and live follow; used by the drawer, the dock and the Hub; the refresh bug fixed | A subagent `bash` call and its result render as a finished card with output, not a spinner. Edit, fork and retry are absent. The main tab's `tools` store is unchanged after a transcript renders (the leak contract). Fake-timer tests: polling starts only while working and visible, reads from `nextByte`, and stops on terminal, close and blur. Visual review against `detail-working`, `detail-scrolled` and `detail-failed`. |
-| **P3 — Consolidation** (~1 d) | Task card rows open the detail; `⌥A` and `/hub` open the drawer tab; abort/revive in the detail's ⋯ and pause in the roster's; Hub tab removed | The existing Hub abort/revive tests move to the roster and still pass; shortcut and command routes open the tab; the Definitions tab is unaffected |
+| **P1 — Activity, turn scope and the monitor** (~2 d) | `subagentActivity` and `subagentTurnScope`; counts and live signals fixed everywhere; frame coalescing; `AgentRoster` with This turn/All and Graph, the row anatomy and now-lines (§5.2); the toolbar and the paused banner; the states (§5.6); the tab dot and the header label rule; "Open in sidebar" and the Overview link; rows open today's Hub transcript until P2; en, zh and ru strings | Unit tests: activity mapping (including `live: false` → stopped, and unknown statuses); turn scope (a root agent from an earlier turn drops out, a nested agent follows its root, an older working agent stays, an older parked one doesn't, an advisor counts only while working); the projection keeps ancestors, orders siblings by activity and does not reorder on a progress-only frame; the now-line precedence, including the silent `task` parent. Component tests: no Agents tab on chat tabs; the tree's keyboard model. Synthetic load: 60 agents emitting progress every 150 ms for 60 s, no main-thread task over 50 ms. Visual review: the Electron review script spawns nested agents with the mock model and screenshots the tab in light and dark at 360, 480 and 720 px against `roster-turn` and `roster-all`. |
+| **P2 — The page** (~2.5 d) | `TranscriptReader`, `MessageBubble readOnly`, the private tools store, the Assignment bubble, the live tail, the result line and live follow; the page tab model (§7), child chips, preview and Keep open; the breadcrumb and the agent bar with Stop and Revive; Open beside; every roster, dock and task card row opens the page; the refresh bug fixed | A subagent `bash` call and its result render as a finished card with output, not a spinner. Edit, fork and retry are absent. The main tab's `tools` store is unchanged after a page renders (the leak contract). Showing a page leaves main's active tab, the conversation's scroll position and its draft unchanged, and the parent keeps streaming. Opening a second agent replaces the preview; a pinned page stays. Closing the session closes its pages. Fake-timer tests: polling starts only while shown and working, reads from `nextByte`, and stops on terminal, close, switch and hide. Visual review against `window-page`, `window-beside` and `page-failed`. |
+| **P3 — Sidebar, hover card and consolidation** (~1.5 d) | Agents under their session in the sidebar (§5.3) with the pill and "N more"; the `progress` subscription on every ready tab; the hover card on every agent row; `⌥A` and `/hub` open the drawer tab; pause in the roster's ⋯; Hub tab removed | The sidebar's five-row cut keeps ancestors and counts hidden working agents; a collapsed row's pill matches the drawer's This turn count; a background tab's agents appear without showing the tab. The hover card opens after 400 ms, swaps between rows without a delay and never reads a transcript. The existing Hub abort/revive tests move to the agent bar and still pass; shortcut and command routes open the tab; the Definitions tab is unaffected. Visual review against `sidebar-rows`. |
 
 Each phase ships with a changelog entry under `[Unreleased]` and a reply on #23 once a build can be tried.
 
 ---
 
-## 10. Later
+## 11. Later
 
 | Feature | Why it waits |
 |---|---|
-| **Token-level live output** for the open agent | Needs a per-agent `events` subscription in the agent. The 2 s poll plus the live tail covers monitoring without it. |
+| **Token-level live output** on a page | Needs a per-agent `events` subscription in the agent. The 1 s poll plus the live tail covers reading without it. |
+| **Messaging a subagent** from its agent bar | No RPC sends a message to a subagent; the agent would need one, and the parent would need to know. |
+| **Agents of sessions not open in a tab** | They have no live data; listing them means reading session files. Decide after §12.4. |
+| **Restoring page tabs** after a restart | Needs main to persist renderer state it doesn't own today (§12.1) |
 | **Tail-first loading** for very long transcripts | The RPC reads forward only; reading from the end needs an agent change. Measure transcript sizes first. |
-| **Text search** in the roster | Active already narrows dozens of agents to the working few. Add search if users still scroll. |
-| **List and detail side by side** at wide drawer widths | The pushed detail works from 360 px up; a split pane is polish. |
+| **Text search** in the roster | This turn already narrows dozens of agents to the few that matter. Add search if users still scroll. |
 | **Collapse finished subtrees** in All | All is the history view; keep it literal until there is feedback. |
 | **Notify when a background agent fails** | Overlaps the turn-level notifications; decide after the monitor exists. |
 
 ---
 
-## 11. Open questions
+## 12. Open questions
 
-1. **Default view.** Active when more than five agents exist, otherwise All? Or always Active, since it shows everything while nothing has finished?
+1. **Restoring pages.** Is it acceptable that page tabs close on restart in v1, or should pinned pages come back with their session?
 2. **The dock's "View all".** Should it open the drawer tab instead of the in-dock focus mode once the tab exists? That would retire a code path, but it changes a flow design-qa.md signed off.
 3. **Retiring the Hub tab.** The TUI maps `⌥A` to its hub table. Is a drawer tab an acceptable equivalent, or should the modal keep a thin Hub tab that links to it?
+4. **Sessions not open in a tab.** Should their rows list the agents of their last turn, read once from the session file, or stay plain as planned?

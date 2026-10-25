@@ -1,10 +1,11 @@
 <!doctype html>
 <!--
-  plan/24 prototype: the Agents drawer tab, built from the GUI's own tokens
-  (theme-dark.css, theme-light.css, global.css type scale) and the existing
-  row, card, segmented-control and tool-card language. Static HTML: open it
-  in a browser. Each frame has an id that plan/24 names (glance,
-  roster-active, roster-all, detail-working, detail-scrolled, detail-failed,
+  plan/24 prototype: subagent pages, the sidebar's agent rows, the hover card
+  and the Agents drawer tab, built from the GUI's own tokens (theme-dark.css,
+  theme-light.css, global.css type scale) and the existing sidebar, tab chip,
+  composer, segmented-control and tool-card language. Static HTML: open it in
+  a browser. Each frame has an id that plan/24 names (window-page,
+  window-beside, page-failed, sidebar-rows, roster-turn, roster-all, glance,
   states), so review screenshots can be taken per frame.
 -->
 <html lang="en">
@@ -46,6 +47,11 @@
 		--omp-segment-track: rgba(255, 255, 255, 0.07);
 		--omp-segment-thumb: color-mix(in srgb, #ececec 13%, #1f1f1f);
 		--omp-segment-track-solid: #2c2c2c;
+		--omp-bg-tertiary: #2c2c2c;
+		--omp-input-bg: #262626;
+		--omp-input-border: #363636;
+		--omp-sidebar-bg: #181818;
+		--omp-sidebar-item-hover: rgba(255, 255, 255, 0.05);
 	}
 	.light {
 		color-scheme: light;
@@ -81,11 +87,16 @@
 		--omp-segment-track: rgba(0, 0, 0, 0.05);
 		--omp-segment-thumb: #ffffff;
 		--omp-segment-track-solid: #f2f2f2;
+		--omp-bg-tertiary: #efefef;
+		--omp-input-bg: #ffffff;
+		--omp-input-border: #dedede;
+		--omp-sidebar-bg: #f9f9f9;
+		--omp-sidebar-item-hover: rgba(0, 0, 0, 0.04);
 	}
 
 	* { box-sizing: border-box; }
 	body { margin: 0; padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; background: #8a8a8a; }
-	.frame {
+	.frame, .win, .sbdemo {
 		--gui-font-size: 15px;
 		--xxs: calc(var(--gui-font-size) * 11 / 15);
 		--xs: calc(var(--gui-font-size) * 12 / 15);
@@ -93,17 +104,19 @@
 		--md: calc(var(--gui-font-size) * 13.5 / 15);
 		--lg: calc(var(--gui-font-size) * 14.5 / 15);
 		--mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+		font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", "PingFang SC", system-ui, sans-serif;
+		font-size: var(--md);
+		color: var(--omp-text);
+		background: var(--omp-bg-primary);
+		-webkit-font-smoothing: antialiased;
+	}
+	.frame {
 		width: 400px;
 		height: 820px;
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
-		font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", "PingFang SC", system-ui, sans-serif;
-		font-size: var(--md);
-		color: var(--omp-text);
-		background: var(--omp-bg-primary);
 		border-left: 1px solid var(--omp-border-muted);
-		-webkit-font-smoothing: antialiased;
 	}
 	.frame.wide { width: 520px; }
 	.frame.short { height: 560px; }
@@ -166,42 +179,17 @@
 	.sig.failed { color: var(--omp-error); }
 	.sig.none { opacity: 0; }
 
-	/* ── Detail ────────────────────────────────────────────────────────── */
-	.nav { position: relative; height: 44px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 6px; border-bottom: 1px solid var(--omp-border-muted); }
-	.back { all: unset; display: inline-flex; align-items: center; gap: 2px; height: 28px; padding: 0 8px 0 4px; border-radius: 8px; color: var(--omp-muted); font-size: var(--sm); font-weight: 500; }
-	.scroll { flex: 1; overflow: hidden; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
-	.crumb { font-size: var(--xs); color: var(--omp-dim); display: flex; align-items: center; gap: 3px; }
-	.crumb a { color: var(--omp-link); text-decoration: none; }
-	.crumb svg { width: 11px; height: 11px; }
-	.h1 { font-size: var(--lg); font-weight: 600; line-height: 1.35; margin: 2px 0 0; color: var(--omp-text); }
-	.subline { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--xs); color: var(--omp-dim); }
+	/* ── Conversation language shared by the page (MessageBubble, ToolCard) ── */
 	.badge { display: inline-flex; align-items: center; gap: 6px; height: 18px; padding: 0 8px; border-radius: 9px; border: 1px solid; font-size: var(--xs); font-weight: 500; }
 	.badge.info { color: var(--omp-link); border-color: color-mix(in srgb, var(--omp-link) 35%, transparent); }
-	.badge.error { color: var(--omp-error); border-color: color-mix(in srgb, var(--omp-error) 35%, transparent); }
 	.badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-	.card { border: 1px solid var(--omp-border-muted); background: var(--omp-bg-elevated); border-radius: 14px; }
-	.stats { display: grid; grid-template-columns: repeat(4, 1fr); }
-	.stat { padding: 9px 12px 8px; }
-	.stat + .stat { border-left: 1px solid var(--omp-border-muted); }
-	.stat .k { font-size: var(--xs); color: var(--omp-dim); }
-	.stat .v { margin-top: 2px; font-size: var(--md); font-weight: 500; font-variant-numeric: tabular-nums; }
-	.ctx { padding: 8px 12px 10px; border-top: 1px solid var(--omp-border-muted); display: flex; align-items: center; gap: 10px; font-size: var(--xs); color: var(--omp-dim); }
 	.bar { flex: 1; height: 4px; border-radius: 2px; background: var(--omp-progress-bg); overflow: hidden; }
 	.bar b { display: block; height: 100%; background: var(--omp-accent); border-radius: 2px; }
-	.nowcard { padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
-	.nowcard .top { display: flex; align-items: center; gap: 8px; font-size: var(--sm); }
 	.shimmer { color: var(--omp-muted); background: linear-gradient(90deg, var(--omp-muted) 0%, var(--omp-muted) 40%, var(--omp-text) 50%, var(--omp-muted) 60%, var(--omp-muted) 100%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 500; }
-	.nowcard .target { font-family: var(--mono); font-size: var(--sm); color: var(--omp-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.nowcard .intent { font-size: var(--sm); color: var(--omp-dim); }
 	.errcard { padding: 10px 12px; border-radius: 14px; background: var(--omp-error-dim); border: 1px solid color-mix(in srgb, var(--omp-error) 25%, transparent); }
 	.errcard .top { display: flex; align-items: center; gap: 8px; font-size: var(--sm); font-weight: 600; color: var(--omp-error); }
 	.errcard p { margin: 4px 0 0; font-size: var(--sm); color: var(--omp-text-secondary); line-height: 1.45; }
-	.disclosure { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
-	.disclosure .label { font-size: var(--sm); font-weight: 500; color: var(--omp-muted); flex: none; }
-	.disclosure .preview { min-width: 0; flex: 1; font-size: var(--sm); color: var(--omp-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-	.section { display: flex; align-items: baseline; justify-content: space-between; font-size: var(--sm); font-weight: 500; color: var(--omp-muted); margin-top: 4px; }
-	.section span { font-weight: 400; color: var(--omp-dim); font-size: var(--xs); }
-	.prose { font-size: var(--md); line-height: 1.55; color: var(--omp-text); margin: 0; }
+	.prose { font-size: var(--md); line-height: 1.6; color: var(--omp-text); margin: 0; }
 	.prose code { font-family: var(--mono); font-size: 0.92em; padding: 1px 4px; border-radius: 4px; background: var(--omp-code-bg); }
 	.think { display: flex; align-items: center; gap: 6px; font-size: var(--sm); color: var(--omp-dim); }
 	.think svg { width: 12px; height: 12px; }
@@ -217,23 +205,128 @@
 	.tool .sum { min-width: 0; flex: 1; font-family: var(--mono); font-size: var(--sm); color: var(--omp-tool-output); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.tool .dur { font-size: var(--xs); color: var(--omp-dim); font-variant-numeric: tabular-nums; }
 	.tool pre { margin: 0; padding: 8px 14px 10px; border-top: 1px solid var(--omp-border-muted); font-family: var(--mono); font-size: var(--sm); color: var(--omp-tool-output); background: var(--omp-code-bg); white-space: pre-wrap; }
+	.tool .agents { border-top: 1px solid var(--omp-border-muted); padding: 4px 6px 6px; }
+	.tool .agents .row { min-height: 28px; }
 	.ok { color: var(--omp-success); }
 	.bad { color: var(--omp-error); }
 	.acc { color: var(--omp-accent); }
-	.chip { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--omp-bg-elevated); border: 1px solid var(--omp-border); box-shadow: var(--omp-shadow-md); font-size: var(--sm); font-weight: 500; color: var(--omp-text); }
-
-	/* Facts: the Overview card's label/value rows, one card for everything secondary. */
-	.facts { padding: 6px 12px 0; }
-	.fact { display: flex; align-items: center; gap: 12px; min-height: 26px; font-size: var(--md); }
-	.fact .k { width: 64px; flex: none; color: var(--omp-dim); }
-	.fact .v { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--omp-text); }
-	.fact .v .sep { color: var(--omp-dim); margin: 0 5px; }
-	.fact .v.ctxv { display: flex; align-items: center; gap: 10px; }
-	.fact .v.ctxv .bar { max-width: 140px; }
-	.facts .disclosure { margin: 6px -12px 0; border-top: 1px solid var(--omp-border-muted); }
+	.chip { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--omp-bg-elevated); border: 1px solid var(--omp-border); box-shadow: var(--omp-shadow-md); font-size: var(--sm); font-weight: 500; color: var(--omp-text); }
 	.live { display: flex; align-items: center; gap: 8px; font-size: var(--sm); padding: 0 2px; }
-	.live .num { font-size: var(--xs); color: var(--omp-dim); }
-	.navtitle { position: absolute; left: 96px; right: 96px; text-align: center; font-size: var(--sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+	/* ── Window: sidebar, title bar, tab strip (layout/Sidebar, TitleBar, TabBar) ── */
+	.frame, .win, .sbdemo, .stack { flex: none; }
+	.win { width: 1280px; height: 800px; display: grid; grid-template-columns: 236px minmax(0, 1fr); overflow: hidden; }
+	.win.bare { width: 1044px; height: 640px; grid-template-columns: minmax(0, 1fr); }
+	.side { min-width: 0; display: flex; flex-direction: column; padding: 8px; background: var(--omp-sidebar-bg); border-right: 1px solid var(--omp-border-muted); }
+	.side .mode { height: 32px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+	.side .mode .seg > button { height: 24px; font-size: var(--sm); gap: 5px; }
+	.nav-item { height: 33px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 8px; border-radius: 8px; color: var(--omp-text-secondary); }
+	.nav-item svg { width: 15px; height: 15px; color: var(--omp-muted); }
+	.side .label { display: flex; justify-content: space-between; align-items: center; padding: 16px 8px 6px; font-size: var(--sm); color: var(--omp-dim); }
+	.grp { height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-weight: 500; }
+	.grp svg { width: 15px; height: 15px; color: var(--omp-muted); }
+	.grp .n { margin-left: auto; font-size: var(--xs); font-weight: 400; color: var(--omp-dim); }
+	.srow { position: relative; height: 30px; flex: none; display: flex; align-items: center; padding: 0 8px; border-radius: 8px; }
+	.srow > .slot { width: 16px; margin-right: 8px; flex: none; display: flex; justify-content: center; color: var(--omp-dim); }
+	.srow > .slot svg { width: 12px; height: 12px; }
+	.srow .t { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 20px; color: var(--omp-text-secondary); }
+	.srow .tm { margin-left: 8px; flex: none; font-size: var(--xs); color: var(--omp-dim); font-variant-numeric: tabular-nums; }
+	.srow.active { background: var(--omp-selected-bg); }
+	.srow.active .t { color: var(--omp-text); }
+	.srow.hover { background: var(--omp-sidebar-item-hover); }
+	/* Agent rows: 28 px, 14 px per level (two at most), elbows from the parent's dot. */
+	.srow.ag { height: 28px; padding-left: calc(8px + var(--lvl) * 14px); font-size: var(--sm); }
+	.srow.ag .t { color: var(--omp-muted); }
+	.srow.ag.working .t { color: var(--omp-text-secondary); }
+	.srow.ag.failed .tm { color: var(--omp-error); }
+	.srow.ag.rest .t { color: var(--omp-dim); }
+	.srow.sel { background: var(--omp-selected-bg); }
+	.srow.sel .t { color: var(--omp-text); }
+	.gl { position: absolute; left: calc(var(--x) - 0.5px); pointer-events: none; }
+	.gl.v { top: 0; bottom: 0; width: 1px; background: var(--omp-border); }
+	.gl.down { top: calc(50% + 6px); bottom: 0; width: 1px; background: var(--omp-border); }
+	.gl.el { top: 0; height: 50%; width: 9px; border-left: 1px solid var(--omp-border); border-bottom: 1px solid var(--omp-border); border-bottom-left-radius: 6px; }
+	.pill { margin-left: 6px; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--omp-border); font-size: var(--xxs); color: var(--omp-dim); font-variant-numeric: tabular-nums; }
+	.pill i { width: 5px; height: 5px; border-radius: 50%; background: var(--omp-accent); }
+	.side .foot { margin-top: auto; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 8px; color: var(--omp-text-secondary); border-top: 1px solid var(--omp-border-muted); }
+	.side .foot svg { width: 15px; height: 15px; color: var(--omp-muted); }
+
+	.main { min-width: 0; min-height: 0; display: grid; grid-template-rows: 48px 44px minmax(0, 1fr); }
+	.tbar { min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 16px; }
+	.tbar svg { width: 15px; height: 15px; color: var(--omp-muted); }
+	.crumbs { min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--omp-text-secondary); white-space: nowrap; }
+	.crumbs svg.sep { width: 12px; height: 12px; color: var(--omp-dim); }
+	.crumbs b { font-weight: 600; color: var(--omp-text); overflow: hidden; text-overflow: ellipsis; }
+	.crumbs .st { display: inline-flex; align-items: center; gap: 6px; font-size: var(--sm); color: var(--omp-dim); }
+	.crumbs .st i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+	.tbar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; font-family: var(--mono); font-size: var(--sm); color: var(--omp-dim); }
+	.tstrip { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--omp-border-muted); }
+	.tstrip > svg { width: 15px; height: 15px; color: var(--omp-muted); margin: 0 6px; }
+	.tchip { height: 32px; min-width: 112px; max-width: 208px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 12px; border-radius: 8px; color: var(--omp-muted); }
+	.tchip .lbl { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.tchip.active { background: var(--omp-selected-bg); color: var(--omp-text); font-weight: 500; }
+	.tchip.visible { background: color-mix(in srgb, var(--omp-selected-bg) 55%, transparent); color: var(--omp-text); box-shadow: inset 0 0 0 1px var(--omp-border); }
+	.tchip.preview .lbl { font-style: italic; }
+	.tchip .glyph { width: 13px; height: 13px; color: var(--omp-dim); margin-right: -2px; }
+	.tchip .x { width: 12px; height: 12px; color: var(--omp-dim); }
+	.tchip .sig.none { display: none; }
+
+	/* ── The page: the conversation's column, with the agent bar where the composer sits ── */
+	.content { position: relative; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+	.col { width: 760px; max-width: calc(100% - 48px); margin: 0 auto; }
+	.stream { flex: 1; min-height: 0; overflow: hidden; padding: 20px 0 16px; display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; }
+	.stream.top { justify-content: flex-start; }
+	.from { align-self: flex-end; display: flex; align-items: center; gap: 4px; margin-bottom: -8px; font-size: var(--xs); color: var(--omp-dim); }
+	.from svg { width: 12px; height: 12px; }
+	.ubub { align-self: flex-end; max-width: 78%; padding: 11px 16px; border-radius: 18px; background: var(--omp-bg-tertiary); line-height: 1.6; }
+	.ubub .clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+	.ubub .showall { margin-top: 4px; font-size: var(--sm); font-weight: 500; color: var(--omp-link); }
+	.abar { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 12px 12px 10px 18px; border-radius: 18px; border: 1px solid var(--omp-input-border); background: var(--omp-input-bg); }
+	.abar .note { display: flex; align-items: center; gap: 8px; color: var(--omp-dim); }
+	.abar .note svg { width: 14px; height: 14px; }
+	.abar .ctl { display: flex; align-items: center; gap: 14px; color: var(--omp-text-secondary); }
+	.abar .ctl svg { width: 14px; height: 14px; color: var(--omp-muted); }
+	.abar .ctl .type { display: inline-flex; align-items: center; gap: 6px; }
+	.abar .ctl .model { display: inline-flex; align-items: center; gap: 4px; }
+	.abar .ctl .fallback { font-size: var(--xs); color: var(--omp-warning); }
+	.abar .ghost { all: unset; margin-left: auto; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--omp-border); display: inline-flex; align-items: center; gap: 6px; font-size: var(--sm); font-weight: 500; color: var(--omp-text); }
+	.abar .ghost svg { width: 11px; height: 11px; color: var(--omp-text-secondary); }
+	.composer { flex: none; display: flex; flex-direction: column; gap: 22px; padding: 14px 12px 10px 18px; border-radius: 18px; border: 1px solid var(--omp-input-border); background: var(--omp-input-bg); color: var(--omp-dim); }
+	.composer .ctl { display: flex; align-items: center; gap: 16px; color: var(--omp-text-secondary); }
+	.composer .ctl svg { width: 14px; height: 14px; color: var(--omp-muted); }
+	.composer .send { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--omp-bg-tertiary); }
+	.statusline { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 7px 10px 12px; font-size: var(--sm); color: var(--omp-dim); }
+	.statusline .ctxs { display: inline-flex; align-items: center; gap: 8px; }
+	.statusline .ctxs .bar { width: 64px; flex: none; }
+
+	/* Beside: the split view's panes and 32 px headers, inside one tab */
+	.panes { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
+	.panes > .divider { background: var(--omp-border); }
+	.pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+	.phead { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--omp-border-muted); font-size: var(--sm); color: var(--omp-text-secondary); }
+	.phead .lbl { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.phead svg { width: 12px; height: 12px; color: var(--omp-dim); }
+	.pane > .content { flex: 1; }
+	.pane.focus .phead { box-shadow: inset 0 1px 0 var(--omp-border-accent); }
+	.pane .col { max-width: calc(100% - 40px); }
+
+	/* ── Hover card (L2) ─────────────────────────────────────────────── */
+	.hcard { position: absolute; width: 300px; padding: 12px; display: flex; flex-direction: column; gap: 8px; border-radius: 14px; background: var(--omp-bg-elevated); border: 1px solid var(--omp-border); box-shadow: var(--omp-shadow-md); }
+	.hcard .ht { font-weight: 600; line-height: 1.35; }
+	.hcard .hs { display: flex; align-items: center; gap: 6px; font-size: var(--xs); color: var(--omp-dim); white-space: nowrap; }
+	.hcard .hn { display: flex; align-items: center; gap: 6px; font-size: var(--xs); color: var(--omp-dim); white-space: nowrap; overflow: hidden; }
+	.hcard .hn .ntool { font-family: var(--mono); color: var(--omp-text-secondary); }
+	.hcard .hn .arg { font-family: var(--mono); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+	.hcard .hn .num { margin-left: auto; }
+	.hcard .steps { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--omp-border-muted); }
+	.hcard .step { display: flex; align-items: center; gap: 6px; font-size: var(--xs); white-space: nowrap; overflow: hidden; }
+	.hcard .step svg { width: 11px; height: 11px; }
+	.hcard .step .ntool { font-family: var(--mono); color: var(--omp-text-secondary); width: 34px; flex: none; }
+	.hcard .step .arg { font-family: var(--mono); color: var(--omp-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+	.hcard .foot { font-size: var(--xxs); color: var(--omp-dim); }
+	.sbdemo { position: relative; width: 600px; height: 372px; display: grid; grid-template-columns: 236px minmax(0, 1fr); overflow: hidden; }
+	.sbdemo.mini { height: 112px; }
+	.sbdemo .side { padding-top: 0; }
 
 	/* ── Empty / error states ──────────────────────────────────────────── */
 	.state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 40px; text-align: center; }
@@ -268,6 +361,24 @@
 	<symbol id="i-arrowdown" viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></symbol>
 	<symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
 	<symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 18V5M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4M17.6 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.6 1.5"/><path d="M18 18a4 4 0 0 0 2-7.46M6 18a4 4 0 0 1-2-7.46M18 18a4 4 0 0 1-4 4 2 2 0 0 1-2-2 2 2 0 0 1-2 2 4 4 0 0 1-4-4"/></symbol>
+	<symbol id="i-corner" viewBox="0 0 24 24"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></symbol>
+	<symbol id="i-columns" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/></symbol>
+	<symbol id="i-panel" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></symbol>
+	<symbol id="i-panel-r" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></symbol>
+	<symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+	<symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a1 1 0 0 1 3 3l-9 9a2 2 0 0 1-.85.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.85z"/></symbol>
+	<symbol id="i-cmd" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+	<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+	<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+	<symbol id="i-cog" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+	<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+	<symbol id="i-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+	<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+	<symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></symbol>
+	<symbol id="i-msgplus" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h8M12 8v8"/></symbol>
+	<symbol id="i-branchplus" viewBox="0 0 24 24"><path d="M6 3v12M15 6a9 9 0 0 0-9 9M18 15v6M21 18h-6"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></symbol>
+	<symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol>
+	<symbol id="i-case" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
 </svg>
 
 <template id="drawer-head">
@@ -289,7 +400,7 @@
 <template id="toolbar-active">
 	<div class="toolbar">
 		<div class="seg small">
-			<button aria-pressed="true">Active <span class="count">13</span></button>
+			<button aria-pressed="true">This turn <span class="count">13</span></button>
 			<button>All <span class="count">34</span></button>
 		</div>
 		<span class="spacer"></span>
@@ -301,8 +412,224 @@
 	</div>
 </template>
 
-<!-- 1. Active roster, dark -->
-<div class="frame dark" id="roster-active" data-head="drawer-head" data-toolbar="toolbar-active">
+<!-- The sidebar (layout/Sidebar): this turn's agents under their session, at most five rows, then "N more" -->
+<template id="side-tree">
+	<div class="grp"><svg><use href="#i-folder"/></svg>aurora-web<span class="n">4</span></div>
+	<div class="srow" data-id="s1"><span class="gl down" style="--x:16px"></span><span class="slot"><i class="sig working"></i></span><span class="t">Harden the auth flow</span><span class="tm">2m</span></div>
+	<div class="srow ag working" style="--lvl:1" data-id="a1"><span class="gl v" style="--x:16px"></span><span class="gl el" style="--x:16px"></span><span class="gl down" style="--x:30px"></span><span class="slot"><i class="sig working"></i></span><span class="t">Map the auth surface</span></div>
+	<div class="srow ag working" style="--lvl:2" data-id="a2"><span class="gl v" style="--x:16px"></span><span class="gl v" style="--x:30px"></span><span class="gl el" style="--x:30px"></span><span class="slot"><i class="sig working"></i></span><span class="t">Find every verifyToken caller</span></div>
+	<div class="srow ag working" style="--lvl:2" data-id="a3"><span class="gl v" style="--x:16px"></span><span class="gl v" style="--x:30px"></span><span class="gl el" style="--x:30px"></span><span class="slot"><i class="sig working"></i></span><span class="t">Read the session middleware</span></div>
+	<div class="srow ag" style="--lvl:2" data-id="a4"><span class="gl v" style="--x:16px"></span><span class="gl el" style="--x:30px"></span><span class="slot"><i class="sig waiting"></i></span><span class="t">Check the token refresh tests</span></div>
+	<div class="srow ag working" style="--lvl:1" data-id="a5"><span class="gl v" style="--x:16px"></span><span class="gl el" style="--x:16px"></span><span class="slot"><i class="sig working"></i></span><span class="t">Rewrite the login handler</span></div>
+	<div class="srow ag rest" style="--lvl:1"><span class="gl el" style="--x:16px"></span><span class="slot"></span><span class="t">8 more · 4 working · <span style="color:var(--omp-error)">1 failed</span></span></div>
+	<div class="srow" data-id="s2"><span class="slot"><i class="sig working"></i></span><span class="t">Fix the flaky e2e run</span><span class="pill"><i></i>3</span><span class="tm">14m</span></div>
+	<div class="srow"><span class="slot"></span><span class="t">Refine search interactions</span><span class="tm">1h</span></div>
+	<div class="srow"><span class="slot"></span><span class="t">Plan a component library</span><span class="tm">3h</span></div>
+</template>
+
+<template id="side-full">
+	<div class="mode">
+		<div class="seg"><button aria-pressed="true"><svg><use href="#i-code"/></svg>Code</button><button><svg><use href="#i-case"/></svg>Work</button></div>
+		<button class="iconbtn"><svg><use href="#i-search"/></svg></button>
+	</div>
+	<div class="nav-item"><svg><use href="#i-pen"/></svg>New task</div>
+	<div class="nav-item"><svg><use href="#i-cmd"/></svg>Commands</div>
+	<div class="nav-item"><svg><use href="#i-search"/></svg>Search</div>
+	<div class="nav-item"><svg><use href="#i-bot"/></svg>Agent Hub</div>
+	<div class="nav-item"><svg><use href="#i-brain"/></svg>Memory</div>
+	<div class="nav-item"><svg><use href="#i-clock"/></svg>Scheduled Tasks</div>
+	<div class="label">Recent<span>Select</span></div>
+	<div data-tree-slot></div>
+	<div class="foot"><svg><use href="#i-cog"/></svg>Settings</div>
+</template>
+
+<template id="tab-icons">
+	<svg><use href="#i-more"/></svg><svg><use href="#i-plus"/></svg><svg><use href="#i-msgplus"/></svg><svg><use href="#i-branchplus"/></svg>
+</template>
+
+<!-- A. The page in a child tab, dark. The session keeps running and stays main's active tab; the child chip and the sidebar row show which agent you are reading. -->
+<div class="win dark" id="window-page">
+	<aside class="side" data-side data-sel="a2" data-hover="s1"></aside>
+	<div class="main">
+		<div class="tbar">
+			<svg><use href="#i-panel"/></svg>
+			<div class="crumbs">
+				<svg><use href="#i-folder"/></svg>aurora-web<svg class="sep"><use href="#i-right"/></svg>Harden the auth flow<svg class="sep"><use href="#i-right"/></svg>Map the auth surface<svg class="sep"><use href="#i-right"/></svg><b>Find every verifyToken caller</b>
+				<span class="st"><i style="color:var(--omp-accent)"></i>Working</span>
+			</div>
+			<div class="right"><span class="num">38.2k tokens · $0.21 · 1m 48s</span><svg><use href="#i-more"/></svg><svg><use href="#i-panel-r"/></svg></div>
+		</div>
+		<div class="tstrip" data-tab-icons>
+			<div class="tchip visible"><i class="sig working"></i><span class="lbl">Harden the auth flow</span></div>
+			<div class="tchip active preview" title="Preview: the next agent you open replaces it"><svg class="glyph"><use href="#i-corner"/></svg><i class="sig working"></i><span class="lbl">Find every verifyToken caller</span><svg class="x"><use href="#i-x"/></svg></div>
+			<div class="tchip"><i class="sig working"></i><span class="lbl">Fix the flaky e2e run</span></div>
+		</div>
+		<div class="content">
+			<div class="stream col">
+				<div class="from"><svg><use href="#i-corner"/></svg>From Map the auth surface</div>
+				<div class="ubub"><div class="clamp prose">Find every call site of <code>verifyToken()</code> across the repository and report each as file:line with the enclosing function. Include wrappers such as <code>requireSession</code>, and note which callers run before the session is loaded. Skip tests and generated files. You have read-only tools, so don't edit anything. Return a table sorted by package.</div><div class="showall">Show all</div></div>
+				<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
+				<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
+				<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
+				<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">bash</span><span class="sum">rg -c "verifyToken\(" --type ts</span><span class="dur">1.1s</span></div><pre>src/auth/session.ts:4
+src/routes/login.ts:3
+src/middleware/guard.ts:2</pre></div>
+				<p class="prose"><b>9 files</b> call <code>verifyToken</code> directly; three of them wrap it in <code>requireSession</code>. Reading the session middleware first, then checking <code>packages/</code>.</p>
+				<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">read</span><span class="sum">src/auth/session.ts:40-120</span><span class="dur">0.1s</span></div></div>
+				<div class="tool run"><div class="hd"><svg class="acc"><use href="#i-spin"/></svg><span class="name">grep</span><span class="sum">verifyToken  packages/</span><span class="dur">0:12</span></div></div>
+				<div class="live"><span class="shimmer">Looking for callers outside the auth module</span></div>
+			</div>
+			<div class="col">
+				<div class="abar">
+					<div class="note"><svg><use href="#i-corner"/></svg>Takes instructions from Map the auth surface</div>
+					<div class="ctl"><span class="type"><svg><use href="#i-bot"/></svg>explore</span><span class="model">claude-sonnet-4.5</span><button class="ghost"><svg><use href="#i-stop"/></svg>Stop agent</button><button class="iconbtn" title="Open beside · Keep open · Copy transcript · Show in Agents"><svg><use href="#i-more"/></svg></button></div>
+				</div>
+				<div class="statusline"><span class="num">14 steps</span><span class="ctxs"><span class="bar"><b style="width:31%"></b></span><span class="num">31% of 200k</span></span></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- B. Beside the conversation, light: one tab split into the conversation and the page; the title bar follows the focused pane -->
+<div class="win light" id="window-beside">
+	<aside class="side" data-side data-sel="a2" data-active="s1"></aside>
+	<div class="main">
+		<div class="tbar">
+			<svg><use href="#i-panel"/></svg>
+			<div class="crumbs">
+				<svg><use href="#i-folder"/></svg>aurora-web<svg class="sep"><use href="#i-right"/></svg><b>Harden the auth flow</b>
+				<span class="st"><i style="color:var(--omp-accent)"></i>Working</span>
+			</div>
+			<div class="right"><span class="num">61.4k tokens · $0.38 · 7m 02s</span><svg><use href="#i-more"/></svg><svg><use href="#i-panel-r"/></svg></div>
+		</div>
+		<div class="tstrip" data-tab-icons>
+			<div class="tchip active"><i class="sig working"></i><span class="lbl">Harden the auth flow</span><svg class="x"><use href="#i-x"/></svg></div>
+			<div class="tchip visible preview"><svg class="glyph"><use href="#i-columns"/></svg><i class="sig working"></i><span class="lbl">Find every verifyToken caller</span><svg class="x"><use href="#i-x"/></svg></div>
+			<div class="tchip"><i class="sig working"></i><span class="lbl">Fix the flaky e2e run</span></div>
+		</div>
+		<div class="panes">
+			<div class="pane focus">
+				<div class="phead"><i class="sig working"></i><span class="lbl">Harden the auth flow</span><svg><use href="#i-x"/></svg></div>
+				<div class="content">
+					<div class="stream col">
+						<div class="ubub">Harden the auth flow: map every token check, tighten the cookie flags and add tests for the refresh path.</div>
+						<p class="prose">I'll split this into parallel investigations, then make the changes once the call sites are known.</p>
+						<div class="tool run">
+							<div class="hd"><svg class="acc"><use href="#i-spin"/></svg><span class="name">task</span><span class="sum">4 agents</span><span class="dur">6:40</span></div>
+							<div class="agents">
+								<div class="row working"><span class="chev"><svg><use href="#i-down"/></svg></span><span class="slot"><i class="sig working"></i></span><span class="title">Map the auth surface</span><span class="meta">6m 40s</span></div>
+								<div class="row working sel" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Find every verifyToken caller</span><span class="meta">1m 48s</span></div>
+								<div class="row working" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig working"></i></span><span class="title">Read the session middleware</span><span class="meta">52s</span></div>
+								<div class="row" style="--indent:14px"><span class="guide" style="left:27px"></span><span class="chev"></span><span class="slot"><i class="sig waiting"></i></span><span class="title">Check the token refresh tests</span><span class="meta">Waiting</span></div>
+							</div>
+						</div>
+						<div class="live"><span class="shimmer">Waiting for the call-site map</span></div>
+					</div>
+					<div class="col">
+						<div class="composer"><span>Ask omp to build, explain, or fix something…</span><div class="ctl"><svg><use href="#i-plus"/></svg><span>claude-sonnet-4-5</span><svg><use href="#i-sliders"/></svg><span class="send"><svg><use href="#i-up"/></svg></span></div></div>
+						<div class="statusline"><span>Balanced · Handoff at 160.0k</span><span class="ctxs"><span class="bar"><b style="width:9%"></b></span><span class="num">9% of 200k</span></span></div>
+					</div>
+				</div>
+			</div>
+			<div class="divider"></div>
+			<div class="pane">
+				<div class="phead"><svg><use href="#i-corner"/></svg><i class="sig working"></i><span class="lbl">Find every verifyToken caller</span><svg><use href="#i-x"/></svg></div>
+				<div class="content">
+					<div class="stream col top">
+						<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
+						<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
+						<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
+						<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">bash</span><span class="sum">rg -c "verifyToken\(" --type ts</span><span class="dur">1.1s</span></div><pre>src/auth/session.ts:4
+src/routes/login.ts:3
+src/middleware/guard.ts:2</pre></div>
+						<p class="prose"><b>9 files</b> call <code>verifyToken</code> directly; three of them wrap it in <code>requireSession</code>.</p>
+						<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">read</span><span class="sum">src/auth/session.ts:40-120</span><span class="dur">0.1s</span></div></div>
+						<p class="prose"><code>requireSession</code> resolves the cookie before it calls <code>verifyToken</code>, so its callers never see an unloaded session. The two direct callers in <code>guard.ts</code> run earlier.</p>
+						<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">read</span><span class="sum">src/middleware/guard.ts</span><span class="dur">0.1s</span></div></div>
+					</div>
+					<span class="chip" style="bottom:136px"><svg style="width:12px;height:12px"><use href="#i-arrowdown"/></svg>3 new steps</span>
+					<div class="col">
+						<div class="abar">
+							<div class="note"><svg><use href="#i-corner"/></svg>Takes instructions from Map the auth surface</div>
+							<div class="ctl"><span class="type"><svg><use href="#i-bot"/></svg>explore</span><span class="model">claude-sonnet-4.5</span><button class="ghost"><svg><use href="#i-stop"/></svg>Stop agent</button><button class="iconbtn"><svg><use href="#i-more"/></svg></button></div>
+						</div>
+						<div class="statusline"><span class="num">14 steps</span><span class="ctxs"><span class="bar"><b style="width:31%"></b></span><span class="num">31% of 200k</span></span></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- C. Sidebar rows and the hover card, dark. Second strip: hovering a session row turns its signal slot into the disclosure chevron. -->
+<div class="stack" id="sidebar-rows">
+	<div class="sbdemo dark">
+		<aside class="side" data-tree data-active="s1" data-hover="a2"><div class="label">Recent<span>Select</span></div><div data-tree-slot></div></aside>
+		<div></div>
+		<div class="hcard" role="tooltip" style="left:244px;top:118px">
+			<div class="ht">Find every verifyToken caller</div>
+			<div class="hs"><span class="badge info"><i></i>Working</span><span class="num">1m 48s</span><span>·</span><span>explore · claude-sonnet-4.5</span></div>
+			<div class="hn"><span class="ntool">grep</span><span class="arg">verifyToken · packages/</span><span class="num">0:12</span></div>
+			<div class="steps">
+				<div class="step"><svg class="ok"><use href="#i-check"/></svg><span class="ntool">grep</span><span class="arg">verifyToken src/</span></div>
+				<div class="step"><svg class="ok"><use href="#i-check"/></svg><span class="ntool">bash</span><span class="arg">rg -c "verifyToken\(" --type ts</span></div>
+				<div class="step"><svg class="ok"><use href="#i-check"/></svg><span class="ntool">read</span><span class="arg">src/auth/session.ts:40-120</span></div>
+			</div>
+			<div class="foot">Click to open · ⌥-click to open beside</div>
+		</div>
+	</div>
+	<div class="sbdemo dark mini">
+		<aside class="side" style="padding-top:12px">
+			<div class="srow hover"><span class="slot"><svg><use href="#i-down"/></svg></span><span class="t">Harden the auth flow</span><span class="tm">2m</span></div>
+			<div class="srow hover"><span class="slot"><svg><use href="#i-right"/></svg></span><span class="t">Fix the flaky e2e run</span><span class="pill"><i></i>3</span><span class="tm">14m</span></div>
+		</aside>
+		<div style="padding:16px 20px;font-size:var(--sm);color:var(--omp-dim);line-height:1.5">Hovered or focused, a session row with agents swaps its signal for the disclosure chevron. Collapsed, it keeps the count pill.</div>
+	</div>
+</div>
+
+<!-- D. A failed agent's page, light. A pinned page (upright title) sits before the session's preview page (italic). -->
+<div class="win light bare" id="page-failed">
+	<div class="main">
+		<div class="tbar">
+			<svg><use href="#i-panel"/></svg>
+			<div class="crumbs">
+				<svg><use href="#i-folder"/></svg>aurora-web<svg class="sep"><use href="#i-right"/></svg>Harden the auth flow<svg class="sep"><use href="#i-right"/></svg><b>Benchmark the token cache</b>
+				<span class="st" style="color:var(--omp-error)"><i></i>Failed</span>
+			</div>
+			<div class="right"><span class="num">12.9k tokens · $0.04 · 3m 22s</span><svg><use href="#i-more"/></svg><svg><use href="#i-panel-r"/></svg></div>
+		</div>
+		<div class="tstrip" data-tab-icons>
+			<div class="tchip visible"><i class="sig working"></i><span class="lbl">Harden the auth flow</span></div>
+			<div class="tchip active"><svg class="glyph"><use href="#i-corner"/></svg><i class="sig failed"></i><span class="lbl">Benchmark the token cache</span><svg class="x"><use href="#i-x"/></svg></div>
+			<div class="tchip preview"><svg class="glyph"><use href="#i-corner"/></svg><i class="sig working"></i><span class="lbl">Find every verifyToken caller</span></div>
+			<div class="tchip"><i class="sig working"></i><span class="lbl">Fix the flaky e2e run</span></div>
+		</div>
+		<div class="content">
+			<div class="stream col">
+				<div class="from"><svg><use href="#i-corner"/></svg>From the conversation</div>
+				<div class="ubub"><div class="clamp prose">Measure <code>verifyToken</code> latency with and without the LRU cache over 10,000 calls, cold and warm. Put the script in <code>bench/</code> and report p50 and p95 for each path. Don't change the cache implementation.</div></div>
+				<p class="prose">Warming the cache with 10,000 synthetic tokens before timing the cold and warm paths.</p>
+				<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">write</span><span class="sum">bench/token-cache.bench.ts</span><span class="dur">0.1s</span></div></div>
+				<div class="tool err"><div class="hd"><svg class="bad"><use href="#i-x"/></svg><span class="name">bash</span><span class="sum">bun bench/token-cache.bench.ts</span><span class="dur">41s</span></div><pre>error: upstream returned 429
+  at warmCache (token-cache.bench.ts:18)</pre></div>
+				<div class="errcard">
+					<div class="top"><svg><use href="#i-alert"/></svg>Stopped after 3 attempts</div>
+					<p>429 Too Many Requests: the provider's rate limit was hit while the benchmark was warming the cache.</p>
+				</div>
+			</div>
+			<div class="col">
+				<div class="abar">
+					<div class="note"><svg><use href="#i-corner"/></svg>Ended · reported to the conversation</div>
+					<div class="ctl"><span class="type"><svg><use href="#i-bot"/></svg>task</span><span class="model">gpt-5.1-mini</span><button class="iconbtn" style="margin-left:auto"><svg><use href="#i-more"/></svg></button></div>
+				</div>
+				<div class="statusline"><span class="num">9 steps</span><span class="ctxs"><span class="bar"><b style="width:18%"></b></span><span class="num">18% of 128k</span></span></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- 1. This turn roster, dark; the selected row is the page being shown -->
+<div class="frame dark" id="roster-turn" data-head="drawer-head" data-toolbar="toolbar-active">
 	<div class="list">
 		<div class="row working" style="--indent:0px">
 			<span class="chev"><svg><use href="#i-down"/></svg></span><span class="slot"><i class="sig working"></i></span>
@@ -356,7 +683,7 @@
 <div class="frame light wide" id="roster-all" data-head="drawer-head">
 	<div class="toolbar scrolled">
 		<div class="seg small">
-			<button>Active <span class="count">13</span></button>
+			<button>This turn <span class="count">13</span></button>
 			<button aria-pressed="true">All <span class="count">34</span></button>
 		</div>
 		<span class="spacer"></span>
@@ -387,84 +714,6 @@
 	</div>
 </div>
 
-<!-- 3. Detail of a working agent, dark: opened at the top; the nav title appears once the heading scrolls away -->
-<div class="frame dark" id="detail-working" data-head="drawer-head">
-	<div class="nav">
-		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
-		<span class="spacer"></span>
-		<button class="iconbtn" title="Stop this agent"><svg><use href="#i-more"/></svg></button>
-	</div>
-	<div class="scroll">
-		<div>
-			<div class="crumb">In <a href="#">Map the auth surface</a></div>
-			<h1 class="h1">Find every verifyToken caller</h1>
-			<div class="subline"><span class="badge info"><i></i>Working</span><span class="num">1m 48s</span></div>
-		</div>
-		<div class="card facts">
-			<div class="fact"><span class="k">Agent</span><span class="v">explore<span class="sep">·</span>claude-sonnet-4.5</span></div>
-			<div class="fact"><span class="k">Work</span><span class="v num">14 steps<span class="sep">·</span>38.2k tokens<span class="sep">·</span>$0.21</span></div>
-			<div class="fact"><span class="k">Context</span><span class="v ctxv"><span class="bar"><b style="width:31%"></b></span><span class="num" style="color:var(--omp-dim)">31% of 200k</span></span></div>
-			<div class="disclosure"><svg style="color:var(--omp-dim);width:12px;height:12px"><use href="#i-right"/></svg><span class="label">Assignment</span><span class="preview">Find every call site of verifyToken() across the repo and report file:line with…</span></div>
-		</div>
-		<div class="section">Transcript</div>
-		<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
-		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
-		<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
-		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">bash</span><span class="sum">rg -c "verifyToken\(" --type ts</span><span class="dur">1.1s</span></div><pre>src/auth/session.ts:4
-src/routes/login.ts:3
-src/middleware/guard.ts:2</pre></div>
-		<p class="prose"><b>9 files</b> call <code>verifyToken</code> directly; three of them wrap it in <code>requireSession</code>. Checking <code>packages/</code> next.</p>
-		<div class="tool run"><div class="hd"><svg class="acc"><use href="#i-spin"/></svg><span class="name">grep</span><span class="sum">verifyToken  packages/</span><span class="dur">0:12</span></div></div>
-		<div class="live"><span class="shimmer">Looking for callers outside the auth module</span></div>
-	</div>
-</div>
-
-<!-- 3b. The same detail scrolled up while new steps arrive: nav title shown, the floating chip -->
-<div class="frame dark short" id="detail-scrolled" data-head="drawer-head" style="position:relative;height:420px">
-	<div class="nav">
-		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
-		<span class="navtitle">Find every verifyToken caller</span>
-		<span class="spacer"></span>
-		<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
-	</div>
-	<div class="scroll">
-		<p class="prose">I'll start with a repository-wide search, then read each hit's surrounding function.</p>
-		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">grep</span><span class="sum">verifyToken  src/</span><span class="dur">0.4s</span></div></div>
-		<div class="think"><svg><use href="#i-right"/></svg>Thought for 6s</div>
-		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">read</span><span class="sum">src/auth/session.ts:40-120</span><span class="dur">0.1s</span></div></div>
-	</div>
-	<span class="chip"><svg style="width:12px;height:12px"><use href="#i-arrowdown"/></svg>3 new steps</span>
-</div>
-
-<!-- 4. Detail of a failed agent, light: the error leads -->
-<div class="frame light" id="detail-failed" data-head="drawer-head">
-	<div class="nav">
-		<button class="back"><svg><use href="#i-left"/></svg>Agents</button>
-		<span class="spacer"></span>
-		<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
-	</div>
-	<div class="scroll">
-		<div>
-			<h1 class="h1">Benchmark the token cache</h1>
-			<div class="subline"><span class="badge error"><i></i>Failed</span><span class="num">after 3m 22s</span></div>
-		</div>
-		<div class="errcard">
-			<div class="top"><svg><use href="#i-alert"/></svg>Stopped after 3 attempts</div>
-			<p>429 Too Many Requests: the provider's rate limit was hit while the benchmark was warming the cache.</p>
-		</div>
-		<div class="card facts">
-			<div class="fact"><span class="k">Agent</span><span class="v">task<span class="sep">·</span>gpt-5.1-mini</span></div>
-			<div class="fact"><span class="k">Work</span><span class="v num">9 steps<span class="sep">·</span>12.9k tokens<span class="sep">·</span>$0.04</span></div>
-			<div class="disclosure"><svg style="color:var(--omp-dim);width:12px;height:12px"><use href="#i-right"/></svg><span class="label">Assignment</span><span class="preview">Measure verifyToken latency with and without the LRU cache, 10k calls…</span></div>
-		</div>
-		<div class="section">Transcript</div>
-		<p class="prose">Warming the cache with 10,000 synthetic tokens before timing the cold and warm paths.</p>
-		<div class="tool"><div class="hd"><svg class="ok"><use href="#i-check"/></svg><span class="name">write</span><span class="sum">bench/token-cache.bench.ts</span><span class="dur">0.1s</span></div></div>
-		<div class="tool err"><div class="hd"><svg class="bad"><use href="#i-x"/></svg><span class="name">bash</span><span class="sum">bun bench/token-cache.bench.ts</span><span class="dur">41s</span></div><pre>error: upstream returned 429
-  at warmCache (token-cache.bench.ts:18)</pre></div>
-	</div>
-</div>
-
 <!-- 0. Glance: the Agents tab while Overview is shown. Working agents → accent dot; a failure you have not seen → error dot -->
 <div class="stack" id="glance">
 	<div class="frame dark" style="height:48px">
@@ -489,23 +738,23 @@ src/middleware/guard.ts:2</pre></div>
 	</div>
 </div>
 
-<!-- 5. States, dark: empty, nothing active, paused, refresh failed with rows, load failed -->
+<!-- 5. States, dark: empty, nothing this turn, paused, refresh failed with rows, load failed -->
 <div class="stack" id="states">
 	<div class="frame dark short" style="height:280px" data-head="drawer-head">
 		<div class="state"><svg><use href="#i-bot"/></svg><div class="t">No subagents yet</div><div class="s">When the agent hands work to subagents, they appear here while they run.</div></div>
 	</div>
 	<div class="frame dark short" style="height:300px">
 		<div class="toolbar">
-			<div class="seg small"><button aria-pressed="true">Active <span class="count">0</span></button><button>All <span class="count">34</span></button></div>
+			<div class="seg small"><button aria-pressed="true">This turn <span class="count">0</span></button><button>All <span class="count">34</span></button></div>
 			<span class="spacer"></span>
 			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
 			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
 		</div>
-		<div class="state"><svg><use href="#i-check"/></svg><div class="t">Nothing is running</div><div class="s">Every agent in this session has finished.</div><button class="btn">Show all</button></div>
+		<div class="state"><svg><use href="#i-check"/></svg><div class="t">Nothing this turn</div><div class="s">Agents from earlier turns are under All.</div><button class="btn">Show all</button></div>
 	</div>
 	<div class="frame dark short" style="height:200px">
 		<div class="toolbar">
-			<div class="seg small"><button aria-pressed="true">Active <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
+			<div class="seg small"><button aria-pressed="true">This turn <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
 			<span class="spacer"></span>
 			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
 			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
@@ -518,7 +767,7 @@ src/middleware/guard.ts:2</pre></div>
 	</div>
 	<div class="frame dark short" style="height:150px">
 		<div class="toolbar">
-			<div class="seg small"><button aria-pressed="true">Active <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
+			<div class="seg small"><button aria-pressed="true">This turn <span class="count">13</span></button><button>All <span class="count">34</span></button></div>
 			<span class="spacer"></span>
 			<div class="seg small"><button aria-pressed="true"><svg><use href="#i-list"/></svg></button><button><svg><use href="#i-graph"/></svg></button></div>
 			<button class="iconbtn"><svg><use href="#i-more"/></svg></button>
@@ -541,6 +790,20 @@ src/middleware/guard.ts:2</pre></div>
 	for (const frame of document.querySelectorAll("[data-toolbar]")) {
 		const bar = document.getElementById(frame.dataset.toolbar).content.cloneNode(true);
 		frame.children[0].after(bar);
+	}
+	for (const side of document.querySelectorAll("[data-side]")) {
+		side.append(document.getElementById("side-full").content.cloneNode(true));
+	}
+	for (const slot of document.querySelectorAll("[data-tree-slot]")) {
+		slot.replaceWith(document.getElementById("side-tree").content.cloneNode(true));
+	}
+	for (const [attr, cls] of [["sel", "sel"], ["active", "active"], ["hover", "hover"]]) {
+		for (const side of document.querySelectorAll(`[data-${attr}]`)) {
+			for (const id of side.dataset[attr].split(" ")) side.querySelector(`[data-id="${id}"]`)?.classList.add(cls);
+		}
+	}
+	for (const strip of document.querySelectorAll("[data-tab-icons]")) {
+		strip.append(document.getElementById("tab-icons").content.cloneNode(true));
 	}
 </script>
 </body>
