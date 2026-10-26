@@ -422,7 +422,6 @@ export const zh: Record<string, string> = {
 	"sidebar.menu.pin": "置顶",
 	"sidebar.menu.unpin": "取消置顶",
 	"sidebar.menu.open": "打开",
-	"sidebar.menu.openNewTab": "在新标签页打开",
 	"sidebar.menu.taskRunning": "该任务正在执行中",
 	"sidebar.groupMenu": "工作区操作",
 	"sidebar.pinFailed": "置顶列表保存失败。",

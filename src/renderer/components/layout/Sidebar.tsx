@@ -29,7 +29,6 @@ import {
 	Pin,
 	PinOff,
 	Plug,
-	Plus,
 	RefreshCw,
 	Search,
 	Settings,
@@ -600,7 +599,7 @@ export function Sidebar() {
 			? "var(--omp-warning)"
 			: (tabSignal?.color ?? (externalRunning ? "var(--omp-accent)" : STATUS_COLOR[session.status]));
 		const title = sessionDisplayTitle(session, t("sidebar.untitled"));
-		const hasActions = !signalActive || !active;
+		const hasActions = !signalActive;
 		const renaming = renamingSessionPath === session.path;
 		const pinned = pinnedSessions.includes(session.path);
 		const recency = recencyForSession(session);
@@ -748,7 +747,7 @@ export function Sidebar() {
 					className="omp-sidebar-session-actions flex shrink-0 items-center justify-end gap-0.5"
 					onClick={event => event.stopPropagation()}
 				>
-					{!signalActive && !renaming ? (
+					{!signalActive && !renaming && (
 						<button
 							type="button"
 							title={t("sidebar.rename")}
@@ -758,17 +757,7 @@ export function Sidebar() {
 						>
 							<Pencil size={12} />
 						</button>
-					) : !active ? (
-						<button
-							type="button"
-							title={t("sidebar.menu.openNewTab")}
-							aria-label={t("sidebar.menu.openNewTab")}
-							onClick={() => void openSession(session)}
-							className={rowActionButton}
-						>
-							<Plus size={12} />
-						</button>
-					) : null}
+					)}
 					{!signalActive && (
 						<button
 							className={cx(
@@ -1500,19 +1489,6 @@ export function Sidebar() {
 									onSelect: () => {
 										setSessionMenu(null);
 										void openSession(sessionMenu.session);
-									},
-								},
-								{
-									id: "session-open-tab",
-									label: t("sidebar.menu.openNewTab"),
-									icon: Plus,
-									onSelect: () => {
-										setSessionMenu(null);
-										void openTab({
-											cwd: sessionMenu.session.cwd,
-											kind: sessionMenu.session.kind ?? "agent",
-											sessionPath: sessionMenu.session.path,
-										});
 									},
 								},
 								{

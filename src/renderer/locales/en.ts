@@ -441,7 +441,6 @@ export const en: Record<string, string> = {
 	"sidebar.menu.pin": "Pin to top",
 	"sidebar.menu.unpin": "Unpin",
 	"sidebar.menu.open": "Open",
-	"sidebar.menu.openNewTab": "Open in new tab",
 	"sidebar.menu.taskRunning": "This task is currently running",
 	"sidebar.groupMenu": "Workspace actions",
 	"sidebar.pinFailed": "Could not save the pinned list.",

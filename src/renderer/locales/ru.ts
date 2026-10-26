@@ -432,7 +432,6 @@ export const ru: Record<string, string> = {
 	"sidebar.menu.pin": "Закрепить сверху",
 	"sidebar.menu.unpin": "Открепить",
 	"sidebar.menu.open": "Открыть",
-	"sidebar.menu.openNewTab": "Открыть в новой вкладке",
 	"sidebar.menu.taskRunning": "Эта задача сейчас выполняется",
 	"sidebar.groupMenu": "Действия с рабочей областью",
 	"sidebar.pinFailed": "Не удалось сохранить список закреплённых.",

@@ -492,7 +492,7 @@ describe("Sidebar menus and pinned ordering", () => {
 		expect(labels).toHaveLength(6);
 	});
 
-	it("right-click on a session row opens the 8-item session menu", async () => {
+	it("right-click on a session row opens the 7-item session menu", async () => {
 		const omp = installMockOmp(LIST);
 		seedStores();
 		await mount(<Sidebar />);
@@ -504,22 +504,13 @@ describe("Sidebar menus and pinned ordering", () => {
 		await fire(row as Element, "onContextMenu");
 
 		const labels = menuItemLabels();
-		for (const expected of [
-			"Open",
-			"Open in new tab",
-			"Open in new window",
-			"Rename",
-			"Pin to top",
-			"Archive",
-			"Select",
-			"Delete",
-		]) {
+		for (const expected of ["Open", "Open in new window", "Rename", "Pin to top", "Archive", "Select", "Delete"]) {
 			expect(
 				labels.some(label => label.includes(expected)),
 				`missing item: ${expected}`,
 			).toBe(true);
 		}
-		expect(labels).toHaveLength(8);
+		expect(labels).toHaveLength(7);
 
 		const pinItem = [...document.body.querySelectorAll('[role="menu"] button')].find(button =>
 			(button.textContent ?? "").includes("Pin to top"),
