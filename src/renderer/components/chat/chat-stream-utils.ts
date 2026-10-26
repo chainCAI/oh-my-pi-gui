@@ -5,7 +5,7 @@
  */
 
 import type { AgentMessage, MessageContent, RpcQueuedMessage } from "../../../shared/rpc-types";
-import { messageIdentity } from "../../lib/message-identity";
+import { messageIdentity, messageTimestampMs } from "../../lib/message-identity";
 import { isRenderableMessageText, messageText, splitReaction } from "../../lib/messages";
 import type { ReadGroupEntry, ReadGroupUsage } from "../../lib/read-group";
 import type { QueueLane } from "../../stores/queue";
@@ -377,16 +377,6 @@ export function isVisibleTranscriptMessage(message: AgentMessage): boolean {
 		}
 		return false;
 	});
-}
-
-export function messageTimestampMs(message: AgentMessage): number {
-	const timestamp = message.timestamp;
-	if (typeof timestamp === "number" && Number.isFinite(timestamp)) return timestamp;
-	if (typeof timestamp === "string") {
-		const parsed = Date.parse(timestamp);
-		if (Number.isFinite(parsed)) return parsed;
-	}
-	return 0;
 }
 
 /** Whether the in-flight turn owns a real visible row right now. */

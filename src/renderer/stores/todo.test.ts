@@ -2,16 +2,31 @@
  * Todo store snapshot archive: the first setPhases after a reset is session
  * hydration (never a change), later identical re-applies (every agent_end
  * re-pulls state) dedupe by semantic fingerprint, and only real edits append
- * transcript snapshots — capped so the archive keeps the newest entries.
+ * transcript snapshots — capped so the archive keeps the newest entries. A
+ * reopened session has no live archive, so it replays the one its transcript
+ * implies; a regression there drops every "Todos updated" row on reopen.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { TodoPhase } from "../../shared/rpc-types";
-import { useTodoStore } from "./todo";
+import type { AgentMessage, TodoPhase } from "../../shared/rpc-types";
+import { todoHistoryFromMessages, useTodoStore } from "./todo";
 
 function phase(name: string, ...tasks: Array<[string, string]>): TodoPhase {
 	return {
 		name,
 		tasks: tasks.map(([content, status]) => ({ content, status: status as TodoPhase["tasks"][number]["status"] })),
+	};
+}
+
+/** A saved `todo` tool result, as get_messages returns it. */
+function todoResult(second: number, phases: TodoPhase[], isError = false): AgentMessage {
+	return {
+		role: "toolResult",
+		toolName: "todo",
+		toolCallId: `todo-${second}`,
+		isError,
+		timestamp: `2026-10-26T03:39:${String(second).padStart(2, "0")}.000Z`,
+		content: [],
+		details: { phases },
 	};
 }
 
@@ -75,5 +90,53 @@ describe("todo snapshot archive", () => {
 		useTodoStore.getState().reset();
 		expect(useTodoStore.getState().history).toEqual([]);
 		expect(useTodoStore.getState().historyHydrated).toBe(false);
+	});
+});
+
+describe("todo archive of a reopened session", () => {
+	const plan = (spawn: string, check: string) => [
+		phase("Essays", ["Spawn the writers", spawn], ["Check the word counts", check]),
+	];
+
+	it("rebuilds the rows the live tab archived from the transcript's todo results", () => {
+		const changes = [
+			plan("in_progress", "pending"),
+			plan("completed", "pending"),
+			[phase("Review", ["Read the essays", "pending"])],
+		];
+		useTodoStore.getState().setPhases([]);
+		for (const phases of changes) useTodoStore.getState().setPhases(phases);
+		const live = useTodoStore.getState().history;
+
+		const replayed = todoHistoryFromMessages([
+			todoResult(1, changes[0]!),
+			// A failed call changed nothing; a repeat of the same plan neither.
+			todoResult(2, [phase("Broken", ["nothing", "pending"])], true),
+			{ role: "toolResult", toolName: "read", content: [], details: { phases: [] } },
+			todoResult(3, changes[1]!),
+			todoResult(4, changes[1]!),
+			todoResult(5, changes[2]!),
+		]);
+
+		expect(replayed.map(row => row.phases)).toEqual(live.map(row => row.phases));
+		expect(replayed.map(row => row.ts)).toEqual([
+			Date.parse("2026-10-26T03:39:01.000Z"),
+			Date.parse("2026-10-26T03:39:05.000Z"),
+		]);
+	});
+
+	it("restores into an empty archive only, and live progress continues the restored row", () => {
+		const restored = todoHistoryFromMessages([todoResult(1, plan("in_progress", "pending"))]);
+		useTodoStore.getState().seedHistory(restored);
+		useTodoStore.getState().setPhases(plan("in_progress", "pending"));
+		useTodoStore.getState().setPhases(plan("completed", "pending"));
+		// A later re-hydrate must not replace what the tab has since archived.
+		useTodoStore
+			.getState()
+			.seedHistory(todoHistoryFromMessages([todoResult(9, [phase("Stale", ["old", "pending"])])]));
+
+		const history = useTodoStore.getState().history;
+		expect(history.map(row => row.id)).toEqual([restored[0]?.id]);
+		expect(history[0]?.phases[0]?.tasks.map(task => task.status)).toEqual(["completed", "pending"]);
 	});
 });

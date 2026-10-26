@@ -13,3 +13,14 @@ export function sameMessageContent(left: AgentMessage, right: AgentMessage): boo
 	const rightContent = typeof right.content === "string" ? [{ type: "text", text: right.content }] : right.content;
 	return left.role === right.role && JSON.stringify(leftContent) === JSON.stringify(rightContent);
 }
+
+/** When the message was sent, in ms; 0 when the wire carried no usable time. */
+export function messageTimestampMs(message: AgentMessage): number {
+	const timestamp = message.timestamp;
+	if (typeof timestamp === "number" && Number.isFinite(timestamp)) return timestamp;
+	if (typeof timestamp === "string") {
+		const parsed = Date.parse(timestamp);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return 0;
+}

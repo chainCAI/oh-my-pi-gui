@@ -27,7 +27,7 @@ import { useSubagentGraphStore } from "../stores/subagent-graph";
 import { SUBAGENT_SUBSCRIPTION_LEVEL, type SubagentsStore, useSubagentsStore } from "../stores/subagents";
 import { ensureTabRuntime } from "../stores/tab-runtime";
 import { isTabClosed, useTabsStore } from "../stores/tabs";
-import { useTodoStore } from "../stores/todo";
+import { type TodoStore, todoHistoryFromMessages, useTodoStore } from "../stores/todo";
 import { type ToolsStore, useToolsStore } from "../stores/tools";
 
 /** Apply the usage half of a snapshot; caller must already be runtime-scoped. */
@@ -312,6 +312,8 @@ export async function hydrateLegacySession(fallbackName?: string, initialState?:
 			useToolsStore
 				.getState()
 				.hydrateMessages(useMessagesStore.getState().messages, { turnIsLive: stateIsStreaming });
+		// Only a live tab archives plan changes: a reopened one replays them.
+		useTodoStore.getState().seedHistory(todoHistoryFromMessages(useMessagesStore.getState().messages));
 	}
 	await subagents;
 	await secondary;
@@ -458,6 +460,10 @@ export async function hydrateTabSession(tabId: string, fallbackName?: string): P
 		}
 		if (eventsUnchanged)
 			tools?.getState().hydrateMessages(messages?.getState().messages ?? [], { turnIsLive: stateIsStreaming });
+		// Only a live tab archives plan changes: a reopened one replays them.
+		sessionRuntimeStore<TodoStore>(tabId, "todo")
+			?.getState()
+			.seedHistory(todoHistoryFromMessages(messages?.getState().messages ?? []));
 	}
 
 	// Subagents and secondary chips do not hold the transcript hostage. Their

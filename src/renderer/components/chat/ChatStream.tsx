@@ -22,6 +22,7 @@ import type { RpcQueuedMessage } from "../../../shared/rpc-types";
 import { useDisplayPreference } from "../../lib/display-preferences";
 import { cx, formatClock } from "../../lib/format";
 import { useT } from "../../lib/i18n";
+import { messageTimestampMs } from "../../lib/message-identity";
 import { abortActiveTurn, isRenderableMessageText } from "../../lib/messages";
 import { collapsibleReadTarget, groupReadRows, type ReadGroupEntry } from "../../lib/read-group";
 import { useTabRpc } from "../../lib/tab-rpc";
@@ -55,7 +56,6 @@ import {
 	locateEntryRow,
 	type MountedTranscriptRow,
 	mergeTodoSnapshots,
-	messageTimestampMs,
 	type Row,
 	shouldRePinTranscript,
 	summarizeTurnChanges,

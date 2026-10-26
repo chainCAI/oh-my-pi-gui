@@ -31,7 +31,6 @@ import {
 	type RpcSessionState,
 	type SessionInfoUpdateFrame,
 	type SubagentFrame,
-	type TodoPhase,
 } from "../../shared/rpc-types";
 import { formatClock } from "../lib/format";
 import { translate } from "../lib/i18n";
@@ -55,7 +54,7 @@ import { useSettingsStore } from "../stores/settings";
 import { SUBAGENT_SUBSCRIPTION_LEVEL, useSubagentsStore } from "../stores/subagents";
 import { isTabClosed, useTabsStore, visibleTabIds } from "../stores/tabs";
 import { useToastStore } from "../stores/toast";
-import { useTodoStore } from "../stores/todo";
+import { todoPhasesFromToolResult, useTodoStore } from "../stores/todo";
 import { useToolsStore } from "../stores/tools";
 import { useUiStore } from "../stores/ui";
 
@@ -70,46 +69,6 @@ const QUIET_NOTICE_SOURCES = new Set(["vision", "xdev"]);
 /** Schema defaults for the agent's notify settings (settings-schema.ts). */
 const NOTIFY_DEFAULTS = { completion: "on", error: "off", ask: "on" } as const;
 
-function isTodoStatus(value: unknown): value is TodoPhase["tasks"][number]["status"] {
-	return (
-		value === "pending" ||
-		value === "in_progress" ||
-		value === "completed" ||
-		value === "abandoned" ||
-		value === "blocked"
-	);
-}
-
-function isTodoTask(value: unknown): value is TodoPhase["tasks"][number] {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		"content" in value &&
-		typeof value.content === "string" &&
-		"status" in value &&
-		isTodoStatus(value.status) &&
-		(!("blocker" in value) || value.blocker === undefined || typeof value.blocker === "string")
-	);
-}
-
-function isTodoPhase(value: unknown): value is TodoPhase {
-	return (
-		typeof value === "object" &&
-		value !== null &&
-		"name" in value &&
-		typeof value.name === "string" &&
-		"tasks" in value &&
-		Array.isArray(value.tasks) &&
-		value.tasks.every(isTodoTask)
-	);
-}
-
-function todoPhasesFromToolResult(result: unknown): TodoPhase[] | undefined {
-	if (typeof result !== "object" || result === null || !("details" in result)) return undefined;
-	const details = result.details;
-	if (typeof details !== "object" || details === null || !("phases" in details)) return undefined;
-	return Array.isArray(details.phases) && details.phases.every(isTodoPhase) ? details.phases : undefined;
-}
 type NotifyKind = keyof typeof NOTIFY_DEFAULTS;
 
 /**
