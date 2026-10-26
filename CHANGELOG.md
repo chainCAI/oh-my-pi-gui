@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Each row in the Agents tab says the agent's type and number, its model with the reasoning level, and its tokens and cost, as the agents card above the message box does ([#23](https://github.com/nornzach/oh-my-pi-gui/issues/23)).
+
 ### Fixed
 
 - **All** in the Agents tab lists agents in the order they were spawned, so new agents land at the end instead of mixing in with the agents of earlier task calls ([#23](https://github.com/nornzach/oh-my-pi-gui/issues/23)).
