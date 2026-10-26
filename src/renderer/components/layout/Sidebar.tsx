@@ -63,6 +63,7 @@ import { compileKeymap, KEYMAP_ACTIONS, onEscape } from "../../lib/keymap";
 import { sessionDisplayTitle } from "../../lib/session-title";
 import { useTabRpc } from "../../lib/tab-rpc";
 import { tabSignalPresentation } from "../../lib/tab-signal";
+import { useAgentPagesStore } from "../../stores/agent-pages";
 import { useSchedulerStore } from "../../stores/scheduler";
 import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
@@ -354,8 +355,10 @@ export function Sidebar() {
 	const toggleGroup = (groupCwd: string) => {
 		setCollapsed(prev => ({ ...prev, [groupCwd]: !isCollapsedGroup(groupCwd) }));
 	};
+	// A tab knows its session file from the start; the id comes later, from the sidecar.
 	const tabForSession = (session: SessionInfo) =>
-		tabs.find(tab => tab.sessionId === session.id) ?? (session.id === sessionId ? activeTab : undefined);
+		tabs.find(tab => tab.sessionPath === session.path || (tab.sessionId && tab.sessionId === session.id)) ??
+		(session.id === sessionId ? activeTab : undefined);
 	const sessionTabSignal = (session: SessionInfo) => {
 		const tab = tabForSession(session);
 		return tab ? tabSignalPresentation(tab, session.id === sessionId && (isStreaming || isCompacting)) : null;
@@ -369,6 +372,13 @@ export function Sidebar() {
 	};
 
 	const openSession = (session: SessionInfo) => {
+		// A session open in a tab may be showing one of its agent pages: its row
+		// is the way back to the conversation.
+		const tab = tabForSession(session);
+		if (tab && useAgentPagesStore.getState().shown[tab.id]) {
+			useAgentPagesStore.getState().show(tab.id, null);
+			return;
+		}
 		if (session.id === sessionId) return;
 		void openTab({ cwd: session.cwd, sessionPath: session.path, kind: session.kind ?? "agent" });
 	};

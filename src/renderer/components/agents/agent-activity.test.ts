@@ -92,6 +92,24 @@ describe("This turn", () => {
 		expect(projection.allCount).toBe(5);
 	});
 
+	it("keeps finished agents that name the main session as their parent", () => {
+		// The sidecar's shape: roots carry the main session's label as their
+		// parent, and background results land as custom messages after the turn.
+		const projection = project(
+			[
+				agent("root", { parentSubagentId: "Main", parentToolCallId: "c" }),
+				agent("child", { parentSubagentId: "root", parentToolCallId: "c-child" }),
+			],
+			[
+				user("go"),
+				task("c"),
+				{ role: "custom", customType: "async-result", content: "done", display: true } as AgentMessage,
+			],
+		);
+
+		expect(outline(projection.turn)).toEqual(["root", "  child"]);
+	});
+
 	it("treats a steering message as part of the turn it interrupts", () => {
 		const projection = project(
 			[agent("before", { parentToolCallId: "c1" }), agent("after", { parentToolCallId: "c2" })],

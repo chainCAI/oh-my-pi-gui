@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { SessionInfo } from "../../../shared/ipc-types";
 import { useSidebarRecency } from "../../hooks/use-sidebar-recency";
 import { I18nProvider } from "../../lib/i18n";
+import { useAgentPagesStore } from "../../stores/agent-pages";
 import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { useTabsStore } from "../../stores/tabs";
@@ -203,6 +204,7 @@ afterEach(async () => {
 	useSessionStore.getState().reset();
 	useTabsStore.getState().reset();
 	useSidebarPrefs.getState().reset();
+	useAgentPagesStore.getState().reset();
 	useUiStore.setState({
 		panelVisible: false,
 		sessionPickerOpen: false,
@@ -596,6 +598,44 @@ describe("Sidebar menus and pinned ordering", () => {
 			worktree: undefined,
 		});
 		expect(omp.sessions.openInNewWindow).not.toHaveBeenCalled();
+	});
+
+	it("brings a background tab back from its agent page, found by its session file", async () => {
+		const omp = installMockOmp(LIST);
+		seedStores();
+		// Main reports a tab's session file at once; the sidecar's id comes later.
+		useTabsStore.setState({
+			tabs: [
+				{ id: "t0", cwd: "/work/alpha", status: "ready", kind: "agent", unreadDone: false },
+				{
+					id: "t1",
+					cwd: "/work/alpha",
+					status: "ready",
+					kind: "agent",
+					unreadDone: false,
+					sessionPath: "/work/alpha/two.jsonl",
+				},
+			],
+			activeTabId: "t0",
+			bundles: new Map(),
+		});
+		useAgentPagesStore.setState({ pages: { t1: [{ agentId: "a1", pinned: false }] }, shown: { t1: "a1" } });
+		const originalSwitch = useTabsStore.getState().switchTab;
+		const switchTab = vi.fn(async (_id: string) => {});
+		useTabsStore.setState({ switchTab });
+		try {
+			await mount(<Sidebar />);
+			const row = [...document.querySelectorAll('div[role="button"]')].find(el =>
+				(el.textContent ?? "").includes("Session /work/alpha/two"),
+			);
+			await fire(row as unknown as Element, "onClick");
+
+			expect(useAgentPagesStore.getState().shown.t1).toBeNull();
+			expect(switchTab).toHaveBeenCalledWith("t1");
+			expect(omp.tabs.spawn).not.toHaveBeenCalled();
+		} finally {
+			useTabsStore.setState({ switchTab: originalSwitch });
+		}
 	});
 
 	it("keeps chats visible in their global section and creates one from the adjacent quick action", async () => {

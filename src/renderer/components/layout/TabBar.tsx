@@ -252,13 +252,19 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 	const [tabMenu, setTabMenu] = useState<{ anchor: ContextMenuAnchor; tabId: string } | null>(null);
 	const tabOrder = useMemo(() => tabs.map(tab => tab.id), [tabs]);
 
-	// Keep the focused chip in view when it changes or the strip grows past the
-	// window (a new tab lands at the end).
-	// biome-ignore lint/correctness/useExhaustiveDependencies: tab count changes the strip's scroll extent.
+	// Keep the selected chip in view when it changes or the strip grows past the
+	// window (a new tab lands at the end). A shown agent page selects its own
+	// chip; its session's chip comes in first, so the page never shows without
+	// the session it belongs to.
+	const shownPage = useAgentPagesStore(s => (activeTabId ? (s.shown[activeTabId] ?? null) : null));
+	const pageCount = useAgentPagesStore(s => (activeTabId ? (s.pages[activeTabId]?.length ?? 0) : 0));
+	// biome-ignore lint/correctness/useExhaustiveDependencies: tab and page counts change the strip's scroll extent.
 	useEffect(() => {
 		if (!activeTabId) return;
-		document.getElementById(`omp-tab-${activeTabId}`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-	}, [activeTabId, tabs.length]);
+		const nearest = { block: "nearest", inline: "nearest" } as const;
+		document.getElementById(`omp-tab-${activeTabId}`)?.scrollIntoView?.(nearest);
+		if (shownPage) document.getElementById(`omp-tab-${activeTabId}-agent-${shownPage}`)?.scrollIntoView?.(nearest);
+	}, [activeTabId, shownPage, tabs.length, pageCount]);
 
 	useEffect(() => {
 		if (!armedCloseTab) return;

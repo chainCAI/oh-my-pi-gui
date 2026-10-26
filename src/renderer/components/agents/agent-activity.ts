@@ -75,6 +75,8 @@ export function subagentTurnMembers(
 			members.add(agent.id);
 			continue;
 		}
+		// Climb to the topmost known agent. The agent names the main session as a
+		// parent too ("Main"), so a parent that isn't a known agent ends the climb.
 		let root = agent;
 		const seen = new Set<string>([agent.id]);
 		while (root.parentSubagentId) {
@@ -83,9 +85,7 @@ export function subagentTurnMembers(
 			seen.add(parent.id);
 			root = parent;
 		}
-		if (!root.parentSubagentId && root.parentToolCallId && turnCallIds.has(root.parentToolCallId)) {
-			members.add(agent.id);
-		}
+		if (root.parentToolCallId && turnCallIds.has(root.parentToolCallId)) members.add(agent.id);
 	}
 	return members;
 }
