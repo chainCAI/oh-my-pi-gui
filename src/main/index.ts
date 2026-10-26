@@ -14,7 +14,7 @@ import { installQuitGuard, requestQuit } from "./app-quit";
 import { BrowserHost } from "./browser-host";
 import { bundledOmpFilename, resolveOmpCandidate } from "./bundled-omp-path";
 import { type ConversationIndex, openConversationIndex } from "./conversation-index";
-import { setupDeepLinks } from "./deep-link";
+import { setupDeepLinks, startupFolder } from "./deep-link";
 import { ensureDefaultWorkspace } from "./default-workspace";
 import { applyGpuFallbackIfNeeded, handleGpuProcessGone } from "./gpu-fallback";
 import { firstUsableCwd } from "./initial-cwd";
@@ -138,13 +138,8 @@ function prefsStore(): Store<MainPrefs> {
 	return mainPrefsStore;
 }
 
-function resolveExplicitStartupCwd(): string | undefined {
-	const explicitCwd = process.argv[2];
-	return explicitCwd && existsSync(explicitCwd) ? explicitCwd : undefined;
-}
-
 function resolveInitialCwd(): string {
-	const explicitCwd = resolveExplicitStartupCwd();
+	const explicitCwd = startupFolder();
 	if (explicitCwd) return explicitCwd;
 	return firstUsableCwd([prefsStore().get("lastProject"), process.cwd()]) ?? homedir();
 }
@@ -340,7 +335,7 @@ app.whenReady().then(() => {
 	windowManager = new WindowManager();
 
 	const initialCwd = resolveInitialCwd();
-	const explicitStartupCwd = resolveExplicitStartupCwd();
+	const explicitStartupCwd = startupFolder();
 	const bundledOmp = resolveBundledOmp();
 	const sourceCli = resolveSourceCli();
 	// Finder-launched omp has no terminal, and a sidecar that dies before

@@ -5,7 +5,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { app } from "electron";
 import { type DeepLinkPayload, IPC_EVENTS } from "../shared/ipc-types";
-import { parseLaunchArgv } from "./launch-argv";
+import { launchArguments, launchFolder, parseLaunchArgv } from "./launch-argv";
 import type { SpawnWindow, WindowManager } from "./window";
 
 const PROTOCOL = "omp";
@@ -34,6 +34,11 @@ app.on("open-file", (event, path) => {
 	else filesBeforeSetup.push(path);
 });
 
+/** The workspace this launch was pointed at (`omp ~/code/x`), if any. */
+export function startupFolder(): string | undefined {
+	return launchFolder(process.argv, process.defaultApp, PROTOCOL);
+}
+
 export function setupDeepLinks(windowManager: WindowManager, spawnWindow: SpawnWindow): void {
 	// Register as default protocol handler (Windows/Linux)
 	if (process.defaultApp && process.argv.length >= 2) {
@@ -51,9 +56,7 @@ export function setupDeepLinks(windowManager: WindowManager, spawnWindow: SpawnW
 	// over its argv. Only omp:// URLs used to be read, so a workspace path was
 	// dropped and the launch did nothing at all.
 	app.on("second-instance", (_event, argv) => {
-		// In dev, argv[0] is Electron and argv[1] the app directory — both real
-		// directories that would otherwise be mistaken for the requested one.
-		const request = parseLaunchArgv(argv.slice(process.defaultApp ? 2 : 1), PROTOCOL);
+		const request = parseLaunchArgv(launchArguments(argv, process.defaultApp), PROTOCOL);
 		if (request.kind === "url") handleDeepLink(request.url, windowManager, spawnWindow);
 		else if (request.kind === "path") handleOpenPath(request.path, windowManager, spawnWindow);
 		else windowManager.getTargetWindow()?.focus();
