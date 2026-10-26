@@ -2,6 +2,8 @@
  * Agents under their session in the sidebar (plan/24 §3.1, §5.3): this
  * turn's agents of a session open in a tab, at most five rows, then a line
  * that says how many more there are and how many of them work or failed.
+ * When this turn spawned none, the session's earlier agents stay one click
+ * away: the row keeps its arrow and count, closed until you open it.
  *
  * The scope renders the session row through a render prop, so the row can
  * carry the disclosure chevron and the collapsed count pill.
@@ -28,7 +30,7 @@ const MAX_LEVEL = 2;
 const INDENT = 14;
 
 export interface SidebarAgentsInfo {
-	/** This turn's agents, without context rows. */
+	/** The agents listed, without context rows: this turn's, or every earlier one when this turn has none. */
 	count: number;
 	working: boolean;
 	expanded: boolean;
@@ -76,13 +78,15 @@ function SessionAgents({
 	const projection = useAgentProjection();
 	const stored = useSidebarAgentsStore(state => state.expanded[sessionKey]);
 	const shownPage = useAgentPagesStore(state => state.shown[tabId] ?? null);
-	const count = projection.turnCount;
-	// The first time a session has agents in view, it opens.
+	const thisTurn = projection.turnCount > 0;
+	const rows = thisTurn ? projection.turn : projection.all;
+	const count = thisTurn ? projection.turnCount : projection.allCount;
+	// The first time a session has this turn's agents in view, it opens.
 	useEffect(() => {
-		if (count > 0 && stored === undefined) setExpanded(sessionKey, true);
-	}, [count, sessionKey, stored]);
-	const expanded = stored ?? count > 0;
-	const working = projection.turn.some(row => !row.context && row.activity === "working");
+		if (thisTurn && stored === undefined) setExpanded(sessionKey, true);
+	}, [thisTurn, sessionKey, stored]);
+	const expanded = stored ?? thisTurn;
+	const working = rows.some(row => !row.context && row.activity === "working");
 	const info = useMemo<SidebarAgentsInfo | null>(
 		() =>
 			count === 0
@@ -99,7 +103,7 @@ function SessionAgents({
 	return (
 		<>
 			{children(info)}
-			{info?.expanded && <SidebarAgentRows rows={projection.turn} shownPage={shownPage} tabId={tabId} />}
+			{info?.expanded && <SidebarAgentRows rows={rows} shownPage={shownPage} tabId={tabId} />}
 		</>
 	);
 }
