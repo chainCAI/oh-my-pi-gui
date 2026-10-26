@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [0.9.28] - 2026-10-26
+
+### Added
+
+- **Subagent pages**: click a subagent anywhere to open its page in a tab beside its session. It shows the agent's conversation, live while it works, with Stop, Revive, Open beside and Keep open, and the title bar shows its parents, status and facts. A page only reads: it never acts on the session.
+- **Agents in the sidebar**: each open session lists this turn's agents under its row, background tabs included: five at most, then a count of the hidden working and failed ones. Once a later turn starts none, the session keeps its earlier agents behind a closed arrow with a count. Resting on an agent row shows its status, current step and last steps.
+- **Agents tab in the right drawer**: this turn's agents or all of them, as a list or a graph, with pause, stop and expand, and a dot for a working agent or an unseen failure.
+
+### Fixed
+
+- Closing a session and reopening it keeps its agents, with their names, outcome, model, tokens and conversations, and its "Todos updated" rows. An agent still running when the session closed shows as aborted.
+- Finished agents no longer vanish from the sidebar, and parked agents no longer count as running.
+- Launching the installed app with a folder (`omp ~/code/x`, or `open -a omp --args ~/code/x`) opens that folder instead of Work mode.
+- On a fresh profile, new sessions appear in the sidebar without a restart.
+- Deleting a session no longer leaves an empty "Untitled" row in its place.
+- Pressing Escape at the "Close tab?" prompt for a running tab no longer stops the run it was protecting.
+- A split pane's ✕ removes that pane instead of the other one.
+- Clicking a session's row while one of its agent pages is shown returns to the conversation.
+
+### Changed
+
+- A session's menu has one Open action; "Open in new tab" and the hover + are gone.
+- Bundled agent rebuilt from monorepo `79e6760b`: upstream main has no new commits since 0.9.27 (still past v18.12.6), plus the fork's RPC queue fix and the saved subagents of reopened sessions.
+
 ## [0.9.27] - 2026-10-25
 
 ### Added
