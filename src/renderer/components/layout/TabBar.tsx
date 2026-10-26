@@ -32,6 +32,7 @@ import {
 import { useSessionList } from "../../hooks/use-session-list";
 import { basename, cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
+import { onEscape } from "../../lib/keymap";
 import { sessionHasContent } from "../../lib/session-title";
 import { scrollStripOnWheel } from "../../lib/strip-scroll";
 import { type LiveTabRuntime, performTabClose, tabNeedsCloseConfirm } from "../../lib/tab-close";
@@ -269,7 +270,16 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 	useEffect(() => {
 		if (!armedCloseTab) return;
 		const timer = window.setTimeout(cancelCloseTab, confirmCloseMs);
-		return () => window.clearTimeout(timer);
+		// Escape backs out of the close, and must claim the key: unclaimed, App
+		// aborts the active turn — the very run the confirm is protecting.
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (!event.defaultPrevented && onEscape(event, cancelCloseTab)) event.stopPropagation();
+		};
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => {
+			window.clearTimeout(timer);
+			window.removeEventListener("keydown", onKeyDown, true);
+		};
 	}, [armedCloseTab, cancelCloseTab, confirmCloseMs]);
 
 	// The untargeted startup chat is an idle landing surface, not a permanent

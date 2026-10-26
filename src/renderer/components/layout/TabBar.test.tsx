@@ -659,6 +659,23 @@ describe("TabBar close confirm", () => {
 		expect(chips()[1]?.querySelector('[aria-label="Close tab"]')).not.toBeNull();
 	});
 
+	it("Escape cancels the armed close and claims the key, so the run it protects keeps going", async () => {
+		seedRunning();
+		await mount(<TabBar />);
+		await click(chips()[1]!.querySelector('[aria-label="Close tab"]')!);
+
+		// App stops the active run on any Escape nobody claimed.
+		const keydown = Object.assign(new Event("keydown", { cancelable: true }), { key: "Escape" });
+		await act(async () => {
+			window.dispatchEvent(keydown);
+		});
+
+		expect(keydown.defaultPrevented).toBe(true);
+		expect(useUiStore.getState().armedCloseTab).toBeNull();
+		expect(chips()[1]?.querySelector('[aria-label="Close tab"]')).not.toBeNull();
+		expect(omp.tabs.close).not.toHaveBeenCalled();
+	});
+
 	it("the armed close auto-cancels after the timeout", async () => {
 		// Real timers + a short injected window (bun-test compatible).
 		seedRunning();
