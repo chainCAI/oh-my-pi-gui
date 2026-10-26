@@ -28,7 +28,8 @@ async function writeSession(dir: string, id: string, kind?: "chat"): Promise<str
 		cwd: dir,
 		...(kind ? { kind } : {}),
 	};
-	await fs.writeFile(file, `${slot}${JSON.stringify(header)}\n`);
+	const message = { type: "message", message: { role: "user", content: `hello ${id}` } };
+	await fs.writeFile(file, `${slot}${JSON.stringify(header)}\n${JSON.stringify(message)}\n`);
 	return file;
 }
 
@@ -70,7 +71,7 @@ describe("SessionIndex cache scope", () => {
 
 		const first = await index.list("global");
 		const quietBefore = row(first, "quiet");
-		expect(row(first, "growing")?.messageCount).toBe(0);
+		expect(row(first, "growing")?.messageCount).toBe(1);
 
 		await fs.appendFile(
 			growing,
@@ -79,11 +80,31 @@ describe("SessionIndex cache scope", () => {
 		const second = await index.list("global");
 
 		// The written file's row is a fresh parse…
-		expect(row(second, "growing")?.messageCount).toBe(1);
+		expect(row(second, "growing")?.messageCount).toBe(2);
 		// …and the untouched one is the very same object, which is only true if it
 		// was never re-stat'ed or re-parsed. One append used to invalidate every
 		// entry whose key merely contained a path.
 		expect(row(second, "quiet")).toBe(quietBefore);
+	});
+});
+
+describe("SessionIndex empty sessions", () => {
+	it("lists a session only once something was said in it", async () => {
+		const { index, dir } = await makeIndex();
+		await writeSession(dir, "kept");
+		// What a tab leaves on disk when its session is deleted and it starts a
+		// fresh one: a header and a thinking-level entry, no messages.
+		const file = path.join(dir, "project-x", "fresh.jsonl");
+		const header = { type: "session", version: 3, id: "fresh", timestamp: new Date().toISOString(), cwd: dir };
+		await fs.writeFile(
+			file,
+			`${JSON.stringify({ type: "title", v: 1, title: "" })}\n${JSON.stringify(header)}\n${JSON.stringify({ type: "thinking_level_change", thinkingLevel: "off" })}\n`,
+		);
+
+		expect((await index.list("global")).map(info => info.id)).toEqual(["kept"]);
+
+		await fs.appendFile(file, `${JSON.stringify({ type: "message", message: { role: "user", content: "hi" } })}\n`);
+		expect((await index.list("global")).map(info => info.id).sort()).toEqual(["fresh", "kept"]);
 	});
 });
 

@@ -107,6 +107,11 @@ export class SessionIndex {
 		const localCwd = cwd !== undefined ? resolve(cwd) : this.#cwd;
 		const infos = parsed.filter((info): info is SessionInfo => {
 			if (!info) return false;
+			// Nothing said yet: a fresh session, or the one a tab starts after its
+			// session is deleted. The agent may write its file early (a thinking
+			// level entry), but it gets no row until it has a message, just like a
+			// new tab. Only judged when the tail read covered the whole file.
+			if (info.messageCount === 0 && !info.title && info.size <= TAIL_BYTES) return false;
 			return scope === "global" || (info.cwd != null && resolve(info.cwd) === localCwd);
 		});
 
