@@ -68,6 +68,10 @@ function SessionPane({ tabId, split, label }: { tabId: string; split: boolean; l
 	const active = useTabsStore(state => state.activeTabId === tabId);
 	const switchTab = useTabsStore(state => state.switchTab);
 	const unsplit = useTabsStore(state => state.unsplit);
+	// The pane's ✕ takes this session out of the split: the other pane stays.
+	const otherPane = useTabsStore(state =>
+		state.split ? (state.split.firstTabId === tabId ? state.split.secondTabId : state.split.firstTabId) : null,
+	);
 	if (!tab) return null;
 	const running = tab.status === "running" || tab.compacting === true;
 	const signalActive = running || tab.status === "starting" || tab.status === "restarting";
@@ -86,8 +90,9 @@ function SessionPane({ tabId, split, label }: { tabId: string; split: boolean; l
 			<section
 				aria-label={t("split.paneLabel", { title: label })}
 				data-active={active ? "true" : "false"}
-				onPointerDownCapture={() => {
-					if (!active) void switchTab(tabId);
+				onPointerDownCapture={event => {
+					// Pressing the pane's ✕ removes it; focusing it first would only flash.
+					if (!active && !(event.target as Element).closest("[data-pane-remove]")) void switchTab(tabId);
 				}}
 				className={cx(
 					"omp-session-pane relative flex min-h-0 min-w-0 flex-col overflow-hidden",
@@ -105,7 +110,8 @@ function SessionPane({ tabId, split, label }: { tabId: string; split: boolean; l
 						<span className="omp-session-pane-cwd max-w-[45%] truncate text-[var(--omp-dim)]">{tab.cwd}</span>
 						<button
 							type="button"
-							onClick={() => void unsplit(tabId)}
+							data-pane-remove
+							onClick={() => void unsplit(otherPane ?? tabId)}
 							aria-label={t("split.removePane")}
 							title={t("split.removePane")}
 							className="omp-pressable flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]"
