@@ -14,16 +14,11 @@ import { type SubagentsStore, useSubagentsStore } from "../../stores/subagents";
 import {
 	buildSubagentList,
 	extractTaskToolCallIds,
+	inSpawnOrder,
 	type SubagentListRow,
 	useSubagentGraphStore,
 } from "../panels/subagent-graph";
-import {
-	type AgentTreeRow,
-	buildAgentTree,
-	latestTurnToolCallIds,
-	subagentActivity,
-	subagentTurnMembers,
-} from "./agent-activity";
+import { type AgentTreeRow, buildAgentTree, latestTurn, subagentActivity, subagentTurnMembers } from "./agent-activity";
 
 export type AgentScope = "turn" | "all";
 
@@ -50,12 +45,12 @@ export interface AgentProjectionInput {
 }
 
 export function projectAgents(input: AgentProjectionInput): AgentProjection {
-	const agents = [...input.subagents.values()].sort((a, b) => a.index - b.index);
+	const agents = inSpawnOrder(input.subagents.values());
 	const rootToolCallIds = new Set([...extractTaskToolCallIds(input.messages), ...input.streamingToolCallIds]);
 	const rows = buildSubagentList(agents, rootToolCallIds, input.toolCallOwners);
-	const turnCallIds = latestTurnToolCallIds(input.messages);
-	for (const id of input.streamingToolCallIds) turnCallIds.add(id);
-	const members = subagentTurnMembers(agents, turnCallIds);
+	const turnScope = latestTurn(input.messages);
+	for (const id of input.streamingToolCallIds) turnScope.toolCallIds.add(id);
+	const members = subagentTurnMembers(rows, turnScope);
 	const turn = buildAgentTree(rows, members);
 	const all = buildAgentTree(rows, null);
 	let working = 0;

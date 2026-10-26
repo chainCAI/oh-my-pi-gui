@@ -32,6 +32,7 @@ import {
 	buildSubagentList,
 	extractTaskToolCallIds,
 	formatElapsed,
+	inSpawnOrder,
 	isLiveSubagentStatus,
 	statusMeta,
 	subagentElapsedMs,
@@ -200,7 +201,7 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [view, setView] = useState<PanelView>("list");
 
-	const agents = useMemo(() => [...subagents.values()].sort((a, b) => a.index - b.index), [subagents]);
+	const agents = useMemo(() => inSpawnOrder(subagents.values()), [subagents]);
 	const hasRunning = agents.some(agent => isLiveSubagentStatus(agent.status));
 	const runningCount = agents.filter(agent => subagentActivity(agent) === "working").length;
 	const now = useNowTick(hasRunning);

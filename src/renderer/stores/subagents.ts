@@ -68,6 +68,7 @@ function mergeFetchedSnapshot(fresh: SubagentNode, prev: SubagentNode): Subagent
 		description: fresh.description ?? prev.description,
 		progress: fresh.progress ?? prev.progress,
 		sessionFile: fresh.sessionFile ?? prev.sessionFile,
+		spawnedAt: fresh.spawnedAt ?? prev.spawnedAt,
 	};
 }
 
@@ -97,6 +98,8 @@ export const createSubagentsStore = (command: TabCommand = activeTabCommand) => 
 						assignment: existing?.assignment,
 						sessionFile: p.sessionFile ?? existing?.sessionFile,
 						lastUpdate: Date.now(),
+						// The sidecar stamps rows it lists; a start seen live is stamped here.
+						spawnedAt: existing?.spawnedAt ?? (p.status === "started" ? Date.now() : undefined),
 						parentToolCallId: p.parentToolCallId ?? existing?.parentToolCallId,
 						parentSubagentId: p.parentSubagentId ?? existing?.parentSubagentId,
 						progress: existing?.progress,
@@ -123,6 +126,7 @@ export const createSubagentsStore = (command: TabCommand = activeTabCommand) => 
 						assignment: frame.payload.assignment ?? existing?.assignment,
 						sessionFile: frame.payload.sessionFile ?? existing?.sessionFile,
 						lastUpdate: Date.now(),
+						spawnedAt: existing?.spawnedAt,
 						parentToolCallId: frame.payload.parentToolCallId ?? existing?.parentToolCallId,
 						parentSubagentId: frame.payload.parentSubagentId ?? existing?.parentSubagentId,
 						kind: existing?.kind ?? "sub",
@@ -162,27 +166,23 @@ export const createSubagentsStore = (command: TabCommand = activeTabCommand) => 
 					return;
 				}
 				const current = get().subagents;
-				const fetched = new Set<string>();
-				const subagents = new Map<string, SubagentNode>();
+				const fetched = new Map<string, SubagentNode>();
 				for (const snap of data.subagents) {
 					const normalized = normalizeSnapshot(snap);
-					fetched.add(normalized.id);
-					const prev = current.get(normalized.id);
-					subagents.set(
-						normalized.id,
-						prev && prev !== before.get(normalized.id)
-							? prev
-							: prev
-								? mergeFetchedSnapshot(normalized, prev)
-								: normalized,
-					);
+					fetched.set(normalized.id, normalized);
 				}
-				// Terminal rows the server has forgotten survive the merge — see the
-				// refresh docstring (RPC registry deletes completed/failed agents).
+				// Known rows keep their place: the roster reads this map's order as
+				// spawn order, and a poll must not reshuffle it. New rows follow in
+				// the server's order, which is spawn order too.
+				const subagents = new Map<string, SubagentNode>();
 				for (const [id, node] of current) {
-					if (!fetched.has(id) && (!LIVE_STATUSES[node.status] || node !== before.get(id)))
-						subagents.set(id, node);
+					const fresh = fetched.get(id);
+					if (fresh) subagents.set(id, node !== before.get(id) ? node : mergeFetchedSnapshot(fresh, node));
+					// Terminal rows the server has forgotten survive the merge — see the
+					// refresh docstring (RPC registry deletes completed/failed agents).
+					else if (!LIVE_STATUSES[node.status] || node !== before.get(id)) subagents.set(id, node);
 				}
+				for (const [id, fresh] of fetched) if (!subagents.has(id)) subagents.set(id, fresh);
 				set({ subagents, error: null });
 			} catch (cause) {
 				// Best-effort poll: frames + hydration remain authoritative. The

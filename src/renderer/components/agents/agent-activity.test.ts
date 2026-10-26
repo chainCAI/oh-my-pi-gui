@@ -4,12 +4,22 @@
  * working, drops a working one from This turn, or hides a failure.
  */
 
-import { describe, expect, it } from "vitest";
-import type { AgentMessage, AgentProgress, SubagentSnapshot } from "../../../shared/rpc-types";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+	AgentMessage,
+	AgentProgress,
+	SubagentLifecyclePayload,
+	SubagentSnapshot,
+} from "../../../shared/rpc-types";
+import { createSubagentsStore } from "../../stores/subagents";
 import { type AgentTreeRow, agentNowLine, cutAgentTree, subagentActivity, visibleTreeRows } from "./agent-activity";
 import { projectAgents } from "./use-agent-tree";
 
 let nextIndex = 0;
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
 
 function agent(id: string, overrides: Partial<SubagentSnapshot> = {}): SubagentSnapshot {
 	return { id, index: nextIndex++, agent: "explore", status: "completed", lastUpdate: 1, ...overrides };
@@ -38,6 +48,10 @@ function user(text: string, steering = false): AgentMessage {
 	return { role: "user", content: text, ...(steering ? { steering: true } : {}) } as AgentMessage;
 }
 
+function userAt(text: string, timestamp: number): AgentMessage {
+	return { role: "user", content: text, timestamp } as AgentMessage;
+}
+
 function task(callId: string): AgentMessage {
 	return {
 		role: "assistant",
@@ -45,12 +59,17 @@ function task(callId: string): AgentMessage {
 	} as AgentMessage;
 }
 
-function project(agents: SubagentSnapshot[], messages: AgentMessage[], streaming: string[] = []) {
+function project(
+	agents: SubagentSnapshot[],
+	messages: AgentMessage[],
+	streaming: string[] = [],
+	toolCallOwners: ReadonlyMap<string, string> = new Map(),
+) {
 	return projectAgents({
 		subagents: new Map(agents.map(entry => [entry.id, entry])),
 		messages,
 		streamingToolCallIds: streaming,
-		toolCallOwners: new Map(),
+		toolCallOwners,
 	});
 }
 
@@ -139,6 +158,53 @@ describe("This turn", () => {
 		expect(projection.turn[0]).toMatchObject({ descendants: 1, workingBelow: true });
 	});
 
+	it("keeps an agent spawned this turn after it finishes, even under an agent from an earlier turn", () => {
+		const subagents = createSubagentsStore();
+		// Rows read back from the sidecar carry the time they spawned.
+		subagents
+			.getState()
+			.setSnapshots([
+				agent("lead", { parentToolCallId: "c-old", spawnedAt: 1_000 }),
+				agent("old-helper", { parentSubagentId: "lead", parentToolCallId: "c-lead-1", spawnedAt: 1_500 }),
+			]);
+		// The lead, woken this turn, spawns a helper that finishes before the turn ends.
+		const lifecycle = (status: SubagentLifecyclePayload["status"]) =>
+			subagents.getState().applyFrame({
+				type: "subagent_lifecycle",
+				payload: {
+					id: "helper",
+					index: 0,
+					agent: "explore",
+					agentSource: "bundled",
+					status,
+					parentToolCallId: "c-lead-2",
+					parentSubagentId: "lead",
+				},
+			});
+		vi.spyOn(Date, "now").mockReturnValue(2_500);
+		lifecycle("started");
+		lifecycle("completed");
+
+		const projection = project(
+			[...subagents.getState().subagents.values()],
+			[userAt("first", 900), task("c-old"), userAt("second", 2_000)],
+		);
+
+		expect(outline(projection.turn)).toEqual(["lead (context)", "  helper"]);
+	});
+
+	it("follows a nested agent to its parent through the call that spawned it", () => {
+		// No parent id on the wire: the parent's transcript says whose call it was.
+		const projection = project(
+			[agent("lead", { parentToolCallId: "c" }), agent("helper", { parentToolCallId: "c-lead" })],
+			[user("go"), task("c")],
+			[],
+			new Map([["c-lead", "lead"]]),
+		);
+
+		expect(outline(projection.turn)).toEqual(["lead", "  helper"]);
+	});
+
 	it("orders siblings by activity: working, then waiting, failed, done", () => {
 		const projection = project(
 			[
@@ -153,6 +219,29 @@ describe("This turn", () => {
 		expect(outline(projection.turn)).toEqual(["working", "waiting", "failed", "done"]);
 		// All keeps spawn order, so rows don't jump while you scan every agent.
 		expect(outline(projection.all)).toEqual(["done", "failed", "waiting", "working"]);
+	});
+});
+
+describe("All", () => {
+	it("lists each task call's agents together, in the order the calls spawned them", () => {
+		// `index` is an agent's place within its own call, so every call counts from 0.
+		const projection = project(
+			[
+				agent("a0", { parentToolCallId: "c1", index: 0 }),
+				agent("a1", { parentToolCallId: "c1", index: 1 }),
+				agent("b0", { parentToolCallId: "c2", index: 0 }),
+				agent("b1", { parentToolCallId: "c2", index: 1 }),
+				agent("b0-x0", { parentSubagentId: "b0", parentToolCallId: "c-b0-1", index: 0 }),
+				agent("b0-x1", { parentSubagentId: "b0", parentToolCallId: "c-b0-1", index: 1 }),
+				agent("b0-y0", { parentSubagentId: "b0", parentToolCallId: "c-b0-2", index: 0 }),
+			],
+			[user("go"), task("c1"), task("c2")],
+		);
+		const spawnOrder = ["a0", "a1", "b0", "  b0-x0", "  b0-x1", "  b0-y0", "b1"];
+
+		expect(outline(projection.all)).toEqual(spawnOrder);
+		// Equally active siblings in This turn keep the same order.
+		expect(outline(projection.turn)).toEqual(spawnOrder);
 	});
 });
 

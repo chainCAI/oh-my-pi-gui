@@ -9,6 +9,7 @@
  */
 
 import type { AgentMessage, SubagentSnapshot } from "../../../shared/rpc-types";
+import { messageTimestampMs } from "../../lib/message-identity";
 import type { SubagentListRow } from "../panels/subagent-graph";
 
 export type SubagentActivity = "working" | "waiting" | "failed" | "done" | "stopped";
@@ -38,54 +39,53 @@ function isTurnStart(message: AgentMessage): boolean {
 	return message.role === "user" && !message.steering;
 }
 
+export interface LatestTurn {
+	/** Tool calls the turn made, including the streaming message's. */
+	toolCallIds: Set<string>;
+	/** When the turn's user message was sent; null when no loaded message starts it. */
+	startedAt: number | null;
+}
+
 /**
- * Ids of the tool calls the latest turn made: everything after the last user
- * message (steering stays inside its turn), including the streaming message.
+ * The latest turn: everything after the last user message (steering stays
+ * inside its turn), including the streaming message.
  */
-export function latestTurnToolCallIds(messages: readonly AgentMessage[]): Set<string> {
-	const ids = new Set<string>();
+export function latestTurn(messages: readonly AgentMessage[]): LatestTurn {
+	const toolCallIds = new Set<string>();
 	let start = 0;
+	let startedAt: number | null = null;
 	for (let index = messages.length - 1; index >= 0; index--) {
-		if (isTurnStart(messages[index]!)) {
+		const message = messages[index]!;
+		if (isTurnStart(message)) {
 			start = index + 1;
+			startedAt = messageTimestampMs(message) || null;
 			break;
 		}
 	}
 	for (let index = start; index < messages.length; index++) {
 		const message = messages[index]!;
 		if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
-		for (const part of message.content) if (part.type === "toolCall") ids.add(part.id);
+		for (const part of message.content) if (part.type === "toolCall") toolCallIds.add(part.id);
 	}
-	return ids;
+	return { toolCallIds, startedAt };
 }
 
 /**
- * Agents that belong to the latest turn. A root agent belongs when its
- * spawning tool call is in the turn; a nested agent follows its root. Any
- * agent still working belongs too, whatever turn spawned it.
+ * Agents that belong to the latest turn: those spawned since it started,
+ * whoever spawned them, and every agent under a top-level agent the turn's
+ * own tool calls spawned. Any agent still working belongs too, whatever turn
+ * spawned it. `rows` is the spawn-order tree, so nesting follows the same
+ * parent links the roster draws.
  */
-export function subagentTurnMembers(
-	agents: readonly SubagentSnapshot[],
-	turnCallIds: ReadonlySet<string>,
-): Set<string> {
-	const byId = new Map(agents.map(agent => [agent.id, agent]));
+export function subagentTurnMembers(rows: readonly SubagentListRow[], turn: LatestTurn): Set<string> {
 	const members = new Set<string>();
-	for (const agent of agents) {
-		if (subagentActivity(agent) === "working") {
-			members.add(agent.id);
-			continue;
-		}
-		// Climb to the topmost known agent. The agent names the main session as a
-		// parent too ("Main"), so a parent that isn't a known agent ends the climb.
-		let root = agent;
-		const seen = new Set<string>([agent.id]);
-		while (root.parentSubagentId) {
-			const parent = byId.get(root.parentSubagentId);
-			if (!parent || seen.has(parent.id)) break;
-			seen.add(parent.id);
-			root = parent;
-		}
-		if (root.parentToolCallId && turnCallIds.has(root.parentToolCallId)) members.add(agent.id);
+	let underTurnRoot = false;
+	for (const { agent, depth } of rows) {
+		if (depth === 0)
+			underTurnRoot = agent.parentToolCallId !== undefined && turn.toolCallIds.has(agent.parentToolCallId);
+		const spawnedThisTurn =
+			turn.startedAt !== null && agent.spawnedAt !== undefined && agent.spawnedAt >= turn.startedAt;
+		if (underTurnRoot || spawnedThisTurn || subagentActivity(agent) === "working") members.add(agent.id);
 	}
 	return members;
 }
@@ -144,8 +144,9 @@ export function buildAgentTree(rows: readonly SubagentListRow[], members: Readon
 		ranks.set(node, best);
 		return best;
 	};
+	// The sort is stable, so equal ranks keep the rows' spawn order.
 	const sortSiblings = (nodes: TreeNode[]): void => {
-		if (members) nodes.sort((a, b) => ranks.get(a)! - ranks.get(b)! || a.agent.index - b.agent.index);
+		if (members) nodes.sort((a, b) => ranks.get(a)! - ranks.get(b)!);
 		for (const node of nodes) sortSiblings(node.children);
 	};
 	if (members) for (const node of kept) rankOf(node);

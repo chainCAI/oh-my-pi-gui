@@ -1793,6 +1793,8 @@ export interface SubagentSnapshot {
 	assignment?: string;
 	sessionFile?: string;
 	lastUpdate: number;
+	/** When the agent first started, ms since the epoch; a revival keeps the first start. */
+	spawnedAt?: number;
 	progress?: AgentProgress;
 	parentToolCallId?: string;
 	/** Present when spawned by another subagent (absent = root spawn from main session). */

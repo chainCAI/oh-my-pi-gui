@@ -157,6 +157,26 @@ export function subagentPrimaryLabel(agent: SubagentSnapshot, maxLength = 60): s
 	return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
+/**
+ * Agents in spawn order: each spawning call's agents together, calls in the
+ * order the first of their agents arrived, then by position within the call.
+ * `index` alone is per call, so sorting on it interleaves separate calls.
+ * Pass agents in arrival order (the subagents store keeps it).
+ */
+export function inSpawnOrder(agents: Iterable<SubagentSnapshot>): SubagentSnapshot[] {
+	const callRank = new Map<string, number>();
+	const keyed = [...agents].map(agent => {
+		const call = agent.parentToolCallId ?? `agent:${agent.id}`;
+		let rank = callRank.get(call);
+		if (rank === undefined) {
+			rank = callRank.size;
+			callRank.set(call, rank);
+		}
+		return { agent, rank };
+	});
+	return keyed.sort((a, b) => a.rank - b.rank || a.agent.index - b.agent.index).map(entry => entry.agent);
+}
+
 function resolveParent(
 	agent: SubagentSnapshot,
 	byId: Map<string, SubagentSnapshot>,
@@ -187,7 +207,7 @@ export function buildSubagentDag(
 	rootToolCallIds: ReadonlySet<string>,
 	toolCallOwners: ReadonlyMap<string, string>,
 ): SubagentDagLayout {
-	const sorted = [...agents].sort((a, b) => a.index - b.index);
+	const sorted = inSpawnOrder(agents);
 	const byId = new Map<string, SubagentSnapshot>();
 	for (const agent of sorted) byId.set(agent.id, agent);
 
@@ -343,6 +363,7 @@ export function buildSubagentList(
 	const layout = buildSubagentDag(agents, rootToolCallIds, toolCallOwners);
 	const agentById = new Map(agents.map(agent => [agent.id, agent]));
 	const depthById = new Map(layout.nodes.map(node => [node.id, node.depth]));
+	const spawnRank = new Map(inSpawnOrder(agents).map((agent, rank) => [agent.id, rank]));
 	const children = new Map<string, string[]>();
 	for (const edge of layout.edges) {
 		const ids = children.get(edge.parentId);
@@ -350,7 +371,7 @@ export function buildSubagentList(
 		else children.set(edge.parentId, [edge.childId]);
 	}
 	for (const ids of children.values()) {
-		ids.sort((a, b) => (agentById.get(a)?.index ?? 0) - (agentById.get(b)?.index ?? 0));
+		ids.sort((a, b) => (spawnRank.get(a) ?? 0) - (spawnRank.get(b) ?? 0));
 	}
 
 	const rows: SubagentListRow[] = [];

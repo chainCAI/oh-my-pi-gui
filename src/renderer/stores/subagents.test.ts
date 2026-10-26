@@ -87,6 +87,21 @@ describe("subagents store refresh", () => {
 		});
 	});
 
+	it("keeps rows where they were first seen, adding new ones after them", async () => {
+		// The roster reads this order as spawn order; a poll must not reshuffle it.
+		for (const id of ["zed", "amy"]) {
+			useSubagentsStore.getState().applyFrame({
+				type: "subagent_lifecycle",
+				payload: { id, index: 0, agent: "scout", agentSource: "bundled", status: "started" },
+			});
+		}
+		getSubagents.mockResolvedValueOnce(ok([snap({ id: "amy" }), snap({ id: "zed" }), snap({ id: "new" })]));
+
+		await useSubagentsStore.getState().refresh();
+
+		expect([...useSubagentsStore.getState().subagents.keys()]).toEqual(["zed", "amy", "new"]);
+	});
+
 	it("merges: keeps forgotten terminal rows, drops released live rows, updates the rest", async () => {
 		useSubagentsStore
 			.getState()

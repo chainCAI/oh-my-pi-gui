@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **All** in the Agents tab lists agents in the order they were spawned, so new agents land at the end instead of mixing in with the agents of earlier task calls ([#23](https://github.com/nornzach/oh-my-pi-gui/issues/23)).
+- **This turn** keeps every agent spawned since your last message after it finishes, including agents spawned by an agent from an earlier turn ([#23](https://github.com/nornzach/oh-my-pi-gui/issues/23)).
+
 ## [0.9.28] - 2026-10-26
 
 ### Added

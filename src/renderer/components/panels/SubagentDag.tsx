@@ -27,6 +27,7 @@ import {
 	type DagNode,
 	extractTaskToolCallIds,
 	formatElapsed,
+	inSpawnOrder,
 	isLiveSubagentStatus,
 	statusMeta,
 	subagentElapsedMs,
@@ -150,8 +151,7 @@ export function SubagentDag({
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 
 	const agents = useMemo(
-		() =>
-			[...subagents.values()].filter(agent => !include || include.has(agent.id)).sort((a, b) => a.index - b.index),
+		() => inSpawnOrder([...subagents.values()].filter(agent => !include || include.has(agent.id))),
 		[include, subagents],
 	);
 	const hasRunning = agents.some(agent => isLiveSubagentStatus(agent.status));

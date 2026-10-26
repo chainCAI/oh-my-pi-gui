@@ -26,6 +26,7 @@ import { useUiStore } from "../../stores/ui";
 import { subagentActivity } from "../agents/agent-activity";
 import { Badge, type BadgeVariant, Button, Spinner } from "../common";
 import { ContextBreakdown } from "../layout/ContextBreakdown";
+import { inSpawnOrder } from "./subagent-graph";
 
 /** Files listed in the Changes card before it points at the full view. */
 const CHANGES_PREVIEW = 6;
@@ -236,9 +237,7 @@ function RunningCard() {
 	const btwRecords = useBtwStore(state => state.records);
 	const phases = useTodoStore(state => state.phases);
 
-	const liveAgents = [...subagents.values()]
-		.filter(agent => subagentActivity(agent) === "working")
-		.sort((a, b) => a.index - b.index);
+	const liveAgents = inSpawnOrder(subagents.values()).filter(agent => subagentActivity(agent) === "working");
 	const sideQuestions = btwRecords.filter(record => getBtwLatestTurn(record).status === "running");
 	const tasks = phases.flatMap(phase => phase.tasks);
 	const doneTasks = tasks.filter(task => task.status === "completed").length;
