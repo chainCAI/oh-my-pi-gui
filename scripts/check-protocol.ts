@@ -9,8 +9,10 @@ if (!(await Bun.file(path.join(root, "packages/coding-agent/src/modes/rpc/rpc-ty
 		"Protocol verification requires the adjacent coding-agent source used to build the bundled sidecar.",
 	);
 }
+// Not named tsconfig.json: Vite would load it for every file in protocol/, and its
+// monorepo `extends` cannot resolve in a standalone GUI checkout.
 const result =
-	await $`${path.join(root, "node_modules/.bin/tsgo")} -p ${path.join(import.meta.dir, "protocol/tsconfig.json")} --noEmit`.nothrow();
+	await $`${path.join(root, "node_modules/.bin/tsgo")} -p ${path.join(import.meta.dir, "protocol/tsconfig.protocol.json")} --noEmit`.nothrow();
 
 const rendererDir = path.join(import.meta.dir, "../src/renderer");
 const rendererPaths: string[] = [];
