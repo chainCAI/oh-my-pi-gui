@@ -9,6 +9,7 @@
  * whatever its cache does not already hold, so a missed event self-heals on the
  * next refresh instead of needing a background poll.
  */
+import { mkdirSync } from "node:fs";
 import { open, readdir, rm, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { type FSWatcher, watch } from "chokidar";
@@ -60,6 +61,14 @@ export class SessionIndex {
 		// with thousands of files; watching those kept a file handle open per file
 		// (7k+ on a long-lived install) and woke the list on every artifact write.
 		const root = resolve(this.#sessionsDir);
+		// A fresh install has no sessions folder until the first agent writes one.
+		// chokidar then watches the parent and counts `depth` from there, so the
+		// session files two levels down would never be seen until a restart.
+		try {
+			mkdirSync(root, { recursive: true });
+		} catch {
+			// Unwritable home: watch what exists; `list()` still scans on every read.
+		}
 		this.#watcher = watch(this.#sessionsDir, {
 			persistent: true,
 			ignoreInitial: false,

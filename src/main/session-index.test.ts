@@ -106,6 +106,24 @@ describe("SessionIndex headers and watching", () => {
 		expect(info?.id).toBe("imported");
 	});
 
+	it("notices new sessions when the sessions folder did not exist at start", async () => {
+		// A fresh install has no sessions folder until the first agent writes one.
+		const { dir: home } = await makeIndex();
+		const dir = path.join(home, "sessions");
+		const index = new SessionIndex(dir, home);
+		let changes = 0;
+		index.onChange = () => changes++;
+		index.start();
+		try {
+			await new Promise(resolve => setTimeout(resolve, 300));
+			await writeSession(dir, "first");
+			await expect.poll(() => changes, { timeout: 4000 }).toBeGreaterThan(0);
+			expect((await index.list("global")).map(info => info.id)).toEqual(["first"]);
+		} finally {
+			index.stop();
+		}
+	});
+
 	it("watches session files without holding a handle per artifact file", async () => {
 		const { index, dir } = await makeIndex();
 		const file = await writeSession(dir, "with-artifacts");
