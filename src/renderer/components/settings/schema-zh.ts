@@ -1562,7 +1562,7 @@ export const ZH_SETTINGS: Record<string, { label: string; description?: string }
 	},
 	"display.pinnedAgents": {
 		label: "固定代理列表",
-		description: "off 隐藏固定跳转列表；collapsed 折叠显示少量行并提供展开器。",
+		description: "编辑器上方固定的活跃代理跳转列表（off 隐藏；collapsed 显示少量行并提供展开器；full 列出全部）。",
 	},
 	"display.showTurnTime": {
 		label: "显示回合耗时",

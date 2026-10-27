@@ -5,26 +5,25 @@
  * and lazily loaded transcripts (byte pagination). A List/Graph toggle in
  * the card header switches the compact spawn tree for the graphical DAG.
  *
- * Owns stream-time polling of get_subagents (moved from the ActivityStrip
- * agents chip): lifecycle/progress frames keep the store fresh while agents
- * run, but parked/idle transitions ride the AgentRegistry and emit NO wire
- * frame — without polling, a watchdog-parked agent would show "running"
- * until the next session hydration.
+ * The card shows only while an agent is working; `display.pinnedAgents`
+ * picks hidden, a summary, or the full list. Finished and parked agents stay
+ * reachable from the drawer's Agents tab, the sidebar, and agent pages. The
+ * stream-time get_subagents poll lives in the workspace dock, so a hidden
+ * card cannot stall it.
  */
 
 import { Bot, ChevronRight, List, Network } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { SubagentSnapshot } from "../../../../shared/rpc-types";
-import { useTabGuard } from "../../../hooks/use-tab-guard";
 import { cx } from "../../../lib/format";
 import { useT } from "../../../lib/i18n";
 import { useNowTick } from "../../../lib/now-tick";
 import { useAgentPagesStore } from "../../../stores/agent-pages";
 import { useMessagesStore } from "../../../stores/messages";
-import { useSessionStore } from "../../../stores/session";
 import { useRuntimeTabId } from "../../../stores/session-runtime-context";
+import { useSettingsStore } from "../../../stores/settings";
 import { useSubagentsStore } from "../../../stores/subagents";
-import { subagentActivity } from "../../agents/agent-activity";
+import { hasWorkingSubagent, subagentActivity } from "../../agents/agent-activity";
 import { Badge } from "../../common";
 import { SubagentDag } from "../../panels/SubagentDag";
 import { SubagentTranscript } from "../../panels/SubagentTranscript";
@@ -46,8 +45,12 @@ import { useWorkspaceDockFocus } from "./WorkspaceDockFocus";
 
 type PanelView = "list" | "graph";
 
-/** Poll cadence while a turn streams (covers frame-less parked/idle transitions). */
-const STREAM_POLL_MS = 3000;
+/** Whether the dock shows the Agents card: an agent is working and `display.pinnedAgents` is not off. */
+export function useAgentsDockVisible(): boolean {
+	const pinnedOff = useSettingsStore(state => state.pinnedAgents === "off");
+	const working = useSubagentsStore(state => hasWorkingSubagent(state.subagents.values()));
+	return working && !pinnedOff;
+}
 
 const SubagentRow = memo(function SubagentRow({
 	agent,
@@ -183,17 +186,16 @@ function ViewToggle({ view, onChange }: { view: PanelView; onChange: (view: Pane
 	);
 }
 
-export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number }) {
+export function AgentsDockCard() {
 	const t = useT();
-	const { capture, isActive } = useTabGuard();
 	const { managed, focusedCard, focusCard, clearFocus } = useWorkspaceDockFocus();
 	const focused = focusedCard === "agents";
-	const showFull = !managed || focused;
+	const visible = useAgentsDockVisible();
+	const pinnedFull = useSettingsStore(state => state.pinnedAgents === "full");
+	const showFull = !managed || focused || pinnedFull;
 	const subagents = useSubagentsStore(state => state.subagents);
 	const toolCallOwners = useSubagentGraphStore(state => state.toolCallOwners);
 	const messages = useMessagesStore(state => state.messages);
-	const isStreaming = useSessionStore(s => s.isStreaming);
-	const refresh = useSubagentsStore(state => state.refresh);
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [view, setView] = useState<PanelView>("list");
 
@@ -201,19 +203,6 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 	const hasRunning = agents.some(agent => isLiveSubagentStatus(agent.status));
 	const runningCount = agents.filter(agent => subagentActivity(agent) === "working").length;
 	const now = useNowTick(hasRunning);
-
-	useEffect(() => {
-		if (!isStreaming) return;
-		const timer = setInterval(() => {
-			// A poll resolving after a tab/session switch must not paint this
-			// tab's agents over the new foreground session — the guard is
-			// re-checked inside the store AFTER the await, before the write.
-			const origin = capture();
-			if (!isActive(origin)) return;
-			void refresh({ expect: () => isActive(origin) });
-		}, pollMs);
-		return () => clearInterval(timer);
-	}, [capture, isActive, isStreaming, pollMs, refresh]);
 
 	const rootToolCallIds = useMemo(() => new Set(extractTaskToolCallIds(messages)), [messages]);
 	const rows = useMemo(
@@ -255,17 +244,17 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 	);
 
 	useEffect(() => {
-		if (focused && agents.length === 0) clearFocus();
-	}, [agents.length, clearFocus, focused]);
+		if (focused && !visible) clearFocus();
+	}, [clearFocus, focused, visible]);
 
-	if (agents.length === 0) return null;
+	if (!visible) return null;
 
 	return (
 		<DockCard
 			actions={<ViewToggle onChange={changeView} view={view} />}
 			badge={
 				<span className="shrink-0 text-omp-xs tabular-nums text-[var(--omp-dim)]">
-					{runningCount > 0 ? `${runningCount}/${agents.length}` : agents.length}
+					{runningCount}/{agents.length}
 				</span>
 			}
 			icon={Bot}
@@ -289,7 +278,7 @@ export function AgentsDockCard({ pollMs = STREAM_POLL_MS }: { pollMs?: number })
 							onToggle={() => openAgent(agent.id)}
 						/>
 					))}
-					{managed && !focused && summary.hiddenCount > 0 && (
+					{!showFull && summary.hiddenCount > 0 && (
 						<button
 							className="omp-pressable flex w-full items-center justify-center rounded-md border border-dashed border-[var(--omp-border-muted)] px-2 py-1.5 text-omp-xs font-medium text-[var(--omp-link)] hover:border-[var(--omp-border-strong)]"
 							onClick={() => focusCard("agents")}

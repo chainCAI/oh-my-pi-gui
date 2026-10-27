@@ -6,6 +6,8 @@ import { toast } from "./toast";
 
 export type ApprovalMode = "always-ask" | "always-ask-cached" | "write" | "yolo";
 const APPROVAL_MODES = new Set<string>(["always-ask", "always-ask-cached", "write", "yolo"]);
+export type PinnedAgentsMode = "off" | "collapsed" | "full";
+const PINNED_AGENTS_MODES = new Set<string>(["off", "collapsed", "full"]);
 export interface SettingsStore {
 	approvalMode: ApprovalMode;
 	steeringMode: "all" | "one-at-a-time";
@@ -41,6 +43,8 @@ export interface SettingsStore {
 	pasteMenuThreshold: number;
 	/** Agent `emojiAutocomplete` setting: `:name:`/emoticon completion and expansion in the composer. */
 	emojiAutocomplete: boolean;
+	/** Agent `display.pinnedAgents` setting: the dock Agents card is hidden, a summary, or the full list. */
+	pinnedAgents: PinnedAgentsMode;
 	setFromState: (state: RpcSessionState) => void;
 	setApprovalMode: (mode: ApprovalMode) => Promise<void>;
 	/** Re-read the live display settings via get_settings. */
@@ -82,6 +86,8 @@ const initialState = {
 	pasteMenuThreshold: 100,
 	// Schema default (settings-schema.ts emojiAutocomplete): on.
 	emojiAutocomplete: true,
+	// Schema default (settings.ts display.pinnedAgents): summary card.
+	pinnedAgents: "collapsed" as PinnedAgentsMode,
 };
 
 /** Read the live tools.approvalMode config setting into the store. */
@@ -151,6 +157,7 @@ const DISPLAY_NUM_MAP: Record<string, "pasteMenuThreshold"> = {
 	"paste.largeMenuThreshold": "pasteMenuThreshold",
 };
 const DISPLAY_NUM_KEYS = Object.keys(DISPLAY_NUM_MAP);
+const PINNED_AGENTS_PATH = "display.pinnedAgents";
 
 /**
  * Read the live display config settings into the store. Re-run on session
@@ -163,7 +170,10 @@ async function syncDisplaySettings(
 	isCurrent: () => boolean,
 ): Promise<void> {
 	try {
-		const res = await command({ type: "get_settings", paths: [...DISPLAY_SYNC_KEYS, ...DISPLAY_NUM_KEYS] });
+		const res = await command({
+			type: "get_settings",
+			paths: [...DISPLAY_SYNC_KEYS, ...DISPLAY_NUM_KEYS, PINNED_AGENTS_PATH],
+		});
 		if (!isCurrent()) return;
 		if (res.success) {
 			const values = (res.data as { values?: Record<string, unknown> } | undefined)?.values;
@@ -176,6 +186,9 @@ async function syncDisplaySettings(
 				const value = values?.[path];
 				if (typeof value === "number") partial[field] = value;
 			}
+			const pinnedAgents = values?.[PINNED_AGENTS_PATH];
+			if (typeof pinnedAgents === "string" && PINNED_AGENTS_MODES.has(pinnedAgents))
+				partial.pinnedAgents = pinnedAgents as PinnedAgentsMode;
 			if (Object.keys(partial).length > 0) set(partial);
 		}
 	} catch {

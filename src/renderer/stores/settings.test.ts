@@ -61,6 +61,16 @@ describe("settings store display sync", () => {
 		expect(state.goalStatusInFooter).toBe(true);
 	});
 
+	it("reads display.pinnedAgents and ignores modes the dock does not know", async () => {
+		getSettings.mockResolvedValueOnce(await success({ "display.pinnedAgents": "full" }));
+		await useSettingsStore.getState().syncDisplaySettings();
+		expect(useSettingsStore.getState().pinnedAgents).toBe("full");
+
+		getSettings.mockResolvedValueOnce(await success({ "display.pinnedAgents": "sideways" }));
+		await useSettingsStore.getState().syncDisplaySettings();
+		expect(useSettingsStore.getState().pinnedAgents).toBe("full");
+	});
+
 	it("keeps current values when the read fails", async () => {
 		useSettingsStore.setState({ collapseCompacted: false });
 		getSettings.mockRejectedValueOnce(new Error("sidecar down"));

@@ -6,6 +6,10 @@
 
 - **Rosé Pine** theme: the dark Rosé Pine palette for the whole window, in Settings → Theme. — thanks [@ItsLemmy](https://github.com/ItsLemmy) ([#24](https://github.com/nornzach/oh-my-pi-gui/pull/24))
 
+### Fixed
+
+- The Agents card above the message box shows only while an agent is working, and **Pinned Agents** in Settings now applies to it: Off hides it, Collapsed shows the summary, Full lists every agent. Finished agents stay in the Agents tab ([#25](https://github.com/nornzach/oh-my-pi-gui/issues/25)).
+
 ## [0.9.29] - 2026-10-26
 
 ### Added

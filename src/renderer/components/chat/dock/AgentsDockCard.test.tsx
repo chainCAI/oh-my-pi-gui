@@ -1,9 +1,10 @@
 /**
- * AgentsDockCard: the center-dock subagent roster. Renders nothing while the
- * store is empty, summarizes large rosters while retaining urgent agents,
- * exposes the full roster through focus mode, and polls get_subagents while a
- * turn streams (parked/idle transitions emit no wire frame, so the store
- * goes stale mid-run without it).
+ * AgentsDockCard: the center-dock subagent roster. Renders only while an
+ * agent is working and `display.pinnedAgents` is not off, summarizes large
+ * rosters while retaining urgent agents (or lists them all in `full`), and
+ * exposes the full roster through focus mode. The workspace dock polls
+ * get_subagents while a turn streams, card hidden or not (parked/idle
+ * transitions emit no wire frame, so the store goes stale mid-run without it).
  */
 import { parseHTML } from "linkedom";
 import { ListTodo } from "lucide-react";
@@ -14,6 +15,7 @@ import type { AgentProgress, SubagentSnapshot } from "../../../../shared/rpc-typ
 import { I18nProvider } from "../../../lib/i18n";
 import { resetTabRoute } from "../../../lib/tab-routing";
 import { useSessionStore } from "../../../stores/session";
+import { useSettingsStore } from "../../../stores/settings";
 import { useSubagentsStore } from "../../../stores/subagents";
 import { useTabsStore } from "../../../stores/tabs";
 import { useUiStore } from "../../../stores/ui";
@@ -33,6 +35,7 @@ globals.requestAnimationFrame = (callback: () => void) => setTimeout(callback, 0
 const { createRoot } = await import("react-dom/client");
 const { AgentsDockCard } = await import("./AgentsDockCard");
 const { DockCard } = await import("./DockCard");
+const { WorkspaceDock } = await import("./WorkspaceDock");
 const { WorkspaceDockFocusProvider } = await import("./WorkspaceDockFocus");
 
 const getSubagents: Mock = vi.fn(async () => ({
@@ -115,6 +118,7 @@ afterEach(async () => {
 	container?.remove();
 	getSubagents.mockClear();
 	useSubagentsStore.getState().reset();
+	useSettingsStore.getState().reset();
 	useSessionStore.setState({ isStreaming: false });
 	useTabsStore.getState().reset();
 	resetTabRoute();
@@ -125,8 +129,57 @@ function containerText(): string {
 	return container.textContent ?? "";
 }
 
+/** Seven agents, one working: two more than the summary keeps. */
+function largeRoster(): SubagentSnapshot[] {
+	return [
+		snap({ id: "a1", index: 1, status: "running" }),
+		snap({ id: "a2", index: 2, status: "failed" }),
+		snap({ id: "a3", index: 3, status: "completed", lastUpdate: 3 }),
+		snap({ id: "a4", index: 4, status: "completed", lastUpdate: 4 }),
+		snap({ id: "a5", index: 5, status: "completed", lastUpdate: 5 }),
+		snap({ id: "a6", index: 6, status: "completed", lastUpdate: 6 }),
+		snap({ id: "a7", index: 7, status: "completed", lastUpdate: 7 }),
+	];
+}
+
+function button(label: string): { click: () => void } | undefined {
+	const found = [...container.querySelectorAll("button")].find(item => item.textContent?.includes(label));
+	return found as unknown as { click: () => void } | undefined;
+}
+
 describe("AgentsDockCard", () => {
 	it("renders nothing when the roster is empty", async () => {
+		await mount(<AgentsDockCard />);
+		expect(containerText()).toBe("");
+	});
+
+	it("hides while no agent is working and returns when one resumes", async () => {
+		useSubagentsStore
+			.getState()
+			.setSnapshots([
+				snap({ id: "a1", status: "parked" }),
+				snap({ id: "a2", index: 2, status: "completed" }),
+				snap({ id: "a3", index: 3, status: "failed" }),
+			]);
+		await mount(<AgentsDockCard />);
+		expect(containerText()).toBe("");
+
+		await act(async () => {
+			useSubagentsStore
+				.getState()
+				.setSnapshots([
+					snap({ id: "a1", status: "running" }),
+					snap({ id: "a2", index: 2, status: "completed" }),
+					snap({ id: "a3", index: 3, status: "failed" }),
+				]);
+		});
+		expect(containerText()).toContain("1/3");
+		expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(3);
+	});
+
+	it("stays hidden while agents work when display.pinnedAgents is off", async () => {
+		useSettingsStore.setState({ pinnedAgents: "off" });
+		useSubagentsStore.getState().setSnapshots([snap({ id: "a1", status: "running" })]);
 		await mount(<AgentsDockCard />);
 		expect(containerText()).toBe("");
 	});
@@ -161,17 +214,7 @@ describe("AgentsDockCard", () => {
 	});
 
 	it("summarizes rosters above five agents and expands them in focus mode", async () => {
-		useSubagentsStore
-			.getState()
-			.setSnapshots([
-				snap({ id: "a1", index: 1, status: "running" }),
-				snap({ id: "a2", index: 2, status: "failed" }),
-				snap({ id: "a3", index: 3, status: "completed", lastUpdate: 3 }),
-				snap({ id: "a4", index: 4, status: "completed", lastUpdate: 4 }),
-				snap({ id: "a5", index: 5, status: "completed", lastUpdate: 5 }),
-				snap({ id: "a6", index: 6, status: "completed", lastUpdate: 6 }),
-				snap({ id: "a7", index: 7, status: "completed", lastUpdate: 7 }),
-			]);
+		useSubagentsStore.getState().setSnapshots(largeRoster());
 		await mount(
 			<WorkspaceDockFocusProvider>
 				<DockCard icon={ListTodo} id="todo" title="Todo">
@@ -185,11 +228,8 @@ describe("AgentsDockCard", () => {
 		expect(containerText()).toContain("2 more · View all 7 agents");
 		expect(container.querySelector('[data-testid="other-card-body"]')).not.toBeNull();
 
-		const viewAll = [...container.querySelectorAll("button")].find(button =>
-			button.textContent?.includes("View all 7 agents"),
-		);
 		await act(async () => {
-			(viewAll as unknown as { click: () => void }).click();
+			button("View all 7 agents")?.click();
 		});
 		expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(7);
 		expect(containerText()).toContain("Back to summary");
@@ -206,6 +246,43 @@ describe("AgentsDockCard", () => {
 		expect(container.querySelector('[data-testid="other-card-body"]')).not.toBeNull();
 	});
 
+	it("lists the whole roster without a View all button when display.pinnedAgents is full", async () => {
+		useSettingsStore.setState({ pinnedAgents: "full" });
+		useSubagentsStore.getState().setSnapshots(largeRoster());
+		await mount(
+			<WorkspaceDockFocusProvider>
+				<AgentsDockCard />
+			</WorkspaceDockFocusProvider>,
+		);
+
+		expect(container.querySelectorAll('[role="treeitem"]')).toHaveLength(7);
+		expect(button("View all")).toBeUndefined();
+	});
+
+	it("gives the dock back to the other cards when the last working agent finishes", async () => {
+		useSubagentsStore.getState().setSnapshots(largeRoster());
+		await mount(
+			<WorkspaceDockFocusProvider>
+				<DockCard icon={ListTodo} id="todo" title="Todo">
+					<div data-testid="other-card-body">other card body</div>
+				</DockCard>
+				<AgentsDockCard />
+			</WorkspaceDockFocusProvider>,
+		);
+		await act(async () => {
+			button("View all 7 agents")?.click();
+		});
+		expect(container.querySelector('[data-testid="other-card-body"]')).toBeNull();
+
+		await act(async () => {
+			useSubagentsStore
+				.getState()
+				.setSnapshots(largeRoster().map(agent => (agent.id === "a1" ? { ...agent, status: "completed" } : agent)));
+		});
+		expect(container.querySelector('section[aria-label="Agents"]')).toBeNull();
+		expect(container.querySelector('[data-testid="other-card-body"]')).not.toBeNull();
+	});
+
 	it("collapses to the header via the ui store and re-expands on focusDockCard", async () => {
 		useSubagentsStore.getState().setSnapshots([snap({ id: "a1", status: "running" })]);
 		useUiStore.setState({ dockCollapsed: { agents: true } });
@@ -219,7 +296,7 @@ describe("AgentsDockCard", () => {
 		expect(container.querySelector('[role="tree"]')).not.toBeNull();
 	});
 
-	it("polls get_subagents while streaming, stops when the turn ends", async () => {
+	it("polls get_subagents from the dock while streaming, card hidden or not, and stops when the turn ends", async () => {
 		// Real timers + a short injected cadence: vi.useFakeTimers/advanceTimers
 		// are vitest-only, and this file must also pass under `bun test`.
 		const sleep = (ms: number) => {
@@ -227,6 +304,9 @@ describe("AgentsDockCard", () => {
 			setTimeout(resolve, ms);
 			return promise;
 		};
+		// Off hides the card, yet a frame-less park must still reach the sidebar
+		// and drawer.
+		useSettingsStore.setState({ pinnedAgents: "off" });
 		useSubagentsStore.getState().setSnapshots([snap({ id: "a1", status: "running" })]);
 		activateTab();
 		useSessionStore.setState({ isStreaming: true });
@@ -236,10 +316,11 @@ describe("AgentsDockCard", () => {
 		await act(async () => {
 			root.render(
 				<I18nProvider>
-					<AgentsDockCard pollMs={25} />
+					<WorkspaceDock pollMs={25} />
 				</I18nProvider>,
 			);
 		});
+		expect(container.querySelector('section[aria-label="Agents"]')).toBeNull();
 		expect(getSubagents).not.toHaveBeenCalled();
 
 		await act(async () => {

@@ -4,10 +4,12 @@
  * todo/plan/agents/queue tabs with always-current center cards. Large
  * todo/agent collections render a compact summary and temporarily focus one
  * card for full-list inspection. Each card self-gates its visibility (no
- * todos, no subagents, plan mode off, empty
- * queue → nothing rendered), so the region collapses to zero height on an
- * idle session. The surrounding conversation owns vertical scrolling; a
- * focused card expands naturally instead of adding a nested scrollbar. Chat
+ * todos, no working subagent or `display.pinnedAgents` off, plan mode off,
+ * empty queue → nothing rendered), so the region collapses to zero height on
+ * an idle session. The dock also owns the stream-time get_subagents poll,
+ * which must keep running while the Agents card is hidden. The surrounding
+ * conversation owns vertical scrolling; a focused card expands naturally
+ * instead of adding a nested scrollbar. Chat
  * tabs are tool-free — none of these surfaces can exist there. Every card
  * sits behind its own error boundary: a card crash must never take down the
  * composer.
@@ -15,15 +17,15 @@
 
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSubagentStreamPoll } from "../../../hooks/use-subagent-stream-poll";
 import { cx } from "../../../lib/format";
 import { useT } from "../../../lib/i18n";
 import { useQueuedMessages } from "../../../stores/queue";
 import { useSessionStore } from "../../../stores/session";
-import { useSubagentsStore } from "../../../stores/subagents";
 import { useActiveTabKind } from "../../../stores/tabs";
 import { useTodoStore } from "../../../stores/todo";
 import { PanelErrorBoundary } from "../../common";
-import { AgentsDockCard } from "./AgentsDockCard";
+import { AgentsDockCard, useAgentsDockVisible } from "./AgentsDockCard";
 import { GoalDockBar } from "./GoalDockBar";
 import { PlanDockCard } from "./PlanDockCard";
 import { QueueDockChip } from "./QueueDockChip";
@@ -40,7 +42,7 @@ function WorkspaceDockContent() {
 	const planModeEnabled = useSessionStore(state => state.planModeEnabled);
 	const goalVisible = useSessionStore(state => state.goal !== null);
 	const todoVisible = useTodoStore(state => state.phases.length > 0 || state.reminderVisible);
-	const agentsVisible = useSubagentsStore(state => state.subagents.size > 0);
+	const agentsVisible = useAgentsDockVisible();
 	const queued = useQueuedMessages();
 	const cardsVisible =
 		planModeEnabled || todoVisible || agentsVisible || queued.steering.length > 0 || queued.followUp.length > 0;
@@ -156,7 +158,9 @@ function WorkspaceDockContent() {
 	);
 }
 
-export function WorkspaceDock() {
+/** `pollMs`: get_subagents cadence while a turn streams (tests shorten it). */
+export function WorkspaceDock({ pollMs }: { pollMs?: number }) {
+	useSubagentStreamPoll(pollMs);
 	const isChat = useActiveTabKind() === "chat";
 	if (isChat) return null;
 
