@@ -5,7 +5,7 @@
  */
 
 import { ChevronRight, type LucideIcon, Search, X } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type MouseEvent, type ReactNode, useMemo } from "react";
 import { type DiffLine, DiffView, parseDiff } from "../../lib/diff";
 import { basename, cx, dirname } from "../../lib/format";
 import { useT } from "../../lib/i18n";
@@ -219,6 +219,7 @@ export function DiffFileCard({
 	label,
 	trailing,
 	children,
+	onContextMenu,
 }: {
 	expanded: boolean;
 	onToggle: () => void;
@@ -226,6 +227,8 @@ export function DiffFileCard({
 	label: ReactNode;
 	trailing?: ReactNode;
 	children?: ReactNode;
+	/** Right-click (or the context-menu key) on the header. */
+	onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 }) {
 	return (
 		<div className="omp-diff-card" data-expanded={expanded}>
@@ -233,6 +236,7 @@ export function DiffFileCard({
 				type="button"
 				aria-expanded={expanded}
 				onClick={onToggle}
+				onContextMenu={onContextMenu}
 				className="omp-diff-card-header flex h-8 w-full min-w-0 items-center gap-2 px-3 text-left text-omp-sm"
 			>
 				<ChevronRight

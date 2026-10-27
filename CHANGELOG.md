@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Right-click a file in the Files panel or in the Changes panel's working tree to reveal it in Finder, open or preview it, or copy its path ([#27](https://github.com/nornzach/oh-my-pi-gui/issues/27)). A file that no longer exists, such as a deleted one, offers only **Copy path**, here and on file links.
+
 ## [0.9.30] - 2026-10-27
 
 ### Added

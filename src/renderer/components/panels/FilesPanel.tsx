@@ -25,6 +25,7 @@ import { MarkdownRenderer } from "../../lib/markdown";
 import { useRuntimeTabId } from "../../stores/session-runtime-context";
 import { useUiStore } from "../../stores/ui";
 import { Button, Spinner } from "../common";
+import { showPathMenu } from "../common/LinkMenu";
 import { type TreeNode, TreeView } from "../common/TreeView";
 import { PathLink } from "../tools/PathLink";
 import { FileLabel, PanelEmpty, PanelSearch, PanelToolbar, ToolbarIconButton } from "./workspace-ui";
@@ -190,13 +191,14 @@ export function FilesPanel() {
 				label: entry.name,
 				icon: isDir ? expanded.has(id) ? <FolderOpen size={14} /> : <Folder size={14} /> : <File size={14} />,
 				onClick: () => onNodeClick(id),
+				onContextMenu: event => showPathMenu(event, entry.path, tabId),
 				children: entry.children && entry.children.length > 0 ? entry.children.map(toNode) : undefined,
 			};
 		};
 		return query.trim()
 			? searchFiles(tree, query).map(entry => ({ ...toNode(entry), label: <FileLabel path={entry.path} /> }))
 			: tree.map(toNode);
-	}, [tree, query, expanded, onNodeClick]);
+	}, [tree, query, expanded, onNodeClick, tabId]);
 
 	const fileCount = useMemo(() => countFiles(tree), [tree]);
 	const activePreview = preview?.path === filePreviewPath ? preview : null;

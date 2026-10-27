@@ -9,9 +9,12 @@
 import { parseHTML } from "linkedom";
 import { act } from "react";
 import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
+import type { IpcResolvedPath } from "../../../shared/ipc-types";
 import type { RpcGitChanges } from "../../../shared/rpc-types";
 import { I18nProvider } from "../../lib/i18n";
+import { clearPathResolutionCache } from "../../lib/path-resolver";
 import { useSessionStore } from "../../stores/session";
+import { LinkMenuHost } from "../common/LinkMenu";
 import { RepositoryChanges } from "./RepositoryChanges";
 
 const { document, window, Event, HTMLElement, Node } = parseHTML("<html><body></body></html>");
@@ -22,6 +25,8 @@ globals.Event = Event;
 globals.HTMLElement = HTMLElement;
 globals.Node = Node;
 globals.IS_REACT_ACT_ENVIRONMENT = true;
+globals.requestAnimationFrame = (callback: () => void) => setTimeout(callback, 0);
+Object.defineProperties(window, { innerWidth: { value: 1440 }, innerHeight: { value: 900 } });
 
 const { createRoot } = await import("react-dom/client");
 
@@ -87,6 +92,7 @@ async function mount(): Promise<void> {
 		root.render(
 			<I18nProvider>
 				<RepositoryChanges />
+				<LinkMenuHost />
 			</I18nProvider>,
 		);
 	});
@@ -127,6 +133,8 @@ afterEach(async () => {
 	}
 	container?.remove();
 	useSessionStore.getState().reset();
+	clearPathResolutionCache();
+	vi.unstubAllGlobals();
 });
 
 describe("RepositoryChanges", () => {
@@ -213,5 +221,71 @@ describe("RepositoryChanges", () => {
 		await flush();
 
 		expect(rowPaths()).toEqual(["src/a.ts", "src/new.ts"]);
+	});
+});
+
+describe("RepositoryChanges right-click", () => {
+	/** A right-click on a row's header, as the user makes it. */
+	async function rightClick(path: string): Promise<void> {
+		const header = queryAll(`[data-change-path="${path}"] .omp-diff-card-header`)[0];
+		if (!header) throw new Error(`no row for ${path}`);
+		const event = new Event("contextmenu", { bubbles: true, cancelable: true });
+		Object.defineProperties(event, { clientX: { value: 40 }, clientY: { value: 60 } });
+		await dispatch(header, event);
+		await flush();
+	}
+
+	function menuItem(label: string): TestElement {
+		const item = queryAll('[role="menuitem"]').find(entry => entry.textContent === label);
+		if (!item) throw new Error(`no menu item ${label}; menu: ${menuLabels().join(", ")}`);
+		return item;
+	}
+
+	function menuLabels(): string[] {
+		return queryAll('[role="menuitem"]').map(entry => entry.textContent ?? "");
+	}
+
+	it("reveals a changed file from the repository root and only copies a deleted one", async () => {
+		installMockOmp(async () => ({
+			type: "response",
+			command: "get_git_changes",
+			success: true,
+			// The workspace is a subfolder; git names files from the repository root above it.
+			data: {
+				isRepo: true,
+				root: "/repo",
+				base: "main",
+				files: [
+					{ path: "app/src/a.ts", status: " M" },
+					{ path: "app/old.ts", status: " D" },
+				],
+				truncated: false,
+			},
+		}));
+		const onDisk: Record<string, IpcResolvedPath> = {
+			"/repo/app/src/a.ts": { absolutePath: "/repo/app/src/a.ts", kind: "file", relativePath: "src/a.ts" },
+		};
+		const resolvePaths = vi.fn(async (paths: string[]) => paths.map(path => onDisk[path] ?? null));
+		const revealPath = vi.fn(async () => ({ ok: true }));
+		const writeText = vi.fn(async () => {});
+		vi.stubGlobal("navigator", { platform: "MacIntel", clipboard: { writeText } });
+		const omp = (window as unknown as { omp: Record<string, unknown> }).omp;
+		omp.system = { resolvePaths, revealPath, openPath: vi.fn(async () => ({ ok: true })) };
+		await mount();
+
+		await rightClick("app/src/a.ts");
+		expect(resolvePaths.mock.calls[0]?.[0]).toEqual(["/repo/app/src/a.ts"]);
+		expect(menuLabels()).toContain("Copy relative path");
+		await click(
+			queryAll('[role="menuitem"]').find(entry => /Reveal|Show in/.test(entry.textContent ?? "")) as TestElement,
+		);
+		expect(revealPath).toHaveBeenCalledWith("/repo/app/src/a.ts");
+
+		// Nothing is left on disk to open or reveal; the path can still be copied.
+		await rightClick("app/old.ts");
+		expect(menuLabels()).toEqual(["Copy path"]);
+		await click(menuItem("Copy path"));
+		await flush();
+		expect(writeText).toHaveBeenCalledWith("/repo/app/old.ts");
 	});
 });

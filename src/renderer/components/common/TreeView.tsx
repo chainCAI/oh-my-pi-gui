@@ -5,7 +5,7 @@
  */
 
 import { ChevronRight } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type MouseEvent, type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import { useT } from "../../lib/i18n";
 
 export interface TreeNode {
@@ -15,6 +15,8 @@ export interface TreeNode {
 	children?: TreeNode[];
 	/** Called when the row is activated (click / Enter). */
 	onClick?: () => void;
+	/** Called on a right-click (or the context-menu key) on the row. */
+	onContextMenu?: (event: MouseEvent<HTMLElement>) => void;
 	/** Extra classes for the row. */
 	className?: string;
 }
@@ -166,6 +168,7 @@ export function TreeView({
 						data-tree-id={row.node.id}
 						key={row.node.id}
 						onClick={() => row.node.onClick?.()}
+						onContextMenu={row.node.onContextMenu}
 						onKeyDown={event => onKeyDown(event, row, index)}
 						role="treeitem"
 						style={{ paddingLeft: 6 + row.depth * 12 }}

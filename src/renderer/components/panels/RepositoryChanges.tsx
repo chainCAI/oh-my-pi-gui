@@ -6,6 +6,8 @@ import { useT } from "../../lib/i18n";
 import type { TabRpc } from "../../lib/tab-rpc";
 import { useTabRpc } from "../../lib/tab-rpc";
 import { useSessionStore } from "../../stores/session";
+import { useRuntimeTabId } from "../../stores/session-runtime-context";
+import { showPathMenu } from "../common/LinkMenu";
 import {
 	ChangeBadge,
 	countDiffLines,
@@ -35,6 +37,7 @@ type DiffState =
 export function RepositoryChanges({ split = false }: { split?: boolean }) {
 	const t = useT();
 	const rpc = useTabRpc();
+	const tabId = useRuntimeTabId();
 	const [refresh, setRefresh] = useState(0);
 	const [changes, setChanges] = useState<RpcGitChanges | null>(null);
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
@@ -167,6 +170,8 @@ export function RepositoryChanges({ split = false }: { split?: boolean }) {
 			return next;
 		});
 	const allExpanded = files.length > 0 && files.every(file => expanded.has(file.path));
+	// Git names files from the repository root, which may sit above the workspace.
+	const root = changes?.root?.replace(/[\\/]+$/, "");
 	const fileCount = changes?.files.length ?? 0;
 
 	const refreshButton = (
@@ -237,6 +242,9 @@ export function RepositoryChanges({ split = false }: { split?: boolean }) {
 								<DiffFileCard
 									expanded={open}
 									onToggle={() => toggle(file.path)}
+									onContextMenu={
+										root ? event => showPathMenu(event, `${root}/${file.path}`, tabId) : undefined
+									}
 									leading={<ChangeBadge kind={gitChangeKind(file.status)} />}
 									label={<FileLabel path={file.path} oldPath={file.oldPath} />}
 									trailing={

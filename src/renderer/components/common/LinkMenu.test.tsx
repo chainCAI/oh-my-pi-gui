@@ -163,6 +163,14 @@ describe("linkMenuItems for file paths", () => {
 		);
 		expect(items.map(item => item.id)).not.toContain("copy-relative-path");
 	});
+
+	it("offers only Copy path for a path with nothing on disk", () => {
+		const items = linkMenuItems(
+			{ target: { kind: "path", target: { path: "/work/old.ts" }, resolved: null }, selection: "" },
+			t,
+		);
+		expect(items.map(item => item.id)).toEqual(["copy-path"]);
+	});
 });
 
 describe("selected text", () => {

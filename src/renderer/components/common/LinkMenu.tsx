@@ -1,8 +1,9 @@
 /**
  * The right-click menu for links, file paths, and selected text in replies and
- * tool output. Links open their own menu; a right-click anywhere else with text
- * selected (outside editable fields and terminals) offers Copy, which the
- * window otherwise lacks. One host renders whichever menu is open.
+ * tool output, and for the files the side panels list. Links open their own
+ * menu; a right-click anywhere else with text selected (outside editable
+ * fields and terminals) offers Copy, which the window otherwise lacks. One
+ * host renders whichever menu is open.
  */
 import { Copy, ExternalLink, Eye, FolderOpen, Link, PanelRight } from "lucide-react";
 import { useEffect } from "react";
@@ -13,6 +14,7 @@ import { copyText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import type { FileTarget } from "../../lib/link-targets";
 import { browserPanelAvailable, openLink } from "../../lib/open-link";
+import { resolvePath } from "../../lib/path-resolver";
 import { toast } from "../../stores/toast";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
@@ -48,6 +50,25 @@ export function showLinkMenu(
 	event.preventDefault();
 	event.stopPropagation();
 	useLinkMenuStore.setState({ menu: { x: event.clientX, y: event.clientY, target, selection: selectedText() } });
+}
+
+/**
+ * Open the menu for a file a panel lists (the Files tree, the working tree's
+ * changes). The path is resolved against `tabId`'s workspace first, so open and
+ * reveal act on that tab's file; a path with nothing on disk only offers copy.
+ */
+export function showPathMenu(
+	event: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void },
+	path: string,
+	tabId: string | null,
+): void {
+	event.preventDefault();
+	event.stopPropagation();
+	const { clientX: x, clientY: y } = event;
+	const selection = selectedText();
+	void resolvePath(path, tabId).then(resolved => {
+		useLinkMenuStore.setState({ menu: { x, y, target: { kind: "path", target: { path }, resolved }, selection } });
+	});
 }
 
 function copyWithNotice(text: string, notice: string): void {
@@ -93,7 +114,9 @@ export function linkMenuItems(menu: Pick<LinkMenu, "target" | "selection">, t: T
 		const { resolved } = target;
 		const path = resolved?.absolutePath ?? target.target.path;
 		const folder = resolved?.kind === "directory";
-		if (!folder) {
+		// null: nothing on disk (a deleted file), so there is nothing to open or reveal.
+		const onDisk = resolved !== null;
+		if (onDisk && !folder) {
 			items.push({
 				id: "preview",
 				label: t("links.preview"),
@@ -101,26 +124,28 @@ export function linkMenuItems(menu: Pick<LinkMenu, "target" | "selection">, t: T
 				onSelect: () => previewFile(path, target.target.line),
 			});
 		}
-		items.push(
-			{
-				id: "open-default",
-				label: t(folder ? "links.openFolder" : "links.openWithDefaultApp"),
-				icon: ExternalLink,
-				onSelect: () => void openPathExternally(path),
-			},
-			{
-				id: "reveal",
-				label: t(IS_MAC ? "links.revealMac" : IS_WINDOWS ? "links.revealWindows" : "links.revealOther"),
-				icon: FolderOpen,
-				onSelect: () => void revealPath(path),
-			},
-			{
-				id: "copy-path",
-				label: t("links.copyPath"),
-				icon: Copy,
-				onSelect: () => copyWithNotice(path, t("links.copiedPath")),
-			},
-		);
+		if (onDisk) {
+			items.push(
+				{
+					id: "open-default",
+					label: t(folder ? "links.openFolder" : "links.openWithDefaultApp"),
+					icon: ExternalLink,
+					onSelect: () => void openPathExternally(path),
+				},
+				{
+					id: "reveal",
+					label: t(IS_MAC ? "links.revealMac" : IS_WINDOWS ? "links.revealWindows" : "links.revealOther"),
+					icon: FolderOpen,
+					onSelect: () => void revealPath(path),
+				},
+			);
+		}
+		items.push({
+			id: "copy-path",
+			label: t("links.copyPath"),
+			icon: Copy,
+			onSelect: () => copyWithNotice(path, t("links.copiedPath")),
+		});
 		const relative = resolved?.relativePath;
 		if (relative && relative !== path) {
 			items.push({
