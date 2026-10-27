@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { type Document, parseDocument } from "yaml";
+import { customProviderNeedsApiKey } from "../shared/custom-provider";
 import {
 	CUSTOM_MODEL_EFFORTS,
 	CUSTOM_PROVIDER_APIS,
@@ -467,6 +468,13 @@ export function upsertModelsProvider(input: CustomProviderInput): void {
 	);
 	if (Object.keys(compat).length > 0) entry.compat = compat;
 	else delete entry.compat;
+	if (
+		customProviderNeedsApiKey({ auth: input.auth, hasApiKey: apiKey !== undefined, modelCount: input.models.length })
+	) {
+		throw new Error(
+			`"${input.id}" lists models but has no API key. Add a key, or set the auth mode to none for a server that needs no key.`,
+		);
+	}
 	entry.models = input.models.map(m => mergeModel(entry.models, m));
 	data.doc.setIn(["providers", input.id], entry);
 	writeModelsFile(data.doc);

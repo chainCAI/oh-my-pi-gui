@@ -71,6 +71,7 @@ describe("models-config", () => {
 				id: "test-provider",
 				api: "openai-completions",
 				baseUrl: "https://api.test.com/v1",
+				auth: "none",
 				models: [{ id: "test-model" }],
 			};
 			upsertModelsProvider(input);
@@ -118,6 +119,7 @@ providers:
   compat-provider:
     api: openai-completions
     baseUrl: https://api.test.com/v1
+    apiKey: sk-test
     compat:
       supportsStore: true
       requiresToolResultName: true
@@ -231,6 +233,7 @@ providers:
   legacy-thinking:
     api: openai-completions
     baseUrl: https://api.test.com/v1
+    apiKey: sk-test
     models:
       - id: ranged-model
         thinking:
@@ -334,6 +337,7 @@ providers:
   edited:
     api: openai-completions
     baseUrl: https://api.test.com/v1
+    apiKey: sk-test
     models:
       - id: model-a
 `,
@@ -360,6 +364,7 @@ providers:
 				id: "atomic",
 				api: "openai-completions",
 				baseUrl: "https://api.test.com/v1",
+				apiKey: "sk-test",
 				models: [{ id: "model-a" }],
 			});
 			// The agent live-reloads this path: a leftover temp file (or a second
@@ -372,11 +377,71 @@ providers:
 				id: "first",
 				api: "openai-completions",
 				baseUrl: "https://api.test.com/v1",
+				apiKey: "sk-test",
 				models: [{ id: "model-a" }],
 			});
 			// ProvidersWindow tells the user `~/.omp/agent/models.yml`.
 			expect(modelsPath()).toBe(join(testDir, "models.yml"));
 			expect(existsSync(join(testDir, "models.yaml"))).toBe(false);
+		});
+	});
+
+	describe("entries the agent would reject", () => {
+		// The agent drops every provider in models.yml when one entry is invalid,
+		// so writing this shape empties the model picker of all custom models.
+		test("refuses a keyless provider with models instead of writing it", () => {
+			const file = modelsPath();
+			writeFileSync(
+				file,
+				"providers:\n  working:\n    api: openai-completions\n    baseUrl: http://127.0.0.1:1/v1\n    auth: none\n    models:\n      - id: m0\n",
+				"utf8",
+			);
+			expect(() =>
+				upsertModelsProvider({
+					id: "local-llm",
+					api: "openai-completions",
+					baseUrl: "http://127.0.0.1:9/v1",
+					models: [{ id: "m1" }],
+				}),
+			).toThrow("no API key");
+			expect(Object.keys(parse(readFileSync(file, "utf8")).providers)).toEqual(["working"]);
+		});
+
+		test("accepts the keyless forms the agent allows", () => {
+			upsertModelsProvider({
+				id: "local-llm",
+				api: "openai-completions",
+				baseUrl: "http://127.0.0.1:9/v1",
+				auth: "none",
+				models: [{ id: "m1" }],
+			});
+			upsertModelsProvider({
+				id: "discovered",
+				api: "openai-completions",
+				baseUrl: "http://127.0.0.1:9/v1",
+				discovery: { type: "openai-models-list" },
+				models: [],
+			});
+			expect(listModelsProviders().map(provider => provider.id)).toEqual(["local-llm", "discovered"]);
+		});
+
+		test("refuses removing the only key of a provider that still lists models", () => {
+			const file = modelsPath();
+			writeFileSync(
+				file,
+				"providers:\n  keyed:\n    api: openai-completions\n    baseUrl: https://api.test.com/v1\n    apiKey: sk-stored\n    models:\n      - id: m1\n",
+				"utf8",
+			);
+			expect(() =>
+				upsertModelsProvider({
+					id: "keyed",
+					api: "openai-completions",
+					baseUrl: "https://api.test.com/v1",
+					clearApiKey: true,
+					models: [{ id: "m1" }],
+				}),
+			).toThrow("no API key");
+			expect(parse(readFileSync(file, "utf8")).providers.keyed.apiKey).toBe("sk-stored");
 		});
 	});
 
@@ -386,6 +451,7 @@ providers:
 				id: "deletable",
 				api: "openai-completions",
 				baseUrl: "https://api.test.com/v1",
+				apiKey: "sk-test",
 				models: [{ id: "model-a" }],
 			};
 			upsertModelsProvider(input);

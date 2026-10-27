@@ -27,7 +27,7 @@ import type {
 } from "../../shared/rpc-types";
 import { TurnStatusRow } from "../components/chat/ChatStream";
 import { formatClock } from "../lib/format";
-import { I18nProvider } from "../lib/i18n";
+import { I18nProvider, translate } from "../lib/i18n";
 import { type MessagesStore, useMessagesStore } from "../stores/messages";
 import { type ModelStore, useModelStore } from "../stores/model";
 import { type SessionStore, useSessionStore } from "../stores/session";
@@ -41,12 +41,14 @@ import { useTodoStore } from "../stores/todo";
 import { useToolsStore } from "../stores/tools";
 import { hydrateSession, hydrateTabSession, useRpcEvents } from "./use-rpc-events";
 
-const { document, window, Event, HTMLElement, Node } = parseHTML("<html><body></body></html>");
+const { document, window, Event, CustomEvent, HTMLElement, Node } = parseHTML("<html><body></body></html>");
 
 const globals = globalThis as Record<string, unknown>;
 globals.document = document;
 globals.window = window;
 globals.Event = Event;
+// Node's own CustomEvent cannot be dispatched through linkedom's window.
+globals.CustomEvent = CustomEvent;
 globals.HTMLElement = HTMLElement;
 globals.Node = Node;
 globals.IS_REACT_ACT_ENVIRONMENT = true;
@@ -950,6 +952,42 @@ describe("useRpcEvents non-transcript frames", () => {
 
 		expect(omp.rpc.getState.mock.calls.length).toBeGreaterThan(stateCallsBefore);
 		expect(omp.rpc.getTranscript.mock.calls.length).toBeGreaterThan(transcriptCallsBefore);
+	});
+
+	it("hands a prompt the agent refused after acknowledging it back to the composer", async () => {
+		// The provider behind the session's model was deleted: the prompt was
+		// acknowledged, then refused with no assistant turn. The bubble used to sit
+		// there as if sent, with nothing answering and no error anywhere.
+		const { emitPromptResult } = installMockOmp();
+		await mount(<RpcEventsProbe />);
+		const unsent: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "hello after delete" }],
+			timestamp: Date.now(),
+			optimistic: true,
+		};
+		useMessagesStore.getState().appendLiveMessage(unsent);
+		const refills: unknown[] = [];
+		const onFill = (event: Event) => refills.push((event as CustomEvent).detail);
+		window.addEventListener("omp:fill-composer", onFill);
+
+		await act(async () => {
+			emitPromptResult({
+				type: "prompt_result",
+				id: "q1",
+				agentInvoked: false,
+				status: "error",
+				error: { message: "No API key found for mock.", retryable: false },
+			});
+			await Promise.resolve();
+		});
+		window.removeEventListener("omp:fill-composer", onFill);
+
+		expect(useMessagesStore.getState().liveMessages).not.toContainEqual(unsent);
+		expect(refills).toEqual([expect.objectContaining({ text: "hello after delete", prepend: true })]);
+		const toast = useToastStore.getState().toasts.at(-1);
+		expect(toast).toMatchObject({ variant: "error", title: translate("input.sendFailed") });
+		expect(toast?.message).toContain("No API key found for mock.");
 	});
 
 	it("applies a model catalog completion frame without reopening the picker", async () => {

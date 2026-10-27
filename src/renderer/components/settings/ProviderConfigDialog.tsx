@@ -9,13 +9,16 @@
  *
  * Parent wiring (parent owns stores/ui.ts + command-registry.ts):
  *   mount:  <ProviderConfigDialog open={ui.providerConfigOpen} editProvider={ui.providerConfigEdit} onClose={ui.closeProviderConfig} />
- *   action: openProviderConfig(editProvider?: CustomProviderView | null): void
- *           — no arg opens the list (Add provider from there); a view opens
- *           the form pre-filled for editing that provider.
+ *   action: openProviderConfig(editProvider?: CustomProviderView | "new" | null): void
+ *           — no arg opens the list (Add provider from there); "new" opens the
+ *           add form; a view opens the form pre-filled for editing that
+ *           provider. Opened straight into a form, Cancel and save close the
+ *           dialog and leave the caller (the Providers window) where it was.
  */
 
 import { ChevronDown, ChevronRight, Eye, EyeOff, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { customProviderNeedsApiKey } from "../../../shared/custom-provider";
 import type {
 	CustomProviderApi,
 	CustomProviderDiscoveryType,
@@ -23,10 +26,10 @@ import type {
 	CustomProviderView,
 } from "../../../shared/ipc-types";
 import { CUSTOM_PROVIDER_APIS } from "../../../shared/ipc-types";
+import { ipcErrorMessage } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useModelStore } from "../../stores/model";
 import { toast } from "../../stores/toast";
-import { useUiStore } from "../../stores/ui";
 import { Button, Input, Modal, Spinner } from "../common";
 import { FieldError, FieldLabel } from "./providers/FormFields";
 import { ModelEditor, type ModelRow } from "./providers/ModelEditor";
@@ -47,8 +50,9 @@ export function providerRequiresManualModels(discoveryType: CustomProviderDiscov
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
+// Same box as common/Input, so selects and text fields line up in one column.
 const SELECT_CLASS =
-	"w-full rounded-md border border-(--omp-border-muted) bg-(--omp-input-bg) px-2.5 py-1.5 text-xs text-(--omp-text) focus:border-(--omp-border-accent) focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
+	"w-full rounded-lg border border-(--omp-input-border) bg-(--omp-input-bg) px-3 py-[9px] text-omp-lg leading-[1.45] text-(--omp-text) shadow-(--omp-shadow-sm) transition-[border-color,box-shadow] duration-150 hover:border-(--omp-border-strong) focus:border-(--omp-input-focus-border) focus:shadow-[0_0_0_3px_var(--omp-input-glow)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
 // ============================================================================
 // Small field helpers (label/error markup matches common/Input's FieldShell)
@@ -98,9 +102,11 @@ interface ProviderFormProps {
 	onBack: () => void;
 	onSaved: () => void;
 	onCancel: () => void;
+	/** Ask to delete the provider being edited (the Providers window reaches entries only through Edit). */
+	onDelete?: () => void;
 }
 
-function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel }: ProviderFormProps) {
+function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel, onDelete }: ProviderFormProps) {
 	const t = useT();
 	const refreshProviders = useModelStore(state => state.refreshProviders);
 	const nextKey = useRef(1);
@@ -137,7 +143,16 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 			value: String(value),
 		})),
 	);
-	const [advancedOpen, setAdvancedOpen] = useState(() => Object.keys(editing?.headers ?? {}).length > 0);
+	// Collapsed unless the entry already uses one of the advanced settings.
+	const [advancedOpen, setAdvancedOpen] = useState(
+		() =>
+			Object.keys(editing?.headers ?? {}).length > 0 ||
+			editing?.authHeader === true ||
+			editing?.disableStrictTools === true ||
+			editing?.transport !== undefined ||
+			editing?.extraBody !== undefined,
+	);
+	const formRef = useRef<HTMLDivElement>(null);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
@@ -170,6 +185,16 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 		else if (!isValidHttpUrl(url)) errs.baseUrl = t("providerCfg.form.baseUrlInvalid");
 
 		const filled = models.filter(row => row.id.trim().length > 0);
+		const keySaved = editing?.hasApiKey === true && !clearKey;
+		if (
+			customProviderNeedsApiKey({
+				auth,
+				hasApiKey: apiKey.trim().length > 0 || keySaved,
+				modelCount: filled.length,
+			})
+		) {
+			errs.apiKey = t("providerCfg.form.apiKeyRequired");
+		}
 		if (filled.length === 0 && providerRequiresManualModels(discoveryType)) {
 			errs.models = t("providerCfg.form.modelsRequired");
 		} else if (models.some(row => row.id.trim().length === 0 && (row.name?.trim().length ?? 0) > 0)) {
@@ -218,7 +243,15 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 	const handleSubmit = async () => {
 		const errs = validate();
 		setErrors(errs);
-		if (Object.keys(errs).length > 0) return;
+		if (Object.keys(errs).length > 0) {
+			// The save button sits below a long form: a message rendered above the
+			// fold reads as "the button did nothing".
+			if (errs.headers || errs.extraBody) setAdvancedOpen(true);
+			requestAnimationFrame(() => {
+				formRef.current?.querySelector("[data-field-error]")?.scrollIntoView({ block: "center" });
+			});
+			return;
+		}
 
 		const headerEntries = headers.filter(row => row.name.trim().length > 0);
 		let parsedExtraBody: Record<string, unknown> | undefined;
@@ -291,7 +324,7 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 			toast({ variant: "success", message: t("providerCfg.toast.saved", { id: input.id }) });
 			onSaved();
 		} catch (cause) {
-			setSubmitError(cause instanceof Error ? cause.message : String(cause));
+			setSubmitError(ipcErrorMessage(cause));
 		} finally {
 			setSubmitting(false);
 		}
@@ -301,7 +334,7 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 
 	return (
 		<div className="flex max-h-[70vh] flex-col">
-			<div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+			<div ref={formRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
 				{readonly && (
 					<div className="rounded-md border border-(--omp-border-muted) bg-transparent px-3 py-2 text-omp-md text-(--omp-muted)">
 						{t("providerCfg.form.builtinReadonly")}
@@ -362,6 +395,7 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 							onChange={event => {
 								setApiKey(event.target.value);
 								setClearKey(false);
+								setErrors(prev => dropKey(prev, "apiKey"));
 							}}
 							placeholder={
 								clearKey
@@ -389,6 +423,7 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 								? t("providerCfg.form.apiKeyKeep")
 								: t("providerCfg.form.apiKeyOptional")}
 					</span>
+					<FieldError message={errors.apiKey} />
 					{/* The field is masked, so a blank submit cannot mean "delete" —
 						without this action the only way to revoke a key is to delete the
 						whole provider (baseUrl, headers and models included). */}
@@ -418,112 +453,19 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 					<FieldLabel>{t("providerCfg.form.auth")}</FieldLabel>
 					<select
 						className={SELECT_CLASS}
-						value={auth ?? ""}
+						// An explicit `auth: apiKey` is the default spelled out: one choice, not two.
+						value={auth === "apiKey" ? "" : (auth ?? "")}
 						disabled={readonly || submitting}
-						onChange={event =>
-							setAuth((event.target.value || undefined) as "apiKey" | "none" | "oauth" | undefined)
-						}
+						onChange={event => {
+							setAuth((event.target.value || undefined) as "none" | "oauth" | undefined);
+							setErrors(prev => dropKey(prev, "apiKey"));
+						}}
 					>
-						<option value="">{t("providerCfg.form.authApiKeyDefault")}</option>
-						<option value="apiKey">{t("providerCfg.form.authApiKey")}</option>
-						<option value="none">{t("common.none")}</option>
+						<option value="">{t("providerCfg.form.authApiKey")}</option>
+						<option value="none">{t("providerCfg.form.authNone")}</option>
 						<option value="oauth">OAuth</option>
 					</select>
 					<span className="mt-1 block text-omp-sm text-(--omp-dim)">{t("providerCfg.form.authHint")}</span>
-				</div>
-
-				<label className="flex items-center gap-2">
-					<input
-						type="checkbox"
-						checked={authHeader}
-						onChange={e => setAuthHeader(e.target.checked)}
-						disabled={readonly || submitting}
-						className="h-4 w-4 rounded border-(--omp-input-border)"
-					/>
-					<span className="text-omp-sm text-(--omp-text)">{t("providerCfg.form.authHeader")}</span>
-				</label>
-				{authHeader && (
-					<span className="ml-6 block text-omp-sm text-(--omp-dim)">{t("providerCfg.form.authHeaderHint")}</span>
-				)}
-
-				<div>
-					<FieldLabel>{t("providerCfg.form.discovery")}</FieldLabel>
-					<div className="flex gap-2">
-						<select
-							className={SELECT_CLASS}
-							style={{ flex: "2" }}
-							value={discoveryType ?? ""}
-							disabled={readonly || submitting}
-							onChange={event =>
-								setDiscoveryType((event.target.value || undefined) as CustomProviderDiscoveryType | undefined)
-							}
-						>
-							<option value="">{t("providerCfg.form.discoveryNone")}</option>
-							<option value="ollama">Ollama</option>
-							<option value="llama.cpp">llama.cpp</option>
-							<option value="lm-studio">LM Studio</option>
-							<option value="openai-models-list">{t("providerCfg.form.discoveryOpenAiList")}</option>
-							<option value="proxy">{t("providerCfg.form.discoveryProxy")}</option>
-							<option value="litellm">LiteLLM</option>
-						</select>
-						<Input
-							type="number"
-							value={discoveryTimeout ?? ""}
-							onChange={e =>
-								setDiscoveryTimeout(e.target.value ? Number.parseInt(e.target.value, 10) : undefined)
-							}
-							placeholder={t("providerCfg.form.discoveryTimeout")}
-							disabled={readonly || submitting || !discoveryType}
-							style={{ flex: "1" }}
-						/>
-					</div>
-					<span className="mt-1 block text-omp-sm text-(--omp-dim)">{t("providerCfg.form.discoveryHint")}</span>
-				</div>
-
-				<label className="flex items-center gap-2">
-					<input
-						type="checkbox"
-						checked={disableStrictTools}
-						onChange={e => setDisableStrictTools(e.target.checked)}
-						disabled={readonly || submitting}
-						className="h-4 w-4 rounded border-(--omp-input-border)"
-					/>
-					<span className="text-omp-sm text-(--omp-text)">{t("providerCfg.form.disableStrictTools")}</span>
-				</label>
-				{disableStrictTools && (
-					<span className="ml-6 block text-omp-sm text-(--omp-dim)">
-						{t("providerCfg.form.disableStrictToolsHint")}
-					</span>
-				)}
-
-				<div>
-					<FieldLabel>{t("providerCfg.form.transport")}</FieldLabel>
-					<select
-						className={SELECT_CLASS}
-						value={transport ?? ""}
-						disabled={readonly || submitting}
-						onChange={event => setTransport((event.target.value || undefined) as "pi-native" | undefined)}
-					>
-						<option value="">{t("common.defaultParenthesized")}</option>
-						<option value="pi-native">pi-native</option>
-					</select>
-				</div>
-
-				<div>
-					<FieldLabel>{t("providerCfg.form.extraBody")}</FieldLabel>
-					<textarea
-						value={extraBody}
-						onChange={e => {
-							setExtraBody(e.target.value);
-							setErrors(prev => dropKey(prev, "extraBody"));
-						}}
-						placeholder={t("providerCfg.form.extraBodyPlaceholder")}
-						disabled={readonly || submitting}
-						rows={3}
-						className="w-full rounded-md border border-(--omp-input-border) bg-(--omp-input-bg) px-2.5 py-1.5 font-mono text-omp-sm text-(--omp-text) outline-none transition-colors placeholder:text-(--omp-dim) hover:border-(--omp-border-strong) focus:border-(--omp-input-focus-border) disabled:cursor-not-allowed disabled:opacity-60"
-					/>
-					<span className="mt-1 block text-omp-sm text-(--omp-dim)">{t("providerCfg.form.extraBodyHint")}</span>
-					<FieldError message={errors.extraBody} />
 				</div>
 
 				<div>
@@ -562,63 +504,176 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 				</div>
 
 				<div>
+					<FieldLabel>{t("providerCfg.form.discovery")}</FieldLabel>
+					<div className="flex gap-2">
+						<select
+							className={SELECT_CLASS}
+							style={{ flex: "2" }}
+							value={discoveryType ?? ""}
+							disabled={readonly || submitting}
+							onChange={event =>
+								setDiscoveryType((event.target.value || undefined) as CustomProviderDiscoveryType | undefined)
+							}
+						>
+							<option value="">{t("providerCfg.form.discoveryNone")}</option>
+							<option value="ollama">Ollama</option>
+							<option value="llama.cpp">llama.cpp</option>
+							<option value="lm-studio">LM Studio</option>
+							<option value="openai-models-list">{t("providerCfg.form.discoveryOpenAiList")}</option>
+							<option value="proxy">{t("providerCfg.form.discoveryProxy")}</option>
+							<option value="litellm">LiteLLM</option>
+						</select>
+						<Input
+							type="number"
+							value={discoveryTimeout ?? ""}
+							onChange={e =>
+								setDiscoveryTimeout(e.target.value ? Number.parseInt(e.target.value, 10) : undefined)
+							}
+							placeholder={t("providerCfg.form.discoveryTimeout")}
+							disabled={readonly || submitting || !discoveryType}
+							style={{ flex: "1" }}
+						/>
+					</div>
+					<span className="mt-1 block text-omp-sm text-(--omp-dim)">{t("providerCfg.form.discoveryHint")}</span>
+				</div>
+
+				<div>
 					<button
 						type="button"
+						aria-expanded={advancedOpen}
 						className="flex items-center gap-1 text-omp-sm font-medium text-(--omp-muted) transition-colors hover:text-(--omp-text)"
 						onClick={() => setAdvancedOpen(prev => !prev)}
 					>
 						{advancedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
 						{t("providerCfg.form.advanced")}
 					</button>
+					{!advancedOpen && (
+						<span className="mt-0.5 block text-omp-sm text-(--omp-dim)">
+							{t("providerCfg.form.advancedHint")}
+						</span>
+					)}
 					{advancedOpen && (
-						<div className="mt-2 flex flex-col gap-2">
-							{headers.map(row => (
-								<div key={row.key} className="flex items-start gap-2">
-									<div className="min-w-0 flex-1">
-										<Input
-											mono
-											value={row.name}
-											onChange={event => updateHeader(row.key, { name: event.target.value })}
-											placeholder={t("providerCfg.form.headerName")}
-											disabled={readonly || submitting}
-											aria-label={t("providerCfg.form.headerName")}
-										/>
-									</div>
-									<div className="min-w-0 flex-1">
-										<Input
-											mono
-											value={row.value}
-											onChange={event => updateHeader(row.key, { value: event.target.value })}
-											placeholder={t("providerCfg.form.headerValue")}
-											disabled={readonly || submitting}
-											aria-label={t("providerCfg.form.headerValue")}
-										/>
-									</div>
-									<Button
-										size="sm"
-										variant="ghost"
-										className="mt-1"
-										icon={<Trash2 size={12} />}
-										aria-label={t("providerCfg.form.headerRemove")}
-										disabled={readonly || submitting}
-										onClick={() => removeHeader(row.key)}
-									/>
-								</div>
-							))}
-							{!readonly && (
-								<div>
-									<Button
-										size="sm"
-										variant="ghost"
-										icon={<Plus size={12} />}
-										onClick={addHeader}
-										disabled={submitting}
-									>
-										{t("providerCfg.form.headerAdd")}
-									</Button>
-								</div>
+						<div className="mt-2 flex flex-col gap-3">
+							<label className="flex items-center gap-2">
+								<input
+									type="checkbox"
+									checked={authHeader}
+									onChange={e => setAuthHeader(e.target.checked)}
+									disabled={readonly || submitting}
+									className="h-4 w-4 rounded border-(--omp-input-border)"
+								/>
+								<span className="text-omp-sm text-(--omp-text)">{t("providerCfg.form.authHeader")}</span>
+							</label>
+							{authHeader && (
+								<span className="ml-6 block text-omp-sm text-(--omp-dim)">
+									{t("providerCfg.form.authHeaderHint")}
+								</span>
 							)}
-							<FieldError message={errors.headers} />
+
+							<label className="flex items-center gap-2">
+								<input
+									type="checkbox"
+									checked={disableStrictTools}
+									onChange={e => setDisableStrictTools(e.target.checked)}
+									disabled={readonly || submitting}
+									className="h-4 w-4 rounded border-(--omp-input-border)"
+								/>
+								<span className="text-omp-sm text-(--omp-text)">
+									{t("providerCfg.form.disableStrictTools")}
+								</span>
+							</label>
+							{disableStrictTools && (
+								<span className="ml-6 block text-omp-sm text-(--omp-dim)">
+									{t("providerCfg.form.disableStrictToolsHint")}
+								</span>
+							)}
+
+							<div>
+								<FieldLabel>{t("providerCfg.form.transport")}</FieldLabel>
+								<select
+									className={SELECT_CLASS}
+									value={transport ?? ""}
+									disabled={readonly || submitting}
+									onChange={event =>
+										setTransport((event.target.value || undefined) as "pi-native" | undefined)
+									}
+								>
+									<option value="">{t("common.defaultParenthesized")}</option>
+									<option value="pi-native">pi-native</option>
+								</select>
+							</div>
+
+							<div>
+								<FieldLabel>{t("providerCfg.form.extraBody")}</FieldLabel>
+								<textarea
+									value={extraBody}
+									onChange={e => {
+										setExtraBody(e.target.value);
+										setErrors(prev => dropKey(prev, "extraBody"));
+									}}
+									placeholder={t("providerCfg.form.extraBodyPlaceholder")}
+									disabled={readonly || submitting}
+									rows={3}
+									className="w-full rounded-md border border-(--omp-input-border) bg-(--omp-input-bg) px-2.5 py-1.5 font-mono text-omp-sm text-(--omp-text) outline-none transition-colors placeholder:text-(--omp-dim) hover:border-(--omp-border-strong) focus:border-(--omp-input-focus-border) disabled:cursor-not-allowed disabled:opacity-60"
+								/>
+								<span className="mt-1 block text-omp-sm text-(--omp-dim)">
+									{t("providerCfg.form.extraBodyHint")}
+								</span>
+								<FieldError message={errors.extraBody} />
+							</div>
+
+							<div>
+								<FieldLabel>{t("providerCfg.form.headers")}</FieldLabel>
+								<div className="flex flex-col gap-2">
+									{headers.map(row => (
+										<div key={row.key} className="flex items-start gap-2">
+											<div className="min-w-0 flex-1">
+												<Input
+													mono
+													value={row.name}
+													onChange={event => updateHeader(row.key, { name: event.target.value })}
+													placeholder={t("providerCfg.form.headerName")}
+													disabled={readonly || submitting}
+													aria-label={t("providerCfg.form.headerName")}
+												/>
+											</div>
+											<div className="min-w-0 flex-1">
+												<Input
+													mono
+													value={row.value}
+													onChange={event => updateHeader(row.key, { value: event.target.value })}
+													placeholder={t("providerCfg.form.headerValue")}
+													disabled={readonly || submitting}
+													aria-label={t("providerCfg.form.headerValue")}
+												/>
+											</div>
+											<Button
+												size="sm"
+												variant="ghost"
+												className="mt-1"
+												icon={<Trash2 size={12} />}
+												aria-label={t("providerCfg.form.headerRemove")}
+												disabled={readonly || submitting}
+												onClick={() => removeHeader(row.key)}
+											/>
+										</div>
+									))}
+									{!readonly && (
+										<div>
+											<Button
+												size="sm"
+												variant="ghost"
+												icon={<Plus size={12} />}
+												onClick={addHeader}
+												disabled={submitting}
+											>
+												{t("providerCfg.form.headerAdd")}
+											</Button>
+										</div>
+									)}
+									<FieldError message={errors.headers} />
+								</div>
+							</div>
 						</div>
 					)}
 				</div>
@@ -631,6 +686,17 @@ function ProviderForm({ editing, existing, directEdit, onBack, onSaved, onCancel
 			</div>
 
 			<div className="flex shrink-0 items-center justify-end gap-2 border-t border-(--omp-border-muted) px-4 py-3">
+				{editing && !readonly && onDelete && (
+					<Button
+						variant="ghost"
+						className="mr-auto text-(--omp-error)"
+						icon={<Trash2 size={12} />}
+						onClick={onDelete}
+						disabled={submitting}
+					>
+						{t("providerCfg.list.delete")}
+					</Button>
+				)}
 				<Button variant="ghost" onClick={close} disabled={submitting}>
 					{t("providerCfg.form.cancel")}
 				</Button>
@@ -657,13 +723,14 @@ type View = { kind: "list" } | { kind: "form"; editing: CustomProviderView | nul
 export interface ProviderConfigDialogProps {
 	open: boolean;
 	onClose: () => void;
-	/** When set, opens directly in edit mode for this provider. */
-	editProvider?: CustomProviderView | null;
+	/** When set, opens directly in the form: `"new"` to add, a view to edit. */
+	editProvider?: CustomProviderView | "new" | null;
 }
 
 export function ProviderConfigDialog({ open, onClose, editProvider = null }: ProviderConfigDialogProps) {
 	const t = useT();
 	const refreshProviders = useModelStore(state => state.refreshProviders);
+	const activeModel = useModelStore(state => state.model);
 	const [view, setView] = useState<View>({ kind: "list" });
 	const [providers, setProviders] = useState<CustomProviderView[] | null>(null);
 	const [listError, setListError] = useState<string | null>(null);
@@ -677,7 +744,7 @@ export function ProviderConfigDialog({ open, onClose, editProvider = null }: Pro
 		try {
 			setProviders(await window.omp.models.listProviders());
 		} catch (cause) {
-			setListError(cause instanceof Error ? cause.message : String(cause));
+			setListError(ipcErrorMessage(cause));
 		} finally {
 			setLoading(false);
 		}
@@ -685,17 +752,19 @@ export function ProviderConfigDialog({ open, onClose, editProvider = null }: Pro
 
 	useEffect(() => {
 		if (!open) return;
-		setView(editProvider ? { kind: "form", editing: editProvider } : { kind: "list" });
+		setView(
+			editProvider === "new"
+				? { kind: "form", editing: null }
+				: editProvider
+					? { kind: "form", editing: editProvider }
+					: { kind: "list" },
+		);
 		void load();
 	}, [open, editProvider, load]);
 
 	const handleClose = () => {
 		setPendingDelete(null);
 		onClose();
-	};
-	const handleCancel = () => {
-		handleClose();
-		useUiStore.getState().closeProviders();
 	};
 
 	const confirmDelete = async () => {
@@ -714,12 +783,17 @@ export function ProviderConfigDialog({ open, onClose, editProvider = null }: Pro
 			}
 			toast({ variant: "success", message: t("providerCfg.toast.deleted", { id: pendingDelete.id }) });
 			setPendingDelete(null);
+			// Deleted from its own edit form: the form has nothing left to show.
+			if (view.kind === "form") {
+				if (editProvider !== null) onClose();
+				else setView({ kind: "list" });
+			}
 			await load();
 		} catch (cause) {
 			toast({
 				variant: "error",
 				title: t("providerCfg.toast.deleteFailed"),
-				message: cause instanceof Error ? cause.message : String(cause),
+				message: ipcErrorMessage(cause),
 			});
 		} finally {
 			setDeleting(false);
@@ -749,7 +823,8 @@ export function ProviderConfigDialog({ open, onClose, editProvider = null }: Pro
 							void load();
 							onClose();
 						}}
-						onCancel={handleCancel}
+						onCancel={handleClose}
+						onDelete={view.editing ? () => setPendingDelete(view.editing) : undefined}
 					/>
 				) : (
 					<div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto p-4">
@@ -840,6 +915,13 @@ export function ProviderConfigDialog({ open, onClose, editProvider = null }: Pro
 				<p className="text-omp-lg leading-relaxed text-(--omp-muted)">
 					{t("providerCfg.delete.body", { id: pendingDelete?.id ?? "" })}
 				</p>
+				{/* Deleting the provider the session runs on leaves the composer on a
+					model that no longer exists; say so before, not after the next send. */}
+				{pendingDelete && activeModel?.provider === pendingDelete.id && (
+					<p role="alert" className="mt-3 text-omp-md leading-relaxed text-(--omp-warning)">
+						{t("providerCfg.delete.inUse", { model: activeModel.name ?? activeModel.id })}
+					</p>
+				)}
 				<div className="mt-5 flex justify-end gap-2">
 					<Button disabled={deleting} onClick={() => setPendingDelete(null)} variant="ghost">
 						{t("providerCfg.delete.cancel")}

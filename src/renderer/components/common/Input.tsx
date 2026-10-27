@@ -39,7 +39,9 @@ function FieldShell({
 			{label && <span className="mb-1.5 block text-omp-md font-medium text-(--omp-text-secondary)">{label}</span>}
 			{children}
 			{error ? (
-				<span className="mt-1.5 block text-omp-md text-(--omp-error)">{error}</span>
+				<span data-field-error="" className="mt-1.5 block text-omp-md text-(--omp-error)">
+					{error}
+				</span>
 			) : hint ? (
 				<span className="mt-1.5 block text-omp-md text-(--omp-dim)">{hint}</span>
 			) : null}

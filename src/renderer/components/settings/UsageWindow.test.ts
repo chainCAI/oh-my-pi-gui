@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { UsageLimit } from "../../../shared/rpc-types";
+import type { UsageLimit, UsageReport } from "../../../shared/rpc-types";
 import { zh } from "../../locales/zh";
-import { limitValueText } from "./UsageWindow";
+import { limitHasDetail, limitValueText, nextQuotaReset } from "./UsageWindow";
 
 function valueText(amount: Omit<UsageLimit, "id" | "label">): string {
 	return limitValueText({ id: "quota", label: "Quota", ...amount }, (key, params) =>
@@ -29,5 +29,38 @@ describe("provider quota values", () => {
 		expect(valueText({ unit: "unknown", used: 5, limit: 100 })).toBe("5 / 100");
 		expect(valueText({ unit: "unknown", used: 5 })).toBe("已用 5.0");
 		expect(valueText({ unit: "unknown" })).toBe("未知");
+	});
+});
+
+function report(resets: Array<number | undefined>): UsageReport {
+	return {
+		provider: "openai-codex",
+		fetchedAt: 0,
+		limits: resets.map((resetsAt, index) => ({ id: `limit-${index}`, label: "Window", resetsAt })),
+	};
+}
+
+// The window re-reads quotas once the next reset passes; before, a passed
+// window kept its full bar and "resetting…" until the user pressed Refresh.
+describe("next quota reset", () => {
+	it("schedules the earliest reset still ahead across every provider", () => {
+		expect(nextQuotaReset([report([500, 4_000]), report([undefined, 2_500])], 1_000)).toBe(2_500);
+	});
+
+	it("does not schedule a reset that already passed, so a stale report cannot loop", () => {
+		expect(nextQuotaReset([report([500, 999])], 1_000)).toBeUndefined();
+		expect(nextQuotaReset(null, 1_000)).toBeUndefined();
+	});
+});
+
+describe("limit value detail", () => {
+	it("drops a plain percentage the bar already prints and keeps counts it cannot", () => {
+		expect(limitHasDetail({ id: "a", label: "5h", unit: "percent", used: 87, limit: 100, usedFraction: 0.87 })).toBe(
+			false,
+		);
+		expect(limitHasDetail({ id: "b", label: "Weekly", usedFraction: 0.5 })).toBe(false);
+		expect(limitHasDetail({ id: "c", label: "Chat", unit: "requests", used: 212, limit: 300 })).toBe(true);
+		// No fraction to draw: the text is the only reading.
+		expect(limitHasDetail({ id: "d", label: "Burst", unit: "unknown", used: 5 })).toBe(true);
 	});
 });

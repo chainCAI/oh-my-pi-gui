@@ -247,10 +247,13 @@ const getLogoutAccounts = vi.fn(
 );
 const logout = vi.fn(async (): Promise<RpcResponse> => ({ type: "response", command: "logout", success: true }));
 const listProviders = vi.fn(async (): Promise<CustomProviderView[]> => []);
+const login = vi.fn(
+	async (_providerId: string): Promise<RpcResponse> => ({ type: "response", command: "login", success: true }),
+);
 
 Object.assign(window as unknown as Record<string, unknown>, {
 	omp: {
-		rpc: { getProviders, getLogoutAccounts, logout },
+		rpc: { getProviders, getLogoutAccounts, logout, login },
 		models: { listProviders },
 	},
 });
@@ -288,6 +291,7 @@ afterEach(async () => {
 	afterEachRoots.length = 0;
 	while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
 	useUiStore.getState().closeProviders();
+	useUiStore.getState().closeProviderConfig();
 	useModelStore.getState().reset();
 	useSessionStore.getState().reset();
 	useToastStore.setState({ toasts: [] });
@@ -297,7 +301,15 @@ afterEach(async () => {
 	listProviders.mockResolvedValue([]);
 	logout.mockResolvedValue({ type: "response", command: "logout", success: true });
 	logout.mockClear();
+	login.mockReset();
+	login.mockResolvedValue({ type: "response", command: "login", success: true });
 });
+
+function loginButtons(): HTMLButtonElement[] {
+	return Array.from(document.body.querySelectorAll("button")).filter(
+		button => (button.textContent ?? "").trim() === translate("providers.login"),
+	) as HTMLButtonElement[];
+}
 
 describe("ProvidersWindow", () => {
 	it("shows a provider list that a catalog push replaces, not just the read it made on open", async () => {
@@ -321,7 +333,7 @@ describe("ProvidersWindow", () => {
 		});
 
 		expect(text()).toContain("My Proxy");
-		expect(text()).toContain(translate("providers.models", { count: 7 }));
+		expect(text()).toContain(translate("providers.models", { count: 7, plural: "s" }));
 	});
 
 	it("re-reads while discovery is still running and drops the waiting banner once it lands", async () => {
@@ -341,7 +353,7 @@ describe("ProvidersWindow", () => {
 		// routing was busy elsewhere), so the only way the list updates is the
 		// window asking again.
 		const deadline = Date.now() + 2_000;
-		const landed = translate("providers.models", { count: 12 });
+		const landed = translate("providers.models", { count: 12, plural: "s" });
 		while (!text().includes(landed) && Date.now() < deadline) {
 			await act(async () => {
 				await new Promise(resolve => setTimeout(resolve, 25));
@@ -416,6 +428,148 @@ describe("ProvidersWindow", () => {
 		expect(text()).toContain("socket hang up");
 		expect(text()).toContain(translate("providers.loadFailed"));
 		expect(text()).not.toContain(translate("providers.noAuth"));
+	});
+
+	it("counts a keyless models.yml provider as ready instead of asking the user to sign in", async () => {
+		// The session ran on this provider while the window said no provider was
+		// authenticated and listed it under "Available" with a "no auth" badge.
+		listProviders.mockResolvedValue([
+			{ ...config("mock"), hasApiKey: false, auth: "none", models: [{ id: "mock-1" }] },
+		]);
+		getProviders.mockResolvedValue(
+			providersResponse(
+				snapshot([
+					row("mock", { authenticated: false, modelCount: 1 }),
+					row("openrouter", { authenticated: false, loginAvailable: true }),
+				]),
+			),
+		);
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+
+		expect(text()).not.toContain(translate("providers.noAuth"));
+		const ready = text().indexOf(translate("providers.authenticated"));
+		const available = text().indexOf(translate("providers.available"));
+		const mock = text().indexOf("mock");
+		expect(ready).toBeLessThan(mock);
+		expect(mock).toBeLessThan(available);
+		expect(text()).toContain(translate("providers.badge.keyless"));
+	});
+
+	it("names the models.yml entry that makes the agent drop every custom provider", async () => {
+		listProviders.mockResolvedValue([
+			{ ...config("mock"), hasApiKey: false, auth: "none", models: [{ id: "mock-1" }] },
+			{ ...config("local-llm"), hasApiKey: false, models: [{ id: "m1" }] },
+		]);
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+
+		expect(text()).toContain(translate("providers.modelsYmlRejected", { id: "local-llm" }));
+	});
+
+	it("locks the other sign-ins while one waits for the browser", async () => {
+		const pending = Promise.withResolvers<RpcResponse>();
+		login.mockReturnValueOnce(pending.promise);
+		getProviders.mockResolvedValue(
+			providersResponse(
+				snapshot([
+					row("anthropic", { authenticated: false, loginAvailable: true }),
+					row("openrouter", { authenticated: false, loginAvailable: true }),
+				]),
+			),
+		);
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+
+		await act(async () => {
+			loginButtons()[0]?.click();
+		});
+		// A second flow would overwrite the first one's waiting row and result toast.
+		expect(loginButtons().every(button => button.disabled)).toBe(true);
+		await act(async () => {
+			loginButtons()[1]?.click();
+		});
+		expect(login).toHaveBeenCalledOnce();
+
+		await act(async () => {
+			pending.resolve({ type: "response", command: "login", success: false, error: "cancelled" });
+			await pending.promise;
+		});
+		expect(loginButtons().some(button => !button.disabled)).toBe(true);
+	});
+
+	it("reports a failed sign-in but not one the user cancelled", async () => {
+		login
+			.mockResolvedValueOnce({
+				type: "response",
+				command: "login",
+				success: false,
+				error: "Login cancelled",
+				code: "login_cancelled",
+			})
+			.mockResolvedValueOnce({ type: "response", command: "login", success: false, error: "Token exchange failed" });
+		getProviders.mockResolvedValue(
+			providersResponse(snapshot([row("anthropic", { authenticated: false, loginAvailable: true })])),
+		);
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+		const failureTitles = () =>
+			useToastStore
+				.getState()
+				.toasts.filter(entry => entry.title === translate("providers.loginFailed"))
+				.map(entry => entry.message);
+
+		await act(async () => {
+			loginButtons()[0]?.click();
+		});
+		expect(failureTitles()).toEqual([]);
+
+		await act(async () => {
+			loginButtons()[0]?.click();
+		});
+		expect(failureTitles()).toEqual(["Token exchange failed"]);
+	});
+
+	it("opens the add form directly from Add provider", async () => {
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+
+		await act(async () => {
+			buttonWithLabel(translate("providerCfg.list.add"))?.click();
+		});
+		expect(useUiStore.getState().providerConfigEdit).toBe("new");
+	});
+
+	it("narrows a long provider list to what the search matches", async () => {
+		const names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Zeta Cloud"];
+		getProviders.mockResolvedValue(
+			providersResponse(
+				snapshot(
+					names.map(name =>
+						row(name.toLowerCase().replace(/ /g, "-"), { name, authenticated: false, loginAvailable: true }),
+					),
+				),
+			),
+		);
+		useSessionStore.setState({ status: "ready" });
+		useUiStore.getState().openProviders();
+		await mountWindow();
+
+		const search = document.body.querySelector(`input[aria-label="${translate("providers.search")}"]`);
+		if (!search) throw new Error("no search box");
+		const record = search as unknown as Record<string, unknown>;
+		const propsKey = Object.getOwnPropertyNames(record).find(key => key.startsWith("__reactProps$"));
+		const props = propsKey ? (record[propsKey] as { onChange: (event: object) => void }) : undefined;
+		await act(async () => props?.onChange({ target: { value: "zeta" } }));
+
+		expect(text()).toContain("Zeta Cloud");
+		expect(text()).not.toContain("Foxtrot");
+		expect(loginButtons()).toHaveLength(1);
 	});
 
 	it("explains a models.yml provider the sidecar lists no models for", async () => {

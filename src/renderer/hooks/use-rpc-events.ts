@@ -25,6 +25,7 @@ import {
 	type CommandOutputFrame,
 	type ConfigUpdateFrame,
 	type ExtensionErrorFrame,
+	type ImageContent,
 	isThinkingLevel,
 	type ModelCatalogUpdateFrame,
 	type PromptResultFrame,
@@ -182,6 +183,40 @@ function toastOnAgentError(tabId: string, event: Extract<AgentSessionEvent, { ty
 			? last.errorMessage.replace(/\s+/g, " ").slice(0, 200)
 			: translate("common.unknownError");
 	useToastStore.getState().push({ variant: "error", title: translate("events.turnFailed"), message: detail });
+}
+
+/**
+ * The agent refused a prompt after acknowledging it: no credential for the
+ * session's model, or a model whose provider was deleted. No assistant turn
+ * exists to carry the error, so without this the message sat in the transcript
+ * as if sent and nothing answered. Do what an immediate refusal does: take the
+ * bubble back, return its text to the composer, and say why.
+ */
+function returnUnsentPrompt(tabId: string, frame: PromptResultFrame): void {
+	withSessionRuntime(tabId, () => {
+		const messages = useMessagesStore.getState();
+		const unsent = messages.liveMessages.findLast(message => message.role === "user" && message.optimistic);
+		if (!unsent) return;
+		messages.removeLiveMessage(unsent);
+		const blocks =
+			typeof unsent.content === "string"
+				? [{ type: "text" as const, text: unsent.content }]
+				: (unsent.content ?? []);
+		const text = blocks
+			.flatMap(block => (block.type === "text" ? [block.text] : []))
+			.join("\n")
+			.trim();
+		const images = blocks.filter((block): block is ImageContent => block.type === "image");
+		if (!text && images.length === 0) return;
+		// prepend: whatever the user typed since sending stays after the restored text.
+		window.dispatchEvent(new CustomEvent("omp:fill-composer", { detail: { text, images, prepend: true, tabId } }));
+	});
+	useToastStore.getState().push({
+		variant: "error",
+		title: translate("input.sendFailed"),
+		message: frame.error?.message ?? translate("common.unknownError"),
+		durationMs: 12_000,
+	});
 }
 
 /**
@@ -760,6 +795,7 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 		// has already resolved; prompt_result carries the deferred rehydrate signal.
 		const handlePromptResult = (frame: PromptResultFrame, tabId: string) => {
 			if (closedTabFrame(tabId)) return;
+			if (!frame.agentInvoked && frame.status === "error") returnUnsentPrompt(tabId, frame);
 			if (!frame.agentInvoked) void (sessionRuntime(tabId) ? hydrateTabSession(tabId) : hydrateLegacySession());
 		};
 		const unsubPromptResult =

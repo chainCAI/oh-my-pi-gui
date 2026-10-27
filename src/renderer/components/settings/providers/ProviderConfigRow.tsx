@@ -35,7 +35,12 @@ export function ProviderConfigRow({
 							<span className="truncate">{provider.baseUrl}</span>
 						</span>
 					)}
-					<span className="shrink-0">{t("providerCfg.list.models", { count: provider.models.length })}</span>
+					<span className="shrink-0">
+						{t("providerCfg.list.models", {
+							count: provider.models.length,
+							plural: provider.models.length === 1 ? "" : "s",
+						})}
+					</span>
 					{provider.hasApiKey && provider.apiKeyPreview ? (
 						<span className="shrink-0 font-mono">{provider.apiKeyPreview}</span>
 					) : (

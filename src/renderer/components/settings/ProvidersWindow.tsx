@@ -7,17 +7,32 @@ import { useTabRpc } from "../../lib/tab-rpc";
 
 import { Edit, ExternalLink, Globe, LogIn, LogOut, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { customProviderNeedsApiKey } from "../../../shared/custom-provider";
 import type { CustomProviderView } from "../../../shared/ipc-types";
 import type { LogoutAccount, ProviderDiscoveryState, ProviderInfo, ProvidersResult } from "../../../shared/rpc-types";
+import { ipcErrorMessage } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useModelStore } from "../../stores/model";
 import { useSessionStore } from "../../stores/session";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
-import { Badge, Button, ConfirmDialog, LongTaskStatus, Modal, Spinner } from "../common";
+import { Badge, Button, ConfirmDialog, Input, LongTaskStatus, Modal, Spinner } from "../common";
 
-function AuthBadge({ provider, t }: { provider: ProviderInfo; t: (k: string) => string }) {
-	if (!provider.authenticated) return <Badge variant="muted">{t("providers.badge.noAuth")}</Badge>;
+/** Lists past this length get a filter box: the bundled catalog alone is ~80 rows. */
+const SEARCH_THRESHOLD = 8;
+
+/** models.yml entries that declare `auth: none`: usable with no credential at all. */
+function keylessProviderIds(customConfigs: CustomProviderView[]): Set<string> {
+	return new Set(customConfigs.filter(config => !config.builtin && config.auth === "none").map(config => config.id));
+}
+
+function AuthBadge({ provider, keyless, t }: { provider: ProviderInfo; keyless: boolean; t: (k: string) => string }) {
+	if (!provider.authenticated) {
+		if (keyless) return <Badge variant="info">{t("providers.badge.keyless")}</Badge>;
+		// The row's Login button already says it; a badge on every catalog row is noise.
+		if (provider.loginAvailable) return null;
+		return <Badge variant="muted">{t("providers.badge.noAuth")}</Badge>;
+	}
 	if (provider.authKind === "oauth")
 		return (
 			<Badge variant="success" dot>
@@ -85,6 +100,8 @@ export function ProviderRow({
 	t: (k: string, p?: Record<string, string | number>) => string;
 }) {
 	const editAction = resolveProviderEditAction(provider, customConfigs);
+	const custom = customConfigs.some(config => config.id === provider.id && !config.builtin);
+	const keyless = keylessProviderIds(customConfigs).has(provider.id);
 	const showEdit = editAction?.kind === "config" || (editAction?.kind === "login" && provider.authenticated);
 	// A key written in models.yml is reinstalled by every catalog reload, so
 	// signing out clears a credential the provider never used: the row would stay
@@ -97,13 +114,21 @@ export function ProviderRow({
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 				<div className="flex items-center gap-2">
 					<span className="text-omp-lg font-medium text-[var(--omp-text)]">{provider.name}</span>
-					<AuthBadge provider={provider} t={t} />
+					<AuthBadge provider={provider} keyless={keyless} t={t} />
 					{provider.disabled && <Badge variant="warning">{t("providers.badge.disabled")}</Badge>}
 				</div>
 				<div className="flex items-center gap-3 text-omp-sm text-[var(--omp-dim)]">
 					{provider.account && <span>{provider.account}</span>}
-					{provider.modelCount > 0 && <span>{t("providers.models", { count: provider.modelCount })}</span>}
-					{provider.baseUrl && (
+					{provider.modelCount > 0 && (
+						<span>
+							{t("providers.models", {
+								count: provider.modelCount,
+								plural: provider.modelCount === 1 ? "" : "s",
+							})}
+						</span>
+					)}
+					{/* A catalog endpoint says nothing until the provider is in use. */}
+					{provider.baseUrl && (provider.authenticated || custom) && (
 						<span className="flex items-center gap-1">
 							<Globe size={10} />
 							{provider.baseUrl}
@@ -185,6 +210,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 	const [busyProvider, setBusyProvider] = useState<string | null>(null);
 	const [signIn, setSignIn] = useState<{ providerId: string; startedAt: number } | null>(null);
 	const [pendingLogout, setPendingLogout] = useState<{ id: string; name: string } | null>(null);
+	const [query, setQuery] = useState("");
 	const requestVersion = useRef(0);
 
 	// The provider list is catalog state, not window state: a `get_providers` read
@@ -212,7 +238,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 					setCustomConfigs(configsResult.value);
 					setConfigError(null);
 				} else {
-					setConfigError(t("providers.configFailed", { details: String(configsResult.reason) }));
+					setConfigError(t("providers.configFailed", { details: ipcErrorMessage(configsResult.reason) }));
 				}
 				if (providerResult.status === "rejected") {
 					const cause = providerResult.reason;
@@ -259,6 +285,8 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 		try {
 			const res = await tabRpc.login(providerId);
 			if (!res.success) {
+				// The user dismissed the sign-in page themselves; nothing failed.
+				if (res.code === "login_cancelled") return;
 				toast({ variant: "error", title: t("providers.loginFailed"), message: res.error });
 				return;
 			}
@@ -334,8 +362,28 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 		}
 	};
 
-	const authenticated = providers.filter(p => p.authenticated);
-	const unauthenticated = providers.filter(p => !p.authenticated);
+	// "Ready" is what the model picker can use now: a stored credential, or a
+	// models.yml entry that needs none. Listing a keyless local server under
+	// "sign in" while the session runs on it contradicts the composer.
+	const keyless = keylessProviderIds(customConfigs);
+	const isReady = (provider: ProviderInfo) => provider.authenticated || keyless.has(provider.id);
+	const needle = query.trim().toLowerCase();
+	const matches = (provider: ProviderInfo) =>
+		!needle || provider.name.toLowerCase().includes(needle) || provider.id.toLowerCase().includes(needle);
+	const authenticated = providers.filter(p => isReady(p) && matches(p));
+	const unauthenticated = providers.filter(p => !isReady(p) && matches(p));
+	const readyCount = providers.filter(isReady).length;
+	// The agent drops all of models.yml over one invalid entry, so every custom
+	// provider vanishes at once. Name the entry; nothing else on screen can.
+	const rejectedConfig = customConfigs.find(
+		config =>
+			!config.builtin &&
+			customProviderNeedsApiKey({
+				auth: config.auth,
+				hasApiKey: config.hasApiKey,
+				modelCount: config.models.length,
+			}),
+	);
 	const providersInUse = new Set([
 		...authenticated.map(provider => provider.id),
 		...customConfigs.filter(config => !config.builtin).map(config => config.id),
@@ -358,7 +406,12 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 							{t("providers.authenticated")}
 						</span>
 						<div className="flex items-center gap-1.5">
-							<Button size="sm" variant="ghost" icon={<Plus size={12} />} onClick={() => openProviderConfig()}>
+							<Button
+								size="sm"
+								variant="ghost"
+								icon={<Plus size={12} />}
+								onClick={() => openProviderConfig("new")}
+							>
 								{t("providerCfg.list.add")}
 							</Button>
 							<Button
@@ -386,6 +439,30 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 							</Button>
 						</div>
 					</div>
+
+					{providers.length > SEARCH_THRESHOLD && (
+						<Input
+							type="search"
+							value={query}
+							onChange={event => setQuery(event.target.value)}
+							placeholder={t("providers.search")}
+							aria-label={t("providers.search")}
+						/>
+					)}
+
+					{rejectedConfig && (
+						<div
+							role="alert"
+							className="flex items-center gap-2 rounded-md bg-[var(--omp-tool-error-bg)] px-3 py-2 text-omp-md text-[var(--omp-error)]"
+						>
+							<span className="min-w-0 flex-1">
+								{t("providers.modelsYmlRejected", { id: rejectedConfig.id })}
+							</span>
+							<Button size="sm" variant="secondary" onClick={() => openProviderConfig(rejectedConfig)}>
+								{t("providers.fixProvider")}
+							</Button>
+						</div>
+					)}
 
 					{configError && (
 						<div
@@ -426,7 +503,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 						</div>
 					)}
 
-					{!loading && !error && authenticated.length === 0 && (
+					{!loading && !error && readyCount === 0 && (
 						<div className="rounded-md border border-[var(--omp-border-muted)] px-3 py-4 text-center text-omp-md text-[var(--omp-dim)]">
 							{t("providers.noAuth")}
 						</div>
@@ -442,7 +519,9 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 									onLogin={handleLogin}
 									onLogout={requestLogout}
 									onEdit={handleEdit}
-									busy={busyProvider === p.id}
+									// One credential flow at a time: a second Login would overwrite the
+									// first one's waiting state and its result toast.
+									busy={busyProvider !== null}
 									signInStartedAt={signIn?.providerId === p.id ? signIn.startedAt : undefined}
 									sidecarReady={sidecarReady}
 									t={t}
@@ -465,7 +544,9 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 										onLogin={handleLogin}
 										onLogout={requestLogout}
 										onEdit={handleEdit}
-										busy={busyProvider === p.id}
+										// One credential flow at a time: a second Login would overwrite the
+										// first one's waiting state and its result toast.
+										busy={busyProvider !== null}
 										signInStartedAt={signIn?.providerId === p.id ? signIn.startedAt : undefined}
 										sidecarReady={sidecarReady}
 										t={t}
@@ -473,6 +554,12 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 								))}
 							</div>
 						</>
+					)}
+
+					{needle && authenticated.length === 0 && unauthenticated.length === 0 && (
+						<div className="px-3 py-4 text-center text-omp-md text-[var(--omp-dim)]">
+							{t("providers.noMatch", { query: query.trim() })}
+						</div>
 					)}
 
 					<div className="rounded-md border border-[var(--omp-border-muted)] px-3 py-2.5">
@@ -492,7 +579,7 @@ export function ProvidersWindow({ pollMs = 2_500 }: { pollMs?: number }) {
 						</div>
 						{/* A provider the session lists no models for is absent from the rows above,
 						which reads as "the add did nothing". Name it and say why. */}
-						{!loading && providers.length > 0 && unlistedConfigs.length > 0 && (
+						{!loading && providers.length > 0 && unlistedConfigs.length > 0 && !rejectedConfig && (
 							<div className="mt-2 text-omp-xs leading-[1.5] text-[var(--omp-warning)]">
 								{t("providers.customWithoutModels", {
 									ids: unlistedConfigs.map(config => config.id).join(", "),

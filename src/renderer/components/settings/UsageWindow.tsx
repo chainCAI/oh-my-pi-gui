@@ -10,8 +10,18 @@ import { useTabRpc } from "../../lib/tab-rpc";
  * titlebar chips do.
  */
 
-import { Coins, Database, History, RefreshCw, Zap } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	ArrowDownToLine,
+	ArrowUpFromLine,
+	Coins,
+	Database,
+	History,
+	RefreshCw,
+	Sigma,
+	Sparkles,
+	Workflow,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	RpcResetCreditAccount,
 	RpcResetCreditRedeemResult,
@@ -20,15 +30,58 @@ import type {
 	UsageReport,
 	UsageSessionStats,
 } from "../../../shared/rpc-types";
-import { formatCost, formatDuration, formatTokens } from "../../lib/format";
+import { formatClock, formatCost, formatDuration, formatTokens } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useNowTick } from "../../lib/now-tick";
 import { useMessagesStore } from "../../stores/messages";
+import { useModelStore } from "../../stores/model";
 import { type SessionStore, useSessionStore } from "../../stores/session";
 import { sessionRuntimeStore, useRuntimeTabId } from "../../stores/session-runtime-context";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
-import { Badge, Button, Modal, ProgressBar, Spinner } from "../common";
+import { Badge, Button, ConfirmDialog, Modal, ProgressBar, Spinner } from "../common";
+
+/** Wait past a reset before re-reading, so the provider has rolled the window over. */
+const RESET_REREAD_GRACE_MS = 3_000;
+
+/**
+ * The next reset still ahead of `now` across every report. A reset already in
+ * the past is skipped: re-reading for it again would loop while a provider
+ * keeps reporting the old timestamp.
+ */
+export function nextQuotaReset(reports: readonly UsageReport[] | null, now: number): number | undefined {
+	let next: number | undefined;
+	for (const report of reports ?? []) {
+		for (const limit of Array.isArray(report.limits) ? report.limits : []) {
+			if (limit.resetsAt && limit.resetsAt > now && (next === undefined || limit.resetsAt < next)) {
+				next = limit.resetsAt;
+			}
+		}
+	}
+	return next;
+}
+
+/**
+ * Whether the row's value text adds anything to its bar. A plain percentage
+ * ("87.0% / 100%", "81% used") repeats the bar's own label; counts
+ * ("212 / 300 requests") and values the bar cannot draw do not.
+ */
+export function limitHasDetail(limit: UsageLimit): boolean {
+	const hasUnit = Boolean(limit.unit && limit.unit !== "unknown");
+	if (!hasUnit) return limit.usedFraction === undefined;
+	return !(limit.unit === "percent" && limit.limit === 100 && limit.used !== undefined);
+}
+
+/** The bar's label: whole percent, except where rounding would claim full or empty. */
+function percentText(fraction: number): string {
+	const pct = fraction * 100;
+	return (pct > 99 && pct < 100) || (pct > 0 && pct < 1) ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
+}
+
+const STATUS_KEYS: Record<string, string> = {
+	exhausted: "usage.status.exhausted",
+	warning: "usage.status.warning",
+};
 
 function resetCountdown(
 	resetsAt: number | undefined,
@@ -74,14 +127,18 @@ function LimitRow({
 				<span className="text-omp-md font-medium text-[var(--omp-text)]">{limit.label}</span>
 				<div className="flex items-center gap-2">
 					{limit.status && limit.status !== "ok" && (
-						<Badge variant={limit.status === "exhausted" ? "error" : "warning"}>{limit.status}</Badge>
+						<Badge variant={limit.status === "exhausted" ? "error" : "warning"}>
+							{STATUS_KEYS[limit.status] ? t(STATUS_KEYS[limit.status]) : limit.status}
+						</Badge>
 					)}
-					<span className="font-mono text-omp-sm tabular-nums text-[var(--omp-muted)]">
-						{limitValueText(limit, t)}
-					</span>
+					{limitHasDetail(limit) && (
+						<span className="font-mono text-omp-sm tabular-nums text-[var(--omp-muted)]">
+							{limitValueText(limit, t)}
+						</span>
+					)}
 				</div>
 			</div>
-			<ProgressBar value={fraction} height={5} valueText={`${Math.round(fraction * 100)}%`} />
+			<ProgressBar value={fraction} height={5} valueText={percentText(fraction)} />
 			{resetCountdown(limit.resetsAt, t, now) && (
 				<span className="text-omp-xs text-[var(--omp-dim)]">{resetCountdown(limit.resetsAt, t, now)}</span>
 			)}
@@ -100,10 +157,12 @@ function LimitRow({
 
 function ProviderReportCard({
 	report,
+	providerName,
 	t,
 	now,
 }: {
 	report: UsageReport;
+	providerName: string;
 	t: (k: string, p?: Record<string, string | number>) => string;
 	now: number;
 }) {
@@ -111,11 +170,16 @@ function ProviderReportCard({
 		<div className="rounded-lg border border-[var(--omp-border-muted)] p-3">
 			<div className="mb-2 flex items-center justify-between">
 				<div className="flex items-center gap-2">
-					<span className="text-omp-lg font-semibold text-[var(--omp-text)]">{report.provider}</span>
+					<span className="text-omp-lg font-semibold text-[var(--omp-text)]">{providerName}</span>
 					{report.account && <span className="text-omp-sm text-[var(--omp-muted)]">{report.account}</span>}
 				</div>
 				{report.resetCreditsAvailable !== undefined && report.resetCreditsAvailable > 0 && (
-					<Badge variant="info">{t("usage.resetsAvailable", { count: report.resetCreditsAvailable })}</Badge>
+					<Badge variant="info">
+						{t("usage.resetsAvailable", {
+							count: report.resetCreditsAvailable,
+							plural: report.resetCreditsAvailable === 1 ? "" : "s",
+						})}
+					</Badge>
 				)}
 			</div>
 			{report.notes && report.notes.length > 0 && (
@@ -225,7 +289,12 @@ export function UsageWindow() {
 	const [resetsOpen, setResetsOpen] = useState(false);
 	const [resetsLoading, setResetsLoading] = useState(false);
 	const [redeemingKey, setRedeemingKey] = useState<string | null>(null);
+	const [pendingRedeem, setPendingRedeem] = useState<RpcResetCreditAccount | null>(null);
 	const now = useNowTick(open);
+	const catalogProviders = useModelStore(s => s.providers);
+	const refreshProviders = useModelStore(s => s.refreshProviders);
+	// Reports name providers by id ("openai-codex"); the rest of the app shows names.
+	const providerName = (id: string) => catalogProviders.find(provider => provider.id === id)?.name ?? id;
 
 	/** The tab/session a quota read was issued for. A late response from a tab
 	 * that is no longer frontmost must not overwrite the new tab's numbers. */
@@ -275,9 +344,7 @@ export function UsageWindow() {
 	/** Spend one banked reset on an account, then re-read quotas and credits. */
 	const redeemReset = useCallback(
 		async (account: RpcResetCreditAccount) => {
-			if (!window.confirm(t("usage.redeemConfirm", { account: `${account.providerLabel} · ${account.label}` }))) {
-				return;
-			}
+			setPendingRedeem(null);
 			setRedeemingKey(`${account.provider}:${account.target.credentialId}`);
 			try {
 				const res = await tabRpc.command({
@@ -297,6 +364,8 @@ export function UsageWindow() {
 				});
 				void loadQuotas();
 				void loadResets();
+			} catch (cause) {
+				toast({ variant: "error", title: t("usage.redeemReset"), message: String(cause) });
 			} finally {
 				setRedeemingKey(null);
 			}
@@ -328,6 +397,23 @@ export function UsageWindow() {
 		void loadQuotas();
 	}, [open, loadQuotas]);
 
+	// Without this a passed window kept its old bar and "resetting…" until the
+	// user pressed Refresh. One re-read just after the earliest upcoming reset.
+	const nextResetAt = useMemo(() => nextQuotaReset(reports, Date.now()), [reports]);
+	useEffect(() => {
+		if (!open || nextResetAt === undefined) return;
+		const timer = setTimeout(() => void loadQuotas(), Math.max(0, nextResetAt - Date.now()) + RESET_REREAD_GRACE_MS);
+		return () => clearTimeout(timer);
+	}, [open, nextResetAt, loadQuotas]);
+
+	// Provider names come from the catalog, which may not be loaded yet if the
+	// Providers window was never opened; a cache-aware read fills it.
+	const catalogEmpty = catalogProviders.length === 0;
+	useEffect(() => {
+		if (open && sidecarReady && catalogEmpty) void refreshProviders().catch(() => {});
+	}, [open, sidecarReady, catalogEmpty, refreshProviders]);
+	const fetchedAt = (reports ?? []).reduce((latest, report) => Math.max(latest, report.fetchedAt ?? 0), 0);
+
 	// A settled transcript append and a fresh sidecar snapshot both move the
 	// session figures. Mid-run appends come several times a turn, so only the
 	// pulse may re-queue a command there — the serial queue stays free for the
@@ -353,134 +439,168 @@ export function UsageWindow() {
 
 	const sessionRows = session
 		? [
-				{ icon: Zap, label: t("usage.inputTokens"), value: formatTokens(session.input) },
-				{ icon: Database, label: t("usage.outputTokens"), value: formatTokens(session.output) },
+				{ icon: ArrowDownToLine, label: t("usage.inputTokens"), value: formatTokens(session.input) },
+				{ icon: ArrowUpFromLine, label: t("usage.outputTokens"), value: formatTokens(session.output) },
 				{ icon: Database, label: t("usage.cacheRead"), value: formatTokens(session.cacheRead) },
 				{ icon: Database, label: t("usage.cacheWrite"), value: formatTokens(session.cacheWrite) },
-				{ icon: Coins, label: t("usage.totalTokens"), value: formatTokens(session.totalTokens) },
+				{ icon: Sigma, label: t("usage.totalTokens"), value: formatTokens(session.totalTokens) },
 				...(session.orchestrationTokens > 0
-					? [{ icon: Zap, label: t("usage.orchestration"), value: formatTokens(session.orchestrationTokens) }]
+					? [{ icon: Workflow, label: t("usage.orchestration"), value: formatTokens(session.orchestrationTokens) }]
 					: []),
-				{ icon: Coins, label: t("usage.premiumRequests"), value: String(session.premiumRequests) },
-				{ icon: Coins, label: t("usage.cost"), value: formatCost(session.cost, 6) },
+				// Premium requests only exist on multiplier-billed providers (Copilot);
+				// a permanent "0" everywhere else reads as a broken counter.
+				...(session.premiumRequests > 0
+					? [{ icon: Sparkles, label: t("usage.premiumRequests"), value: String(session.premiumRequests) }]
+					: []),
+				{
+					icon: Coins,
+					label: t("usage.cost"),
+					value: formatCost(session.cost, session.cost === 0 || session.cost >= 1 ? 2 : 4),
+				},
 			]
 		: [];
 
 	return (
-		<Modal open={open} onClose={close} title={t("usage.title")} size="lg">
-			<div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
-				<div className="flex items-center justify-between">
-					<span className="text-omp-sm font-semibold text-[var(--omp-muted)]">{t("usage.providerQuotas")}</span>
-					<div className="flex items-center gap-1">
-						{resetsAvailable && (
+		<>
+			<Modal open={open} onClose={close} title={t("usage.title")} size="lg">
+				<div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto">
+					<div className="flex items-center justify-between">
+						<span className="text-omp-sm font-semibold text-[var(--omp-muted)]">
+							{t("usage.providerQuotas")}
+							{fetchedAt > 0 && (
+								<span className="ml-2 font-normal text-[var(--omp-dim)]">
+									{t("usage.asOf", { time: formatClock(fetchedAt) })}
+								</span>
+							)}
+						</span>
+						<div className="flex items-center gap-1">
+							{resetsAvailable && (
+								<Button
+									size="sm"
+									variant={resetsOpen ? "secondary" : "ghost"}
+									icon={<History size={12} />}
+									onClick={() => {
+										const next = !resetsOpen;
+										setResetsOpen(next);
+										if (next && resets === null) void loadResets();
+									}}
+									disabled={!sidecarReady}
+								>
+									{t("usage.redeemReset")}
+								</Button>
+							)}
 							<Button
 								size="sm"
-								variant={resetsOpen ? "secondary" : "ghost"}
-								icon={<History size={12} />}
-								onClick={() => {
-									const next = !resetsOpen;
-									setResetsOpen(next);
-									if (next && resets === null) void loadResets();
-								}}
+								variant="ghost"
+								icon={<RefreshCw size={12} />}
+								onClick={() => void loadQuotas()}
 								disabled={!sidecarReady}
+								loading={loading}
+								title={!sidecarReady ? t("usage.notConnected") : t("usage.refresh")}
 							>
-								{t("usage.redeemReset")}
+								{t("usage.refresh")}
 							</Button>
-						)}
-						<Button
-							size="sm"
-							variant="ghost"
-							icon={<RefreshCw size={12} />}
-							onClick={() => void loadQuotas()}
-							disabled={!sidecarReady}
-							loading={loading}
-							title={!sidecarReady ? t("usage.notConnected") : t("usage.refresh")}
-						>
-							{t("usage.refresh")}
-						</Button>
+						</div>
 					</div>
-				</div>
 
-				{resetsOpen && resetsAvailable && (
-					<div className="rounded-lg border border-[var(--omp-border-muted)] px-3 py-1.5">
-						{resetsLoading && resets === null ? (
-							<div className="flex items-center justify-center py-3">
-								<Spinner />
-							</div>
-						) : (resets ?? []).length === 0 ? (
-							<span className="block py-2 text-center text-omp-md text-[var(--omp-dim)]">
-								{t("usage.noResets")}
-							</span>
-						) : (
-							<div className="divide-y divide-[var(--omp-border-muted)]">
-								{(resets ?? []).map(account => {
-									const key = `${account.provider}:${account.target.credentialId}`;
-									return (
-										<ResetCreditRow
-											key={key}
-											account={account}
-											t={t}
-											now={now}
-											busy={redeemingKey === key}
-											onRedeem={() => void redeemReset(account)}
-										/>
-									);
-								})}
-							</div>
-						)}
-					</div>
-				)}
-
-				{error && (
-					<div className="rounded-md bg-[var(--omp-tool-error-bg)] px-3 py-2 text-omp-md text-[var(--omp-error)]">
-						{error}
-					</div>
-				)}
-				{loading && reports === null && (
-					<div className="flex items-center justify-center py-8">
-						<Spinner />
-					</div>
-				)}
-
-				{reports && reports.length === 0 && !loading && (
-					<div className="rounded-md border border-[var(--omp-border-muted)] px-3 py-4 text-center text-omp-md text-[var(--omp-dim)]">
-						{t("usage.noApi")}
-					</div>
-				)}
-
-				{reports && reports.length > 0 && (
-					<div className="flex flex-col gap-3">
-						{reports.map(report => (
-							<ProviderReportCard
-								key={`${report.provider}-${report.account ?? ""}`}
-								report={report}
-								t={t}
-								now={now}
-							/>
-						))}
-					</div>
-				)}
-
-				{session && (
-					<>
-						<span className="text-omp-sm font-semibold text-[var(--omp-muted)]">{t("usage.sessionTallies")}</span>
-						<div className="grid grid-cols-2 gap-2">
-							{sessionRows.map(({ icon: Icon, label, value }) => (
-								<div
-									key={label}
-									className="flex items-center gap-2 rounded-md border border-[var(--omp-border-muted)] px-3 py-2"
-								>
-									<Icon size={13} className="text-[var(--omp-dim)]" />
-									<span className="flex-1 text-omp-md text-[var(--omp-muted)]">{label}</span>
-									<span className="font-mono text-omp-md font-medium tabular-nums text-[var(--omp-text)]">
-										{value}
-									</span>
+					{resetsOpen && resetsAvailable && (
+						<div className="rounded-lg border border-[var(--omp-border-muted)] px-3 py-1.5">
+							{resetsLoading && resets === null ? (
+								<div className="flex items-center justify-center py-3">
+									<Spinner />
 								</div>
+							) : (resets ?? []).length === 0 ? (
+								<span className="block py-2 text-center text-omp-md text-[var(--omp-dim)]">
+									{t("usage.noResets")}
+								</span>
+							) : (
+								<div className="divide-y divide-[var(--omp-border-muted)]">
+									{(resets ?? []).map(account => {
+										const key = `${account.provider}:${account.target.credentialId}`;
+										return (
+											<ResetCreditRow
+												key={key}
+												account={account}
+												t={t}
+												now={now}
+												busy={redeemingKey === key}
+												onRedeem={() => setPendingRedeem(account)}
+											/>
+										);
+									})}
+								</div>
+							)}
+						</div>
+					)}
+
+					{error && (
+						<div className="rounded-md bg-[var(--omp-tool-error-bg)] px-3 py-2 text-omp-md text-[var(--omp-error)]">
+							{error}
+						</div>
+					)}
+					{loading && reports === null && (
+						<div className="flex items-center justify-center py-8">
+							<Spinner />
+						</div>
+					)}
+
+					{reports && reports.length === 0 && !loading && (
+						<div className="rounded-md border border-[var(--omp-border-muted)] px-3 py-4 text-center text-omp-md text-[var(--omp-dim)]">
+							{t("usage.noApi")}
+						</div>
+					)}
+
+					{reports && reports.length > 0 && (
+						<div className="flex flex-col gap-3">
+							{reports.map(report => (
+								<ProviderReportCard
+									key={`${report.provider}-${report.account ?? ""}`}
+									report={report}
+									providerName={providerName(report.provider)}
+									t={t}
+									now={now}
+								/>
 							))}
 						</div>
-					</>
-				)}
-			</div>
-		</Modal>
+					)}
+
+					{session && (
+						<>
+							<span className="text-omp-sm font-semibold text-[var(--omp-muted)]">
+								{t("usage.sessionTallies")}
+							</span>
+							<div className="grid grid-cols-2 gap-2">
+								{sessionRows.map(({ icon: Icon, label, value }) => (
+									<div
+										key={label}
+										className="flex items-center gap-2 rounded-md border border-[var(--omp-border-muted)] px-3 py-2"
+									>
+										<Icon size={13} className="text-[var(--omp-dim)]" />
+										<span className="flex-1 text-omp-md text-[var(--omp-muted)]">{label}</span>
+										<span className="font-mono text-omp-md font-medium tabular-nums text-[var(--omp-text)]">
+											{value}
+										</span>
+									</div>
+								))}
+							</div>
+						</>
+					)}
+				</div>
+			</Modal>
+			<ConfirmDialog
+				open={pendingRedeem !== null}
+				title={t("usage.redeemReset")}
+				message={
+					pendingRedeem
+						? t("usage.redeemConfirm", { account: `${pendingRedeem.providerLabel} · ${pendingRedeem.label}` })
+						: ""
+				}
+				confirmLabel={t("usage.redeem")}
+				onCancel={() => setPendingRedeem(null)}
+				onConfirm={() => {
+					if (pendingRedeem) void redeemReset(pendingRedeem);
+				}}
+			/>
+		</>
 	);
 }

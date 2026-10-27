@@ -86,7 +86,8 @@ interface UiStore {
 	composerEditorOpen: boolean;
 	composerEditorInitial: string | null;
 	providerConfigOpen: boolean;
-	providerConfigEdit: CustomProviderView | null;
+	/** `"new"` opens straight into the add form; a view opens it pre-filled. */
+	providerConfigEdit: CustomProviderView | "new" | null;
 	renameDialogOpen: boolean;
 	/** Worktree-create dialog (plan/20): non-null opens it; baseCwd pins the
 	 * repo when invoked from a Sidebar group (default = active session cwd). */
@@ -221,7 +222,7 @@ interface UiStore {
 	closeLive: () => void;
 	openComposerEditor: (initial: string) => void;
 	closeComposerEditor: () => void;
-	openProviderConfig: (editProvider?: CustomProviderView | null) => void;
+	openProviderConfig: (editProvider?: CustomProviderView | "new" | null) => void;
 	closeProviderConfig: () => void;
 	openRenameDialog: () => void;
 	closeRenameDialog: () => void;
@@ -439,7 +440,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	openComposerEditor: initial => set({ composerEditorOpen: true, composerEditorInitial: initial }),
 	closeComposerEditor: () => set({ composerEditorOpen: false, composerEditorInitial: null }),
 	providerConfigOpen: false,
-	providerConfigEdit: null as CustomProviderView | null,
+	providerConfigEdit: null as CustomProviderView | "new" | null,
 	openProviderConfig: editProvider => set({ providerConfigOpen: true, providerConfigEdit: editProvider ?? null }),
 	closeProviderConfig: () => set({ providerConfigOpen: false, providerConfigEdit: null }),
 	renameDialogOpen: false,
