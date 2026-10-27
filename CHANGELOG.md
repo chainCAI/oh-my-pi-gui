@@ -2,15 +2,18 @@
 
 ## [Unreleased]
 
+## [0.9.30] - 2026-10-27
+
 ### Added
 
 - **Rosé Pine** theme: the dark Rosé Pine palette for the whole window, in Settings → Theme. — thanks [@ItsLemmy](https://github.com/ItsLemmy) ([#24](https://github.com/nornzach/oh-my-pi-gui/pull/24))
-- Web addresses and file paths in replies and tool output are links. A click opens a web page in the Browser panel and a file in the Files preview at the named line (`src/app.ts:42`, `#L42`); ⌘/Ctrl-click opens it in your browser or default app. Right-click opens, reveals in Finder, or copies the link or path. Paths become links only when they exist.
+- Web addresses and file paths in replies and tool output are links. A click opens a web page in the Browser panel and a file in the Files preview at the named line (`src/app.ts:42`, `#L42`); ⌘/Ctrl-click opens it in your browser or default app. Right-click opens, reveals in Finder, or copies the link or path. Paths become links only when they exist ([#27](https://github.com/nornzach/oh-my-pi-gui/issues/27)).
 - Right-clicking selected text in a reply or tool output offers **Copy**.
 
 ### Changed
 
 - Clicking a file path in a tool card previews it in the Files panel; ⌘/Ctrl-click opens it in the default app as a plain click did before.
+- Bundled agent rebuilt from monorepo `b5a2c108`, on upstream omp v18.13.1 plus the fork's sign-in fixes for Open in Browser and MCP re-authorization. Among upstream's changes: `tools.restrictedFolders` makes every action on a listed folder ask for approval in every mode, `/pause` shows what is still running across subagents, advisors wait out timed rate limits instead of dropping their review, and task subagents no longer receive `AGENTS.md` files when the session has extra workspace roots.
 
 ### Fixed
 
