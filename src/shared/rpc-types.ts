@@ -211,11 +211,11 @@ export type RpcCommand =
 	| { id?: string; type: "ssh_test"; host: RpcSshHostInput & { name: string } }
 
 	// Voice. Dictation: the GUI's microphone feeds the dictation model; words come back as
-	// `dictation_*` frames. `pcm16Base64` is little-endian PCM16 mono at 16 kHz.
-	| { id?: string; type: "dictation_start" }
-	| { id?: string; type: "dictation_audio"; pcm16Base64: string }
-	| { id?: string; type: "dictation_stop" }
-	| { id?: string; type: "dictation_cancel" }
+	// `host_dictation_*` frames. `pcm16Base64` is little-endian PCM16 mono at 16 kHz.
+	| { id?: string; type: "host_dictation_start" }
+	| { id?: string; type: "host_dictation_audio"; pcm16Base64: string }
+	| { id?: string; type: "host_dictation_stop" }
+	| { id?: string; type: "host_dictation_cancel" }
 	| { id?: string; type: "synthesize_speech"; text: string }
 	| { id?: string; type: "retry" }
 	| { id?: string; type: "clear_context" }
@@ -605,7 +605,7 @@ export const LIVE_FRAME_TYPES: ReadonlySet<string> = new Set<RpcLiveFrame["type"
 export type RpcDictationState = "preparing" | "recording" | "transcribing" | "idle";
 
 export interface RpcDictationStateFrame {
-	type: "dictation_state";
+	type: "host_dictation_state";
 	state: RpcDictationState;
 }
 
@@ -615,21 +615,21 @@ export interface RpcDictationStateFrame {
  * characters before the dictation point; `submit` sends, per `stt.submitTrigger`.
  */
 export type RpcDictationTextFrame =
-	| { type: "dictation_text"; op: "volatile"; text: string }
-	| { type: "dictation_text"; op: "commit"; text: string }
-	| { type: "dictation_text"; op: "clear" }
-	| { type: "dictation_text"; op: "trim"; count: number }
-	| { type: "dictation_text"; op: "submit" };
+	| { type: "host_dictation_text"; op: "volatile"; text: string }
+	| { type: "host_dictation_text"; op: "commit"; text: string }
+	| { type: "host_dictation_text"; op: "clear" }
+	| { type: "host_dictation_text"; op: "trim"; count: number }
+	| { type: "host_dictation_text"; op: "submit" };
 
 export interface RpcDictationNoticeFrame {
-	type: "dictation_notice";
+	type: "host_dictation_notice";
 	level: "warning" | "status";
 	message: string;
 }
 
 /** Download progress of the dictation model while preparing (integer percent, never decreasing). */
 export interface RpcDictationDownloadFrame {
-	type: "dictation_download";
+	type: "host_dictation_download";
 	label: string;
 	percent: number;
 }
@@ -641,13 +641,13 @@ export type RpcDictationFrame =
 	| RpcDictationDownloadFrame;
 
 export const DICTATION_FRAME_TYPES: ReadonlySet<string> = new Set<RpcDictationFrame["type"]>([
-	"dictation_state",
-	"dictation_text",
-	"dictation_notice",
-	"dictation_download",
+	"host_dictation_state",
+	"host_dictation_text",
+	"host_dictation_notice",
+	"host_dictation_download",
 ]);
 
-/** Result of `dictation_start`: `recording`, or `idle` when the start was cancelled or failed. */
+/** Result of `host_dictation_start`: `recording`, or `idle` when the start was cancelled or failed. */
 export interface RpcDictationStartResult {
 	state: RpcDictationState;
 }

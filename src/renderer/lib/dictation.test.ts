@@ -58,14 +58,18 @@ function harness(
 	const sent: string[] = [];
 	const rpc = {
 		dictationStart: vi.fn(() =>
-			options.startResult ? Promise.resolve(options.startResult) : ok("dictation_start", { state: "recording" }),
+			options.startResult
+				? Promise.resolve(options.startResult)
+				: ok("host_dictation_start", { state: "recording" }),
 		),
 		dictationAudio: vi.fn((pcm: string) => {
 			sent.push(pcm);
-			return ok("dictation_audio");
+			return ok("host_dictation_audio");
 		}),
-		dictationStop: vi.fn(() => (options.stopResult ? Promise.resolve(options.stopResult) : ok("dictation_stop"))),
-		dictationCancel: vi.fn(() => ok("dictation_cancel")),
+		dictationStop: vi.fn(() =>
+			options.stopResult ? Promise.resolve(options.stopResult) : ok("host_dictation_stop"),
+		),
+		dictationCancel: vi.fn(() => ok("host_dictation_cancel")),
 	};
 	let listener: ((frame: RpcDictationFrame) => void) | undefined;
 	const unsubscribe = vi.fn();
@@ -95,7 +99,7 @@ function harness(
 	});
 	const frame = (next: RpcDictationFrame) => listener?.(next);
 	const state = (value: "preparing" | "recording" | "transcribing" | "idle") =>
-		frame({ type: "dictation_state", state: value });
+		frame({ type: "host_dictation_state", state: value });
 	const phase = () => views.at(-1)?.phase ?? null;
 	return { session, rpc, sent, mics, views, editor, warnings, onNothingHeard, unsubscribe, frame, state, phase };
 }
@@ -118,9 +122,9 @@ describe("DictationSession", () => {
 		h.mics[0]!.feed(chunk(4));
 		expect(h.sent).toEqual([pcm16ToBase64(chunk(1, 2)), pcm16ToBase64(chunk(3)), pcm16ToBase64(chunk(4))]);
 
-		h.frame({ type: "dictation_text", op: "volatile", text: "hello wor" });
+		h.frame({ type: "host_dictation_text", op: "volatile", text: "hello wor" });
 		expect(h.views.at(-1)?.partial).toBe("hello wor");
-		h.frame({ type: "dictation_text", op: "commit", text: "hello world" });
+		h.frame({ type: "host_dictation_text", op: "commit", text: "hello world" });
 		expect(h.editor.commit).toHaveBeenCalledWith("hello world");
 		expect(h.views.at(-1)?.partial).toBe("");
 
@@ -143,9 +147,9 @@ describe("DictationSession", () => {
 		h.session.start();
 		h.state("recording");
 		await settle();
-		h.frame({ type: "dictation_text", op: "commit", text: "ship it submit" });
-		h.frame({ type: "dictation_text", op: "trim", count: 7 });
-		h.frame({ type: "dictation_text", op: "submit" });
+		h.frame({ type: "host_dictation_text", op: "commit", text: "ship it submit" });
+		h.frame({ type: "host_dictation_text", op: "trim", count: 7 });
+		h.frame({ type: "host_dictation_text", op: "submit" });
 		expect(h.editor.trim).toHaveBeenCalledWith(7);
 		expect(h.editor.submit).not.toHaveBeenCalled();
 		h.state("idle");
@@ -157,10 +161,10 @@ describe("DictationSession", () => {
 		h.session.start();
 		await settle();
 		h.mics[0]!.feed(chunk(9));
-		h.frame({ type: "dictation_download", label: "Nemotron", percent: 3 });
+		h.frame({ type: "host_dictation_download", label: "Nemotron", percent: 3 });
 		expect(h.mics[0]!.stop).toHaveBeenCalledTimes(1);
 		expect(h.views.at(-1)).toMatchObject({ phase: "downloading", download: { label: "Nemotron", percent: 3 } });
-		h.frame({ type: "dictation_download", label: "Nemotron", percent: 40 });
+		h.frame({ type: "host_dictation_download", label: "Nemotron", percent: 40 });
 		expect(h.mics).toHaveLength(1);
 
 		h.state("recording");
@@ -210,7 +214,7 @@ describe("DictationSession", () => {
 		const h = harness({
 			startResult: {
 				type: "response",
-				command: "dictation_start",
+				command: "host_dictation_start",
 				success: false,
 				error: "Speech-to-text is disabled",
 			} as RpcResponse,
@@ -226,7 +230,7 @@ describe("DictationSession", () => {
 		const h = harness({
 			stopResult: {
 				type: "response",
-				command: "dictation_stop",
+				command: "host_dictation_stop",
 				success: false,
 				error: "Transcription failed",
 			} as RpcResponse,
@@ -250,7 +254,7 @@ describe("DictationSession", () => {
 		h.session.cancel();
 		expect(h.rpc.dictationCancel).toHaveBeenCalledTimes(1);
 		expect(h.views.at(-1)).toBeNull();
-		h.frame({ type: "dictation_text", op: "commit", text: "late words" });
+		h.frame({ type: "host_dictation_text", op: "commit", text: "late words" });
 		expect(h.editor.commit).not.toHaveBeenCalled();
 		expect(h.onNothingHeard).not.toHaveBeenCalled();
 	});

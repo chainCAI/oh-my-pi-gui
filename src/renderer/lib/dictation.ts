@@ -1,7 +1,7 @@
 /**
  * Live dictation into the composer. The microphone is captured here (16 kHz PCM16 from an
  * AudioWorklet) and streamed to the sidecar, whose speech controller sends back the words
- * as `dictation_*` frames: in-progress words while the user speaks, final words as each
+ * as `host_dictation_*` frames: in-progress words while the user speaks, final words as each
  * phrase ends.
  *
  * The microphone opens on the click, while the sidecar loads the model, so the first words
@@ -147,7 +147,7 @@ export class DictationSession {
 	#onFrame(frame: RpcDictationFrame): void {
 		if (this.#ended) return;
 		switch (frame.type) {
-			case "dictation_state":
+			case "host_dictation_state":
 				if (frame.state === "recording") this.#beginRecording();
 				else if (frame.state === "transcribing") {
 					this.#sidecarRecording = false;
@@ -155,7 +155,7 @@ export class DictationSession {
 					this.#update({ phase: "transcribing", level: 0 });
 				} else if (frame.state === "idle") this.#end();
 				return;
-			case "dictation_download":
+			case "host_dictation_download":
 				// Minutes of held audio would arrive as a wall of stale words; ask again once ready.
 				if (this.#view.phase !== "downloading") {
 					this.#closeMic();
@@ -163,7 +163,7 @@ export class DictationSession {
 				}
 				this.#update({ phase: "downloading", level: 0, download: { label: frame.label, percent: frame.percent } });
 				return;
-			case "dictation_text":
+			case "host_dictation_text":
 				switch (frame.op) {
 					case "volatile":
 						this.#update({ partial: frame.text });
@@ -184,7 +184,7 @@ export class DictationSession {
 						return;
 				}
 				return;
-			case "dictation_notice":
+			case "host_dictation_notice":
 				// Status lines ("Transcribing...") mirror the state frames the strip already shows.
 				if (frame.level === "warning") {
 					this.#heardWords = true;
