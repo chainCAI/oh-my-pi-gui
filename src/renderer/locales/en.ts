@@ -1840,8 +1840,13 @@ export const en: Record<string, string> = {
 	"extDialog.openUrl.title": "Open in Browser",
 	"extDialog.openUrl.open": "Open in Browser",
 	"extDialog.openUrl.openAgain": "Open Again",
-	"extDialog.openUrl.done": "Done",
-	"extDialog.openUrl.hint": "Open the link, then press Done.",
+	"extDialog.openUrl.hint": "Open the link to continue. This closes by itself once you're signed in.",
+	"extDialog.openUrl.waiting": "Waiting for your browser…",
+	"extDialog.openUrl.pasteToggle": "Browser can't reach this app? Paste the code",
+	"extDialog.openUrl.pastePlaceholder": "Authorization code or redirect URL",
+	"extDialog.openUrl.pasteSubmit": "Use Code",
+	"extDialog.openUrl.pasteChecking": "Checking…",
+	"extDialog.openUrl.pasteRetry": "That code didn't work. Copy it from the browser again and paste it here.",
 
 	// Session picker dialog
 	"sessionPicker.searchLabel": "Search sessions",

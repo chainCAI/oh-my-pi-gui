@@ -658,7 +658,8 @@ function McpTab({
 			}
 			const data = res.data as { ok?: boolean; error?: string } | undefined;
 			if (data?.ok === false) {
-				if (!cancelling) {
+				// "cancelled" is the user dismissing the browser dialog: no error to report.
+				if (!cancelling && data.error !== "cancelled") {
 					toast({ variant: "error", title: t("mcp.reauth.failed"), message: data.error ?? "" });
 				}
 				return;

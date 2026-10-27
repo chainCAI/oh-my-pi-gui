@@ -2,7 +2,7 @@ import { parseHTML } from "linkedom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
-import type { ExtensionUIResponse, RpcCommand, RpcResponse } from "../../../shared/rpc-types";
+import type { ExtensionUIRequest, ExtensionUIResponse, RpcCommand, RpcResponse } from "../../../shared/rpc-types";
 import { I18nProvider } from "../../lib/i18n";
 import { type ExtensionUiStore, useExtensionUiStore } from "../../stores/extension-ui";
 import {
@@ -88,6 +88,50 @@ async function click(element: TestElement): Promise<void> {
 		element.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
 	});
 	await flush();
+}
+
+/** Set a controlled input's value and drive its React onChange contract. */
+async function typeInto(element: TestElement, value: string): Promise<void> {
+	const record = element as unknown as Record<string, unknown>;
+	record.value = value;
+	const propsKey = Object.getOwnPropertyNames(record).find(key => key.startsWith("__reactProps$"));
+	const props = propsKey ? (record[propsKey] as { onChange?: (event: object) => void } | undefined) : undefined;
+	await act(async () => props?.onChange?.({ target: element, currentTarget: element }));
+}
+
+async function submit(form: TestElement): Promise<void> {
+	await act(async () => {
+		form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+	});
+	await flush();
+}
+
+const PASTE_TITLE = "Paste the authorization code (or full redirect URL):";
+
+async function push(...requests: ExtensionUIRequest[]): Promise<void> {
+	await act(async () => {
+		for (const request of requests) useExtensionUiStore.getState().pushRequest(request);
+	});
+	await flush();
+}
+
+/** What `login` sends for a paste-code provider: the browser step, then its paste prompt. */
+async function showSignIn(): Promise<void> {
+	await push(
+		{
+			type: "extension_ui_request",
+			id: "url-1",
+			method: "open_url",
+			url: "https://claude.ai/oauth/authorize?state=s",
+		},
+		{
+			type: "extension_ui_request",
+			id: "code-1",
+			method: "input",
+			title: PASTE_TITLE,
+			authCodeFor: "url-1",
+		},
+	);
 }
 
 function showAskDialog(): void {
@@ -328,5 +372,76 @@ describe("ExtensionDialog cross-tab requests", () => {
 		// consuming it here would drop the text into the wrong composer.
 		expect(editorFired).toBe(false);
 		expect(bgStore.getState().pendingRequests.map(request => request.id)).toEqual(["bg-editor"]);
+	});
+});
+
+describe("ExtensionDialog sign-in browser step", () => {
+	it("takes a pasted code inside the browser dialog instead of a second dialog after it", async () => {
+		await mount();
+		await showSignIn();
+
+		// One dialog, nothing to confirm: the paste prompt is not queued behind a Done.
+		expect(document.body.textContent).not.toContain(PASTE_TITLE);
+		expect(buttonWithText("Done")).toBeUndefined();
+
+		const toggle = buttonWithText("Paste the code");
+		if (!toggle) throw new Error("paste toggle missing");
+		await click(toggle);
+		await typeInto(document.querySelector("input") as unknown as TestElement, " pasted-code#s ");
+		await submit(document.querySelector("form") as unknown as TestElement);
+
+		expect(respondExtensionUi.mock.calls).toEqual([
+			[{ type: "extension_ui_response", id: "code-1", value: "pasted-code#s" }],
+		]);
+		expect(buttonWithText("Checking")).toBeDefined();
+
+		// The agent could not use the value and asks again in the same dialog.
+		await push({
+			type: "extension_ui_request",
+			id: "code-2",
+			method: "input",
+			title: PASTE_TITLE,
+			authCodeFor: "url-1",
+		});
+		expect(document.body.textContent).toContain("That code didn't work");
+		expect(buttonWithText("Use Code")).toBeDefined();
+
+		// Signed in: the agent closes both requests and the dialog goes away.
+		await push(
+			{ type: "extension_ui_request", id: "close-1", method: "cancel", targetId: "code-2" },
+			{ type: "extension_ui_request", id: "close-2", method: "cancel", targetId: "url-1" },
+		);
+		expect(document.querySelector("form")).toBeNull();
+		expect(buttonWithText("Open in Browser")).toBeUndefined();
+	});
+
+	it("cancels the paste prompt with the browser step so it never opens on its own", async () => {
+		await mount();
+		await showSignIn();
+
+		const cancel = buttonWithText("Cancel");
+		if (!cancel) throw new Error("cancel button missing");
+		await click(cancel);
+
+		expect(
+			respondExtensionUi.mock.calls.map(([response]) => response).sort((a, b) => a.id.localeCompare(b.id)),
+		).toEqual([
+			{ type: "extension_ui_response", id: "code-1", cancelled: true },
+			{ type: "extension_ui_response", id: "url-1", cancelled: true },
+		]);
+		expect(document.body.textContent).not.toContain(PASTE_TITLE);
+	});
+
+	it("shows a paste prompt on its own once its browser dialog is gone", async () => {
+		await mount();
+		await push({
+			type: "extension_ui_request",
+			id: "code-1",
+			method: "input",
+			title: PASTE_TITLE,
+			authCodeFor: "url-gone",
+		});
+
+		expect(document.body.textContent).toContain(PASTE_TITLE);
 	});
 });

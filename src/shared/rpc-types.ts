@@ -1637,6 +1637,12 @@ export type ExtensionUIRequest =
 			title: string;
 			placeholder?: string;
 			timeout?: number;
+			/**
+			 * Set on a pasted OAuth authorization-code prompt: the id of the
+			 * `open_url` request it belongs to. The agent closes it when the
+			 * browser signs in first.
+			 */
+			authCodeFor?: string;
 	  }
 	| {
 			type: "extension_ui_request";

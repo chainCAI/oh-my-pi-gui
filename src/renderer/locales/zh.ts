@@ -1789,8 +1789,13 @@ export const zh: Record<string, string> = {
 	"extDialog.openUrl.title": "在浏览器中打开",
 	"extDialog.openUrl.open": "在浏览器中打开",
 	"extDialog.openUrl.openAgain": "再次打开",
-	"extDialog.openUrl.done": "完成",
-	"extDialog.openUrl.hint": "请打开链接，然后点击“完成”。",
+	"extDialog.openUrl.hint": "打开链接继续。登录完成后此窗口会自动关闭。",
+	"extDialog.openUrl.waiting": "正在等待浏览器…",
+	"extDialog.openUrl.pasteToggle": "浏览器无法连接到本应用？粘贴授权码",
+	"extDialog.openUrl.pastePlaceholder": "授权码或重定向 URL",
+	"extDialog.openUrl.pasteSubmit": "使用授权码",
+	"extDialog.openUrl.pasteChecking": "正在验证…",
+	"extDialog.openUrl.pasteRetry": "授权码无效。请从浏览器重新复制并粘贴到这里。",
 
 	// Session picker dialog
 	"sessionPicker.searchLabel": "搜索会话",

@@ -16,6 +16,8 @@
 
 - The Agents card above the message box shows only while an agent is working, and **Pinned Agents** in Settings now applies to it: Off hides it, Collapsed shows the summary, Full lists every agent. Finished agents stay in the Agents tab ([#25](https://github.com/nornzach/oh-my-pi-gui/issues/25)).
 - Usage reset times read like the CLI's, such as `resets in 5d 2h` instead of `resets in 7328m 42s`. Other times over an hour, such as job and goal timers, also show hours and days ([#26](https://github.com/nornzach/oh-my-pi-gui/issues/26)).
+- Signing in from **Open in Browser** no longer asks for a pasted code after you press Done: the dialog waits for the browser and closes by itself once you're signed in. If the browser can't reach the app, paste the code into the same dialog.
+- Cancelling **Open in Browser** while re-authorizing an MCP server stops the re-authorization, without an error message.
 
 ## [0.9.29] - 2026-10-26
 

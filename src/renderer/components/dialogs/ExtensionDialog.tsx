@@ -23,8 +23,15 @@ import { useT } from "../../lib/i18n";
 import { MarkdownRenderer } from "../../lib/markdown";
 import { removeExtensionRequest, useAllPendingRequests, useExtensionUiStore } from "../../stores/extension-ui";
 import { toast } from "../../stores/toast";
-import { Button, Input, Modal } from "../common";
+import { Button, Input, Modal, Spinner } from "../common";
 import { ApprovalDialog } from "./ApprovalDialog";
+
+/** A paste prompt shown inside its sign-in dialog rather than on its own. */
+function belongsToOpenUrl(request: ExtensionUIRequest, pending: ExtensionUIRequest[]): boolean {
+	if (request.method !== "input" || !request.authCodeFor) return false;
+	const owner = request.authCodeFor;
+	return pending.some(other => other.id === owner && other.method === "open_url");
+}
 
 /** Requests handled elsewhere (store/router) — never rendered as dialogs. */
 const NON_DIALOG_METHODS = new Set(["notify", "setStatus", "setWidget", "setTitle", "set_editor_text", "cancel"]);
@@ -503,18 +510,47 @@ function EditorDialog({
 	);
 }
 
+type CodePrompt = Extract<ExtensionUIRequest, { method: "input" }>;
+
+type ExtensionResponse =
+	| { value: string }
+	| { confirmed: boolean }
+	| { askDialog: ExtensionAskDialogResult }
+	| { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> }
+	| { cancelled: true };
+
+function answerExtensionRequest(id: string, response: ExtensionResponse): void {
+	window.omp.ui.respondExtensionUi({ type: "extension_ui_response", id, ...response });
+	removeExtensionRequest(id);
+}
+
+/**
+ * The browser step of a sign-in. It stays up while the agent waits for the
+ * browser and closes when the sign-in ends; the agent sends the close. When
+ * the sign-in also accepts a pasted code, the agent's paste prompt
+ * (`authCodeFor`) shows here as an optional field instead of as a second
+ * dialog, for a browser that cannot reach this machine.
+ */
 function OpenUrlDialog({
 	request,
-	onDone,
+	codePrompt,
+	onCode,
 	onCancel,
 }: {
 	request: Extract<ExtensionUIRequest, { method: "open_url" }>;
-	onDone: () => void;
+	codePrompt: CodePrompt | undefined;
+	onCode: (prompt: CodePrompt, value: string) => void;
 	onCancel: () => void;
 }) {
 	const t = useT();
 	const [opened, setOpened] = useState(false);
+	const [pasting, setPasting] = useState(false);
+	const [code, setCode] = useState("");
+	// The prompt last answered; a new prompt after it means the agent could not use that value.
+	const [answered, setAnswered] = useState<string | null>(null);
 	const target = request.launchUrl ?? request.url;
+	const checking = answered !== null && (!codePrompt || codePrompt.id === answered);
+	const retry = answered !== null && codePrompt !== undefined && codePrompt.id !== answered;
 
 	return (
 		<Modal onClose={onCancel} open size="sm" title={t("extDialog.openUrl.title")}>
@@ -527,23 +563,66 @@ function OpenUrlDialog({
 				<div className="rounded-md border border-(--omp-border-muted) bg-(--omp-code-bg) px-2.5 py-2 font-mono text-omp-xs break-all text-(--omp-md-link)">
 					{target}
 				</div>
+				{opened && (
+					<div className="flex items-center gap-2 text-xs text-(--omp-muted)" role="status">
+						<Spinner size="sm" />
+						<span>{t("extDialog.openUrl.waiting")}</span>
+					</div>
+				)}
+				{(codePrompt || checking) &&
+					(pasting ? (
+						<form
+							className="space-y-1.5"
+							onSubmit={event => {
+								event.preventDefault();
+								const value = code.trim();
+								if (!codePrompt || checking || !value) return;
+								onCode(codePrompt, value);
+								setAnswered(codePrompt.id);
+								setCode("");
+							}}
+						>
+							<div className="flex items-center gap-2">
+								<div className="min-w-0 flex-1">
+									<Input
+										aria-label={t("extDialog.openUrl.pastePlaceholder")}
+										autoFocus
+										disabled={checking}
+										onChange={event => setCode(event.target.value)}
+										placeholder={t("extDialog.openUrl.pastePlaceholder")}
+										value={code}
+									/>
+								</div>
+								<Button disabled={checking || !code.trim()} size="sm" type="submit" variant="secondary">
+									{t(checking ? "extDialog.openUrl.pasteChecking" : "extDialog.openUrl.pasteSubmit")}
+								</Button>
+							</div>
+							{retry && <p className="text-omp-xs text-(--omp-error)">{t("extDialog.openUrl.pasteRetry")}</p>}
+						</form>
+					) : (
+						<button
+							className="text-omp-xs text-(--omp-md-link) hover:underline"
+							onClick={() => setPasting(true)}
+							type="button"
+						>
+							{t("extDialog.openUrl.pasteToggle")}
+						</button>
+					))}
 				<div className="flex items-center justify-end gap-2">
 					<Button onClick={onCancel} size="sm" variant="ghost">
 						{t("common.cancel")}
 					</Button>
 					<Button
+						autoFocus
 						icon={<ExternalLink size={12} />}
 						onClick={() => {
 							void window.omp.system.openExternal(target);
 							setOpened(true);
 						}}
 						size="sm"
-						variant="secondary"
+						variant={opened ? "secondary" : "primary"}
 					>
 						{opened ? t("extDialog.openUrl.openAgain") : t("extDialog.openUrl.open")}
-					</Button>
-					<Button autoFocus disabled={!opened} onClick={onDone} size="sm" variant="primary">
-						{t("extDialog.openUrl.done")}
 					</Button>
 				</div>
 				{!opened && <p className="text-right text-omp-xs text-(--omp-dim)">{t("extDialog.openUrl.hint")}</p>}
@@ -552,18 +631,17 @@ function OpenUrlDialog({
 	);
 }
 
-function ActiveDialog({ request, remaining }: { request: ExtensionUIRequest; remaining: number | null }) {
-	const respond = (
-		response:
-			| { value: string }
-			| { confirmed: boolean }
-			| { askDialog: ExtensionAskDialogResult }
-			| { answers: Array<{ id: string; selectedOptions: string[]; customInput?: string }> }
-			| { cancelled: true },
-	) => {
-		window.omp.ui.respondExtensionUi({ type: "extension_ui_response", id: request.id, ...response });
-		removeExtensionRequest(request.id);
-	};
+function ActiveDialog({
+	request,
+	remaining,
+	codePrompt,
+}: {
+	request: ExtensionUIRequest;
+	remaining: number | null;
+	/** The paste prompt that belongs to an `open_url` request. */
+	codePrompt?: CodePrompt;
+}) {
+	const respond = (response: ExtensionResponse) => answerExtensionRequest(request.id, response);
 	const cancel = () => respond({ cancelled: true });
 
 	switch (request.method) {
@@ -639,13 +717,18 @@ function ActiveDialog({ request, remaining }: { request: ExtensionUIRequest; rem
 				<EditorDialog key={request.id} onCancel={cancel} onValue={value => respond({ value })} request={request} />
 			);
 		case "open_url":
-			// Keyed: `opened` state must reset per request, or Done enables before
-			// the new URL was ever opened.
+			// Keyed: `opened` and paste state must reset per request.
 			return (
 				<OpenUrlDialog
+					codePrompt={codePrompt}
 					key={request.id}
-					onCancel={cancel}
-					onDone={() => respond({ value: "done" })}
+					onCancel={() => {
+						// Cancelling the sign-in also answers its paste prompt, so the
+						// prompt cannot surface as its own dialog in between.
+						if (codePrompt) answerExtensionRequest(codePrompt.id, { cancelled: true });
+						cancel();
+					}}
+					onCode={(prompt, value) => answerExtensionRequest(prompt.id, { value })}
 					request={request}
 				/>
 			);
@@ -662,7 +745,17 @@ export function ExtensionDialog() {
 	const pending = useAllPendingRequests();
 	const focusedPending = useExtensionUiStore(state => state.pendingRequests);
 
-	const request = useMemo(() => pending.find(req => !NON_DIALOG_METHODS.has(req.method)) ?? null, [pending]);
+	const request = useMemo(
+		() => pending.find(req => !NON_DIALOG_METHODS.has(req.method) && !belongsToOpenUrl(req, pending)) ?? null,
+		[pending],
+	);
+	const codePrompt = useMemo(
+		() =>
+			request?.method === "open_url"
+				? pending.find((req): req is CodePrompt => req.method === "input" && req.authCodeFor === request.id)
+				: undefined,
+		[pending, request],
+	);
 	const remaining = useCountdown(request);
 
 	// Consume non-dialog requests in place. Editor/title mutations must target
@@ -711,7 +804,7 @@ export function ExtensionDialog() {
 	return (
 		<>
 			<ExtensionSurfaces />
-			{request && <ActiveDialog remaining={remaining} request={request} />}
+			{request && <ActiveDialog codePrompt={codePrompt} remaining={remaining} request={request} />}
 		</>
 	);
 }
