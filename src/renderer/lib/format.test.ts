@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
 	extractImageDataUrl,
 	extractImageDataUrls,
+	formatDuration,
 	formatShortClock,
 	resultDetails,
 	resultText,
@@ -21,6 +22,37 @@ describe("formatShortClock", () => {
 		const label = formatShortClock("2026-08-08T10:42:37+08:00");
 		expect(label).toMatch(/^\d{2}:\d{2}$/);
 		expect(label).not.toContain("2026");
+	});
+});
+
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+// Long durations (Usage reset countdowns, job and goal timers) read in the two
+// largest units, rounded down like the CLI's "5d2h", not "7328m 42s" (#26).
+describe("formatDuration", () => {
+	it("shows a multi-day countdown as days and hours, rounded down", () => {
+		expect(formatDuration(7328 * MINUTE + 42 * SECOND)).toBe("5d 2h");
+	});
+
+	it("shows hours and minutes between an hour and a day", () => {
+		expect(formatDuration(2 * HOUR + 30 * MINUTE + 59 * SECOND)).toBe("2h 30m");
+	});
+
+	it("drops a zero minor unit", () => {
+		expect(formatDuration(3 * DAY + 20 * MINUTE)).toBe("3d");
+		expect(formatDuration(2 * HOUR + 40 * SECOND)).toBe("2h");
+	});
+
+	it("carries a rounded 60th second into the next unit", () => {
+		expect(formatDuration(HOUR - 400)).toBe("1h");
+		expect(formatDuration(2 * MINUTE - 400)).toBe("2m 0s");
+	});
+
+	it("keeps minutes and seconds under an hour", () => {
+		expect(formatDuration(59 * MINUTE + 15 * SECOND)).toBe("59m 15s");
 	});
 });
 

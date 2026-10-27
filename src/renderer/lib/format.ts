@@ -74,14 +74,26 @@ export function durationBetween(
 export function formatDuration(ms: number): string {
 	if (ms < 1000) return translate("time.millisecondsShort", { count: Math.round(ms) });
 	if (ms < 60_000) return translate("time.secondsDecimalShort", { count: (ms / 1000).toFixed(1) });
-	const minutes = Math.floor(ms / 60_000);
-	const seconds = Math.round((ms % 60_000) / 1000);
-	// Rounding can push seconds to 60 — carry into minutes ("1m 60s").
-	const carried = seconds === 60 ? 1 : 0;
-	return translate("time.minutesSecondsShort", {
-		minutes: minutes + carried,
-		seconds: carried ? 0 : seconds,
-	});
+	// Round once, so 59m 59.6s carries into "1h", never "59m 60s".
+	const totalSeconds = Math.round(ms / 1000);
+	if (totalSeconds < 3600)
+		return translate("time.minutesSecondsShort", {
+			minutes: Math.floor(totalSeconds / 60),
+			seconds: totalSeconds % 60,
+		});
+	// From an hour up, the two largest units, rounded down like the CLI: "2h 30m", "5d 2h".
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	if (totalMinutes < 24 * 60) {
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		return minutes > 0
+			? translate("time.hoursMinutesShort", { hours, minutes })
+			: translate("time.hoursShort", { count: hours });
+	}
+	const totalHours = Math.floor(totalMinutes / 60);
+	const days = Math.floor(totalHours / 24);
+	const hours = totalHours % 24;
+	return hours > 0 ? translate("time.daysHoursShort", { days, hours }) : translate("time.daysShort", { count: days });
 }
 
 const EXT_LANG: Record<string, string> = {
