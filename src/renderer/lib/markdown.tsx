@@ -19,11 +19,12 @@ import remarkMath from "remark-math";
 import "katex/dist/katex.min.css";
 import { CodeBlock as SharedCodeBlock } from "../components/chat/CodeBlock";
 import { MermaidBlock } from "../components/chat/MermaidBlock";
+import { FileLink, PathCode, WebLink } from "../components/common/Links";
 import { useRuntimeTabId } from "../stores/session-runtime-context";
-import { useUiStore } from "../stores/ui";
 import { saveGuiPreference } from "./display-preferences";
 import { useT } from "./i18n";
-import { openLink } from "./open-link";
+import { type FileTarget, isWebUrl, looksLikeFilePath, parseFileTarget } from "./link-targets";
+import { useResolvedPath } from "./path-resolver";
 import { PREVIEW_HEIGHT_LG, PREVIEW_SCROLL_CODE } from "./preview";
 import { remarkDollarGuard } from "./remark-dollar-guard";
 import { remarkLatexMath } from "./remark-latex-math";
@@ -188,22 +189,50 @@ function filePathFromHref(href: string): string | null {
 	}
 }
 
-function ExternalLink({ href, children, ...props }: ComponentPropsWithoutRef<"a">) {
+/** A file link's path and position; `#L12` anchors name the line as GitHub writes it. */
+function fileTargetFromHref(href: string): FileTarget | null {
+	const path = filePathFromHref(href);
+	if (!path) return null;
+	const target = parseFileTarget(path);
+	const anchorLine = href.match(/#L(\d+)/)?.[1];
+	return anchorLine && !target.line ? { ...target, line: Number(anchorLine) } : target;
+}
+
+const LINK_CLASS =
+	"text-[var(--omp-md-link)] underline decoration-[var(--omp-md-link-url)] hover:decoration-[var(--omp-md-link)]";
+
+/** Set inside a link so its inline code does not become a second, nested link. */
+const InsideLink = createContext(false);
+
+function MarkdownFileLink({ target, children }: { target: FileTarget; children: ReactNode }) {
+	const tabId = useRuntimeTabId();
+	const resolved = useResolvedPath(target.path, tabId);
 	return (
-		<a
-			{...props}
-			href={href}
-			onClick={e => {
-				if (!href || href.startsWith("#")) return;
-				e.preventDefault();
-				const filePath = filePathFromHref(href);
-				if (filePath) useUiStore.getState().openFilePreview(filePath);
-				else openLink(href, e);
-			}}
-			className="text-[var(--omp-md-link)] underline decoration-[var(--omp-md-link-url)] hover:decoration-[var(--omp-md-link)]"
-		>
+		<FileLink target={target} resolved={resolved} className={LINK_CLASS}>
 			{children}
-		</a>
+		</FileLink>
+	);
+}
+
+function ExternalLink({ href, children }: ComponentPropsWithoutRef<"a">) {
+	if (!href || href.startsWith("#")) {
+		return (
+			<a href={href} className={LINK_CLASS}>
+				{children}
+			</a>
+		);
+	}
+	const fileTarget = fileTargetFromHref(href);
+	return (
+		<InsideLink.Provider value={true}>
+			{fileTarget ? (
+				<MarkdownFileLink target={fileTarget}>{children}</MarkdownFileLink>
+			) : (
+				<WebLink url={href} className={LINK_CLASS}>
+					{children}
+				</WebLink>
+			)}
+		</InsideLink.Provider>
 	);
 }
 
@@ -312,11 +341,36 @@ function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<"
 			</code>
 		);
 	}
+	return <InlineCode {...props}>{children}</InlineCode>;
+}
+
+const INLINE_CODE_CLASS =
+	"px-1 py-0.5 rounded bg-[var(--omp-code-bg)] text-[var(--omp-md-code)] font-mono text-[0.9em]";
+const LINKED_CODE_CLASS =
+	"px-1 py-0.5 rounded bg-[var(--omp-code-bg)] text-[var(--omp-md-link)] font-mono text-[0.9em] underline decoration-dotted decoration-[var(--omp-md-link-url)] underline-offset-2 hover:decoration-solid";
+
+/** Inline code; a whole web address or a path that exists on disk becomes a link. */
+function InlineCode({ children, ...props }: ComponentPropsWithoutRef<"code">) {
+	const insideLink = useContext(InsideLink);
+	const text = textOf(children);
+	if (!insideLink && isWebUrl(text)) {
+		return (
+			<WebLink url={text}>
+				<code {...props} className={LINKED_CODE_CLASS}>
+					{children}
+				</code>
+			</WebLink>
+		);
+	}
+	if (!insideLink && looksLikeFilePath(text)) {
+		return (
+			<PathCode text={text} plainClassName={INLINE_CODE_CLASS} linkClassName={LINKED_CODE_CLASS}>
+				{children}
+			</PathCode>
+		);
+	}
 	return (
-		<code
-			{...props}
-			className="px-1 py-0.5 rounded bg-[var(--omp-code-bg)] text-[var(--omp-md-code)] font-mono text-[0.9em]"
-		>
+		<code {...props} className={INLINE_CODE_CLASS}>
 			{children}
 		</code>
 	);
@@ -475,16 +529,12 @@ function RemoteMarkdownImage({ src, alt }: { src: string; alt: string }) {
 		>
 			<ImageOff size={13} className="shrink-0" aria-hidden />
 			<span className="truncate">{alt || t("markdown.remoteImage")}</span>
-			<a
-				href={src}
-				onClick={event => {
-					event.preventDefault();
-					openLink(src, event);
-				}}
+			<WebLink
+				url={src}
 				className="shrink-0 truncate font-mono text-omp-xs text-[var(--omp-md-link)] underline decoration-[var(--omp-md-link-url)] hover:decoration-[var(--omp-md-link)]"
 			>
 				{t("markdown.remoteImageOpen")}
-			</a>
+			</WebLink>
 		</span>
 	);
 }

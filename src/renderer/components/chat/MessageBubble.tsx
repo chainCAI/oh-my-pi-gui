@@ -15,7 +15,7 @@ import {
 import type { ReactNode } from "react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { AgentMessage, ImageContent, MessageContent, ToolCallContent } from "../../../shared/rpc-types";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { copyText, cx, formatClock, formatTokens } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { MarkdownRenderer } from "../../lib/markdown";
@@ -230,11 +230,7 @@ function ExecutionBubble({ message }: { message: AgentMessage }) {
 							PREVIEW_SCROLL_LG,
 						)}
 					>
-						{message.output && hasAnsi(message.output) ? (
-							<AnsiText text={message.output} />
-						) : (
-							message.output || t("chat.exec.noOutput")
-						)}
+						{message.output ? <OutputText text={message.output} /> : t("chat.exec.noOutput")}
 						{message.truncated ? `\n${t("chat.exec.truncated")}` : ""}
 					</pre>
 				)}

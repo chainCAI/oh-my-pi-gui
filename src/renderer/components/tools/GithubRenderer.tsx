@@ -1,5 +1,5 @@
 import { CircleDot, ExternalLink, GitPullRequest } from "lucide-react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { resultText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { openLink } from "../../lib/open-link";
@@ -335,7 +335,7 @@ export function GithubRenderer({ args, result, isPartial, partialResult }: ToolR
 							</div>
 							{log.available && log.tail ? (
 								<pre className="mt-0.5 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-omp-xs leading-[1.45] text-[var(--omp-muted)]">
-									{hasAnsi(log.tail) ? <AnsiText text={log.tail} /> : log.tail}
+									<OutputText text={log.tail} />
 								</pre>
 							) : (
 								<div className="text-omp-xs text-[var(--omp-dim)]">{t("tools.github.logUnavailable")}</div>

@@ -17,7 +17,7 @@ import {
 	FolderX,
 	RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FsTreeEntry } from "../../../shared/ipc-types";
 import { copyText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
@@ -65,6 +65,7 @@ export function FilesPanel() {
 	const t = useT();
 	const tabId = useRuntimeTabId();
 	const filePreviewPath = useUiStore(s => s.filePreviewPath);
+	const filePreviewLine = useUiStore(s => s.filePreviewLine);
 	const openFilePreview = useUiStore(s => s.openFilePreview);
 	const closeFilePreview = useUiStore(s => s.closeFilePreview);
 	const listVersion = useRef(0);
@@ -199,7 +200,9 @@ export function FilesPanel() {
 
 	const fileCount = useMemo(() => countFiles(tree), [tree]);
 	const activePreview = preview?.path === filePreviewPath ? preview : null;
-	const previewIsMarkdown = filePreviewPath ? /\.mdx?$/i.test(filePreviewPath) : false;
+	// Markdown renders, except when a link named a line: rendered prose has no
+	// line numbers, so the source shows with that line marked (as GitHub does).
+	const previewIsMarkdown = filePreviewPath ? /\.mdx?$/i.test(filePreviewPath) && filePreviewLine === null : false;
 	const previewLines = useMemo(() => {
 		const content = activePreview?.content;
 		if (!content || previewIsMarkdown) return 0;
@@ -207,6 +210,26 @@ export function FilesPanel() {
 		return content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
 	}, [activePreview?.content, previewIsMarkdown]);
 	const [copied, setCopied] = useState(false);
+
+	// A link that named a line (`src/a.ts:42`) lands on it: scrolled into view
+	// a third of the way down, with the line marked.
+	const markedLine = filePreviewLine !== null && filePreviewLine <= previewLines ? filePreviewLine : null;
+	const previewScrollRef = useRef<HTMLDivElement>(null);
+	const gutterRef = useRef<HTMLDivElement>(null);
+	const [lineBand, setLineBand] = useState<{ top: number; height: number } | null>(null);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the rows are measured from the DOM, so a newly loaded file at the same line must measure again.
+	useLayoutEffect(() => {
+		const gutter = gutterRef.current;
+		const scroller = previewScrollRef.current;
+		const row = markedLine && gutter ? gutter.children[markedLine - 1] : undefined;
+		if (!gutter || !scroller || !(row instanceof HTMLElement)) {
+			setLineBand(null);
+			return;
+		}
+		const top = gutter.offsetTop + row.offsetTop;
+		setLineBand({ top, height: row.offsetHeight });
+		scroller.scrollTop = Math.max(0, top - scroller.clientHeight / 3);
+	}, [markedLine, activePreview?.content]);
 
 	if (filePreviewPath) {
 		return (
@@ -241,13 +264,14 @@ export function FilesPanel() {
 					</ToolbarIconButton>
 					<PathLink
 						path={filePreviewPath}
+						external
 						label={t("filesPanel.openExternal")}
 						className="omp-pressable flex size-7 shrink-0 items-center justify-center rounded-md text-(--omp-muted) hover:bg-(--omp-selected-bg) hover:text-(--omp-text) hover:no-underline"
 					>
 						<ExternalLinkIcon size={14} />
 					</PathLink>
 				</PanelToolbar>
-				<div className="min-h-0 flex-1 overflow-auto bg-(--omp-code-bg)">
+				<div ref={previewScrollRef} className="min-h-0 flex-1 overflow-auto bg-(--omp-code-bg)">
 					{!activePreview || activePreview.loading ? (
 						<div className="flex items-center gap-2 p-4">
 							<Spinner size="sm" />
@@ -263,13 +287,28 @@ export function FilesPanel() {
 							)}
 						</div>
 					) : (
-						<div className="flex min-w-max py-2 font-mono text-xs leading-[1.6]">
+						<div className="relative flex min-w-max py-2 font-mono text-xs leading-[1.6]">
+							{lineBand && (
+								<div
+									aria-hidden="true"
+									data-marked-line={markedLine ?? undefined}
+									className="pointer-events-none absolute inset-x-0 bg-[var(--omp-accent)]/12"
+									style={{ top: lineBand.top, height: lineBand.height }}
+								/>
+							)}
 							<div
+								ref={gutterRef}
 								aria-hidden="true"
 								className="sticky left-0 shrink-0 select-none bg-(--omp-code-bg) pr-3 pl-3 text-right text-(--omp-dim) opacity-70"
 							>
 								{Array.from({ length: previewLines }, (_, index) => (
-									<div key={index}>{index + 1}</div>
+									<div
+										key={index}
+										data-marked={index + 1 === markedLine || undefined}
+										className={index + 1 === markedLine ? "font-semibold text-(--omp-accent)" : undefined}
+									>
+										{index + 1}
+									</div>
 								))}
 							</div>
 							<pre className="m-0 pr-4 whitespace-pre text-(--omp-text) [tab-size:4]">

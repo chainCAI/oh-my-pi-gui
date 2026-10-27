@@ -3,6 +3,7 @@ import type { MenuAction, MenuActionPayload, RunProgressState } from "../shared/
 import { nextLanguage } from "../shared/languages";
 import { AgentHoverCardLayer } from "./components/agents/AgentHoverCard";
 import { ToastStack } from "./components/common";
+import { LinkMenuHost } from "./components/common/LinkMenu";
 import { ActiveToolsDialog } from "./components/dialogs/ActiveToolsDialog";
 import { BranchPickerDialog } from "./components/dialogs/BranchPickerDialog";
 import { BtwDialog } from "./components/dialogs/BtwDialog";
@@ -809,6 +810,7 @@ export function App() {
 
 			<CommandPalette />
 			<ExtensionDialog />
+			<LinkMenuHost />
 			<FirstRunOnboardingDialog />
 			<ModelPicker />
 			<RenameSessionDialog />

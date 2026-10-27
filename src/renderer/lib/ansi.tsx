@@ -1,6 +1,7 @@
-import { memo, useMemo } from "react";
+import { memo, type ReactNode, useMemo } from "react";
+import { WebLink } from "../components/common/Links";
 import { useT } from "./i18n";
-import { openLink } from "./open-link";
+import { findTextLinks } from "./terminal-links";
 
 /**
  * ANSI escape-sequence renderer for captured subprocess output.
@@ -306,6 +307,25 @@ function segmentStyle(seg: AnsiSegment): React.CSSProperties {
  * prefix per snapshot froze the renderer. */
 const ANSI_PARSE_CHAR_CAP = 20_000;
 
+/** Plain output text with its web addresses (a dev server's "http://localhost:5173/") as links. */
+function withWebLinks(text: string): ReactNode {
+	const links = findTextLinks(text);
+	if (links.length === 0) return text;
+	const parts: ReactNode[] = [];
+	let at = 0;
+	for (const link of links) {
+		if (link.start > at) parts.push(text.slice(at, link.start));
+		parts.push(
+			<WebLink key={link.start} url={link.url} style={{ textDecoration: "underline" }}>
+				{text.slice(link.start, link.end)}
+			</WebLink>,
+		);
+		at = link.end;
+	}
+	if (at < text.length) parts.push(text.slice(at));
+	return parts;
+}
+
 export const AnsiText = memo(function AnsiText({ text }: { text: string }) {
 	const t = useT();
 	const clipped = text.length > ANSI_PARSE_CHAR_CAP;
@@ -322,7 +342,7 @@ export const AnsiText = memo(function AnsiText({ text }: { text: string }) {
 	}, [text, clipped]);
 	const segments = useMemo(() => parseAnsi(parseInput), [parseInput]);
 	if (!clipped && segments.length === 1 && Object.keys(segments[0]).length === 1) {
-		return <>{segments[0].text}</>;
+		return <>{withWebLinks(segments[0].text)}</>;
 	}
 	return (
 		<>
@@ -334,23 +354,23 @@ export const AnsiText = memo(function AnsiText({ text }: { text: string }) {
 			)}
 			{segments.map((seg, i) =>
 				seg.href ? (
-					<a
-						key={i}
-						href={seg.href}
-						onClick={e => {
-							e.preventDefault();
-							openLink(seg.href as string, e);
-						}}
-						style={{ ...segmentStyle(seg), textDecoration: "underline" }}
-					>
+					<WebLink key={i} url={seg.href} style={{ ...segmentStyle(seg), textDecoration: "underline" }}>
 						{seg.text}
-					</a>
+					</WebLink>
 				) : (
 					<span key={i} style={segmentStyle(seg)}>
-						{seg.text}
+						{withWebLinks(seg.text)}
 					</span>
 				),
 			)}
 		</>
 	);
+});
+
+/**
+ * Captured output as tool cards show it: colored output styled by AnsiText,
+ * plain output shown whole (never tail-clipped) with its web addresses as links.
+ */
+export const OutputText = memo(function OutputText({ text }: { text: string }) {
+	return hasAnsi(text) ? <AnsiText text={text} /> : withWebLinks(text);
 });

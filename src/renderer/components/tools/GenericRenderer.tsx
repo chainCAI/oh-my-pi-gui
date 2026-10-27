@@ -1,4 +1,4 @@
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, extractImageDataUrl, resultDetails, resultText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { PREVIEW_SCROLL_SM } from "../../lib/preview";
@@ -127,7 +127,7 @@ export function GenericRenderer({ args, result, isError, isPartial, partialResul
 						)}
 					>
 						{/* Unmapped tools commonly return captured subprocess output. */}
-						{body ? hasAnsi(body) ? <AnsiText text={body} /> : body : "—"}
+						{body ? <OutputText text={body} /> : "—"}
 					</pre>
 				)}
 			</div>

@@ -1,5 +1,5 @@
 import { Radio, Send, SquareTerminal, Users } from "lucide-react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, formatDuration, resultText } from "../../lib/format";
 import { translate, useT } from "../../lib/i18n";
 import { resultDetails } from "./result";
@@ -437,11 +437,7 @@ export function HubRenderer({ args, result, isError, isPartial, partialResult }:
 
 			{terminalRows.length > 0 && (
 				<pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded bg-[var(--omp-code-bg)] px-2 py-1.5 font-mono text-omp-sm leading-[1.45] text-[var(--omp-tool-output)]">
-					{hasAnsi(terminalRows.join("\n")) ? (
-						<AnsiText text={terminalRows.join("\n")} />
-					) : (
-						terminalRows.join("\n")
-					)}
+					<OutputText text={terminalRows.join("\n")} />
 				</pre>
 			)}
 

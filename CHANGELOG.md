@@ -5,6 +5,12 @@
 ### Added
 
 - **Rosé Pine** theme: the dark Rosé Pine palette for the whole window, in Settings → Theme. — thanks [@ItsLemmy](https://github.com/ItsLemmy) ([#24](https://github.com/nornzach/oh-my-pi-gui/pull/24))
+- Web addresses and file paths in replies and tool output are links. A click opens a web page in the Browser panel and a file in the Files preview at the named line (`src/app.ts:42`, `#L42`); ⌘/Ctrl-click opens it in your browser or default app. Right-click opens, reveals in Finder, or copies the link or path. Paths become links only when they exist.
+- Right-clicking selected text in a reply or tool output offers **Copy**.
+
+### Changed
+
+- Clicking a file path in a tool card previews it in the Files panel; ⌘/Ctrl-click opens it in the default app as a plain click did before.
 
 ### Fixed
 

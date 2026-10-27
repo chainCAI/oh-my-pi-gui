@@ -47,6 +47,8 @@ interface UiStore {
 	logsOpen: boolean;
 	/** Local file currently shown in the Files drawer. */
 	filePreviewPath: string | null;
+	/** 1-based line the preview scrolls to and marks, when a link named one. */
+	filePreviewLine: number | null;
 	commandPaletteOpen: boolean;
 	modelPickerOpen: boolean;
 	settingsOpen: boolean;
@@ -148,7 +150,7 @@ interface UiStore {
 	openChanges: (scope: DiffScope) => void;
 	openLogs: () => void;
 	closeLogs: () => void;
-	openFilePreview: (path: string) => void;
+	openFilePreview: (path: string, line?: number) => void;
 	closeFilePreview: () => void;
 	/** Per-card collapse overrides for the center dock (absent = expanded). */
 	dockCollapsed: Partial<Record<DockCardId, boolean>>;
@@ -283,6 +285,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	diffScope: "repository",
 	logsOpen: false,
 	filePreviewPath: null,
+	filePreviewLine: null,
 	commandPaletteOpen: false,
 	modelPickerOpen: false,
 	settingsOpen: false,
@@ -320,8 +323,9 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	},
 	openLogs: () => set({ logsOpen: true }),
 	closeLogs: () => set({ logsOpen: false }),
-	openFilePreview: path => set({ filePreviewPath: path, panelTab: "files", panelVisible: true }),
-	closeFilePreview: () => set({ filePreviewPath: null }),
+	openFilePreview: (path, line) =>
+		set({ filePreviewPath: path, filePreviewLine: line ?? null, panelTab: "files", panelVisible: true }),
+	closeFilePreview: () => set({ filePreviewPath: null, filePreviewLine: null }),
 	dockCollapsed: {},
 	toggleDockCard: id =>
 		set({
@@ -517,6 +521,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 			prCenterOpen: false,
 			conversationSearchOpen: false,
 			filePreviewPath: null,
+			filePreviewLine: null,
 			sessionPickerOpen: false,
 			branchPickerOpen: false,
 			sessionTreeOpen: false,

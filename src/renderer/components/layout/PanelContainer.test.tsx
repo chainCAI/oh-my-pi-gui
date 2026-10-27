@@ -69,7 +69,7 @@ afterEach(async () => {
 	container?.remove();
 	useSessionStore.getState().reset();
 	useTabsStore.getState().reset();
-	useUiStore.setState({ panelTab: "files", panelVisible: true, filePreviewPath: null });
+	useUiStore.setState({ panelTab: "files", panelVisible: true, filePreviewPath: null, filePreviewLine: null });
 	if (initialOmp === undefined) delete ompWindow.omp;
 	else ompWindow.omp = initialOmp;
 	Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
@@ -200,7 +200,9 @@ describe("PanelContainer chat tab filter", () => {
 		await mount(<FileLinkHarness />);
 
 		await act(async () => {
-			document.querySelector("a")?.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+			document
+				.querySelector(`[role="link"]`)
+				?.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
 		});
 		await flush();
 
@@ -237,11 +239,47 @@ describe("PanelContainer chat tab filter", () => {
 		await mount(<FileLinkHarness content="[sql](file:///tmp/my%20query.sql)" />);
 
 		await act(async () => {
-			document.querySelector("a")?.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+			document
+				.querySelector(`[role="link"]`)
+				?.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
 		});
 		await flush();
 
 		expect(read).toHaveBeenCalledWith("/tmp/my query.sql", 200_000);
 		expect(document.querySelector("aside pre")?.textContent).toContain("SELECT 1;");
+	});
+
+	it("opens a Markdown link that names a line as source with that line marked", async () => {
+		seedActiveTab("agent");
+		useUiStore.setState({ panelVisible: false, filePreviewPath: null });
+		ompWindow.omp = {
+			fs: {
+				list: vi.fn(async () => ({ ok: true, entries: [], truncated: false })),
+				read: vi.fn(async () => ({
+					ok: true,
+					content: "# Title\n\nIntro.\n\n## Usage\n",
+					truncated: false,
+					binary: false,
+					size: 30,
+				})),
+			},
+			system: {
+				openExternal: vi.fn(async () => {}),
+				openPath: vi.fn(async () => ({ ok: true })),
+			},
+		};
+		await mount(<FileLinkHarness content="[usage](docs/guide.md#L5)" />);
+
+		await act(async () => {
+			document
+				.querySelector(`[role="link"]`)
+				?.dispatchEvent(new Event("click", { bubbles: true, cancelable: true }));
+		});
+		await flush();
+
+		// Rendered prose has no line 5 to land on; the source does.
+		expect(document.querySelector("aside h1")).toBeNull();
+		expect(document.querySelector("aside pre")?.textContent).toContain("## Usage");
+		expect(document.querySelector("aside [data-marked]")?.textContent).toBe("5");
 	});
 });

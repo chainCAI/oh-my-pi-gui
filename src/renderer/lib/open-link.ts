@@ -13,12 +13,19 @@ export function linkDestination(href: string, options: { modifier: boolean; pane
 	return /^https?:\/\//i.test(href) ? "panel" : "external";
 }
 
+/** Whether the active tab has a browser panel; chat tabs show only files. */
+export function browserPanelAvailable(): boolean {
+	const { tabs, activeTabId } = useTabsStore.getState();
+	const tab = tabs.find(entry => entry.id === activeTabId);
+	return tab !== undefined && tab.kind !== "chat";
+}
+
 export function openLink(href: string, event?: { metaKey: boolean; ctrlKey: boolean }): void {
 	const { tabs, activeTabId } = useTabsStore.getState();
 	const tab = tabs.find(entry => entry.id === activeTabId);
 	const destination = linkDestination(href, {
 		modifier: event?.metaKey === true || event?.ctrlKey === true,
-		panel: tab !== undefined && tab.kind !== "chat",
+		panel: browserPanelAvailable(),
 	});
 	if (destination === "external" || !tab) {
 		void window.omp.system.openExternal(href);

@@ -31,6 +31,7 @@ import type {
 	IpcOpenPathResult,
 	IpcPrefsGetPayload,
 	IpcPrefsSetPayload,
+	IpcResolvedPath,
 	IpcRpcCommandForTabPayload,
 	IpcRpcCommandPayload,
 	IpcSessionOpenNewWindowPayload,
@@ -74,6 +75,7 @@ import { setTrayState } from "./tray";
 import { aggregateTrayStatus } from "./tray-labels";
 import { appVersion } from "./updater";
 import type { SpawnWindow, WindowManager } from "./window";
+import { resolveExistingPath, resolveWithin } from "./workspace-paths";
 
 export interface IpcDeps {
 	sidecarPool: SidecarPool;
@@ -262,14 +264,6 @@ async function loadIgnoreRules(rootAbs: string): Promise<IgnoreRule[]> {
 		// No readable root .gitignore — defaults only.
 	}
 	return rules;
-}
-
-/** Resolve `rel` against `root`, refusing escapes outside the workspace. */
-function resolveWithin(root: string, rel: string): string | null {
-	const resolved = path.resolve(root, rel);
-	const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
-	if (resolved !== root && !resolved.startsWith(rootWithSep)) return null;
-	return resolved;
 }
 
 /** `abs` when it exists and is a regular file, else null. */
@@ -926,6 +920,24 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 		if (!openError) return { ok: true, resolvedPath: resolved };
 		shell.showItemInFolder(resolved);
 		return { ok: true, resolvedPath: resolved };
+	});
+
+	// Paths in replies and tool output become links only once they name
+	// something on disk, so prose like "and/or" never links to nothing.
+	ipcMain.handle(
+		IPC_COMMANDS.SYSTEM_RESOLVE_PATHS,
+		async (event, payload: { paths?: unknown; tabId?: string }): Promise<Array<IpcResolvedPath | null>> => {
+			const paths = Array.isArray(payload?.paths) ? payload.paths.slice(0, 500) : [];
+			const cwd = cwdFor(deps, event, payload?.tabId);
+			return Promise.all(paths.map(target => resolveExistingPath(target, cwd)));
+		},
+	);
+
+	ipcMain.handle(IPC_COMMANDS.SYSTEM_REVEAL_PATH, async (event, target: string): Promise<IpcOpenPathResult> => {
+		const resolved = await resolveExistingPath(target, cwdFor(deps, event));
+		if (!resolved) return { ok: false, error: "File not found" };
+		shell.showItemInFolder(resolved.absolutePath);
+		return { ok: true, resolvedPath: resolved.absolutePath };
 	});
 
 	ipcMain.handle(

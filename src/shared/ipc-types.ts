@@ -202,6 +202,10 @@ export const IPC_COMMANDS = {
 	SYSTEM_OPEN_EXTERNAL: "system:open-external",
 	/** Open a file path in the system editor (relative resolves against the workspace) */
 	SYSTEM_OPEN_PATH: "system:open-path",
+	/** Resolve paths named in replies and tool output: absolute form, file or folder, existence */
+	SYSTEM_RESOLVE_PATHS: "system:resolve-paths",
+	/** Show a file or folder in the system file manager */
+	SYSTEM_REVEAL_PATH: "system:reveal-path",
 	/** Show save dialog */
 	SYSTEM_SAVE_DIALOG: "system:save-dialog",
 	/** Show open dialog */
@@ -745,6 +749,14 @@ export interface IpcOpenPathResult {
 	/** The absolute path that was opened/revealed, when successful. */
 	resolvedPath?: string;
 	error?: string;
+}
+
+/** A path that exists on disk, as `system:resolve-paths` reports it. */
+export interface IpcResolvedPath {
+	absolutePath: string;
+	kind: "file" | "directory";
+	/** The path relative to the tab's workspace, when it lies inside it. */
+	relativePath?: string;
 }
 
 export interface IpcFsReadPlanPayload {
@@ -1478,6 +1490,10 @@ export interface OmpApi {
 		openExternal(url: string): Promise<void>;
 		/** Open a file in the system editor; relative paths resolve against the workspace. */
 		openPath(path: string): Promise<IpcOpenPathResult>;
+		/** Resolve paths like fs reads do (tab workspace for relative ones); null for paths that do not exist. */
+		resolvePaths(paths: string[], tabId?: string): Promise<Array<IpcResolvedPath | null>>;
+		/** Show a file or folder in the system file manager. */
+		revealPath(path: string): Promise<IpcOpenPathResult>;
 		showSaveDialog(defaultPath?: string, filters?: { name: string; extensions: string[] }[]): Promise<string | null>;
 		showOpenDialog(
 			filters?: { name: string; extensions: string[] }[],

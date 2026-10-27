@@ -25,6 +25,7 @@ import type {
 	IpcFsReadResult,
 	IpcMemoryChange,
 	IpcOpenPathResult,
+	IpcResolvedPath,
 	IpcSessionOpenNewWindowPayload,
 	IpcSessionOwner,
 	IpcSetTabViewPayload,
@@ -377,6 +378,12 @@ const api: OmpApi = {
 		info: () => ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_INFO) as Promise<SystemInfo>,
 		openExternal: (url: string) => ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_OPEN_EXTERNAL, url),
 		openPath: (path: string) => ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_OPEN_PATH, path) as Promise<IpcOpenPathResult>,
+		resolvePaths: (paths: string[], tabId?: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_RESOLVE_PATHS, { paths, tabId }) as Promise<
+				Array<IpcResolvedPath | null>
+			>,
+		revealPath: (path: string) =>
+			ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_REVEAL_PATH, path) as Promise<IpcOpenPathResult>,
 		showSaveDialog: (defaultPath?: string, filters?: { name: string; extensions: string[] }[]) =>
 			ipcRenderer.invoke(IPC_COMMANDS.SYSTEM_SAVE_DIALOG, defaultPath, filters),
 		showOpenDialog: (filters?: { name: string; extensions: string[] }[], options?: { directory?: boolean }) =>

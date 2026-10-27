@@ -1,5 +1,5 @@
 import { Code2 } from "lucide-react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, extractImageDataUrls, resultText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { PREVIEW_SCROLL_SM } from "../../lib/preview";
@@ -46,7 +46,7 @@ export function EvalRenderer({ args, result, isError, isPartial, partialResult }
 								: "bg-[var(--omp-code-bg)] text-[var(--omp-tool-output)]",
 						)}
 					>
-						{hasAnsi(output) ? <AnsiText text={output} /> : output}
+						<OutputText text={output} />
 					</pre>
 				</div>
 			)}

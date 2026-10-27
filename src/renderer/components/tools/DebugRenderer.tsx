@@ -1,6 +1,6 @@
 import { Bug, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, resultText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { resultDetails } from "./result";
@@ -247,7 +247,7 @@ export function DebugRenderer({ args, result, isError, isPartial, partialResult 
 
 			{output && (
 				<pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-[var(--omp-code-bg)] px-2 py-1.5 font-mono text-omp-sm leading-[1.45] text-[var(--omp-tool-output)]">
-					{hasAnsi(output) ? <AnsiText text={output} /> : output}
+					<OutputText text={output} />
 				</pre>
 			)}
 

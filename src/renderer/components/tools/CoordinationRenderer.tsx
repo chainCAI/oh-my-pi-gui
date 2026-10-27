@@ -10,7 +10,7 @@ import {
 	Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, formatDuration, resultDetails, resultText, sanitizeToolText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { PREVIEW_SCROLL_SM } from "../../lib/preview";
@@ -206,7 +206,7 @@ function JobPreview({ job }: { job: JobRow }) {
 				PREVIEW_SCROLL_SM,
 			)}
 		>
-			{hasAnsi(preview) ? <AnsiText text={preview} /> : preview}
+			<OutputText text={preview} />
 		</pre>
 	);
 }

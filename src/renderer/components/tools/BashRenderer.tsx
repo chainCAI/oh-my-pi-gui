@@ -1,5 +1,5 @@
 import { Terminal } from "lucide-react";
-import { AnsiText, hasAnsi } from "../../lib/ansi";
+import { OutputText } from "../../lib/ansi";
 import { cx, extractImageDataUrls, resultText } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { PREVIEW_SCROLL_MD } from "../../lib/preview";
@@ -191,7 +191,7 @@ export function BashRenderer({ args, result, isError, isPartial, partialResult }
 					)}
 				>
 					<div className="whitespace-pre-wrap text-[var(--omp-tool-output)]">
-						{hasAnsi(parsed.output) ? <AnsiText text={parsed.output} /> : parsed.output}
+						<OutputText text={parsed.output} />
 					</div>
 				</div>
 			)}
