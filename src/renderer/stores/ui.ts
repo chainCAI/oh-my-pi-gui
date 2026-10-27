@@ -137,6 +137,8 @@ interface UiStore {
 	notifications: boolean;
 	/** Expand reasoning (thinking) blocks by default (Settings → GUI, default off). */
 	thinkingExpanded: boolean;
+	/** Provider quotas above the sidebar footer (Settings → GUI, default off). */
+	sidebarQuotas: boolean;
 	/** Transcript density: compact folds reasoning/tools; full shows every step. */
 	transcriptDetail: TranscriptDetail;
 	/** Expand/collapse-all signal for tool cards (⌃O); `seq` bumps per toggle so cards re-sync their local state. */
@@ -262,6 +264,7 @@ interface UiStore {
 	setFontSize: (size: number) => void;
 	setNotifications: (enabled: boolean) => void;
 	setThinkingExpanded: (enabled: boolean) => void;
+	setSidebarQuotas: (enabled: boolean) => void;
 	setTranscriptDetail: (detail: TranscriptDetail) => void;
 	/**
 	 * User keybinding overrides (B3 remap layer): actionId → replacement chord
@@ -297,6 +300,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	followAgentTheme: false,
 	notifications: true,
 	thinkingExpanded: false,
+	sidebarQuotas: false,
 	transcriptDetail: "compact",
 	toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 	// The bare toggle (title bar, shortcut) opens on Overview; links that open the
@@ -540,6 +544,7 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	setFontSize: size => set({ fontSize: size }),
 	setNotifications: enabled => set({ notifications: enabled }),
 	setThinkingExpanded: enabled => set({ thinkingExpanded: enabled }),
+	setSidebarQuotas: enabled => set({ sidebarQuotas: enabled }),
 	setTranscriptDetail: detail => set({ transcriptDetail: detail }),
 	keymapOverrides: {} as KeymapOverrides,
 	keymapHydrated: false,

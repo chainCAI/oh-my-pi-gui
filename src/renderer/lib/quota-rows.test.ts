@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { UsageLimit, UsageReport } from "../../shared/rpc-types";
-import { quotaRows, quotaWindow, trayQuotas } from "./quota-rows";
+import { providerQuotas, quotaRows, quotaWindow } from "./quota-rows";
 
 function limit(label: string, windowLabel: string | undefined, figures: Partial<UsageLimit>): UsageLimit {
 	return { id: label, label, windowLabel, ...figures };
@@ -86,14 +86,25 @@ describe("quotaRows", () => {
 			["mo", 0.8, false],
 		]);
 	});
+
+	it("keeps a limit reported used up without figures, as full", () => {
+		// Synthetic's rate-limited window and Antigravity's zero-remaining model report no share.
+		const [row] = quotaRows([
+			report("synthetic", [
+				limit("Synthetic Requests", "5h", { status: "exhausted" }),
+				limit("Search", "Daily", { status: "ok" }),
+			]),
+		]);
+		expect(row.windows.map(window => [window.window, window.fraction, window.exhausted])).toEqual([["5h", 1, true]]);
+	});
 });
 
-describe("trayQuotas", () => {
+describe("providerQuotas", () => {
 	const catalog: Record<string, string> = { anthropic: "Anthropic (Claude Pro/Max)", "opencode-go": "OpenCode Go" };
 	const name = (id: string) => catalog[id] ?? id;
 
 	it("names rows without the plan note, adds the account only when a provider has several, and drops unwindowed providers", () => {
-		const rows = trayQuotas(
+		const rows = providerQuotas(
 			[
 				report("anthropic", [limit("Claude 5 Hour", "5 Hour", { usedFraction: 0.1 })], "work@example.com"),
 				report("anthropic", [limit("Claude 5 Hour", "5 Hour", { usedFraction: 0.9 })], "home@example.com"),
@@ -102,29 +113,11 @@ describe("trayQuotas", () => {
 			],
 			name,
 		);
-		expect(rows.map(row => [row.name, row.windows[0].fraction])).toEqual([
-			["Anthropic · work@example.com", 0.1],
-			["Anthropic · home@example.com", 0.9],
-			["OpenCode Go", 0.3],
+		expect(rows.map(row => [row.name, row.account, row.windows[0].fraction])).toEqual([
+			["Anthropic", "work@example.com", 0.1],
+			["Anthropic", "home@example.com", 0.9],
+			["OpenCode Go", undefined, 0.3],
 		]);
-		expect(trayQuotas(null, name)).toEqual([]);
-	});
-
-	it("cuts the middle of a long account name so one address does not widen the menu", () => {
-		const rows = trayQuotas(
-			[
-				report("anthropic", [limit("Claude 5 Hour", "5 Hour", { usedFraction: 0.1 })], "work@example.com"),
-				report(
-					"anthropic",
-					[limit("Claude 5 Hour", "5 Hour", { usedFraction: 0.2 })],
-					"zach.personal.account@verylongdomain.example.com",
-				),
-			],
-			name,
-		);
-		expect(rows.map(row => row.name)).toEqual([
-			"Anthropic · work@example.com",
-			"Anthropic · zach.person…example.com",
-		]);
+		expect(providerQuotas(null, name)).toEqual([]);
 	});
 });

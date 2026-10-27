@@ -13,7 +13,7 @@ import type { TrayState } from "../../shared/ipc-types";
 import { contextUsageView } from "../lib/context-usage";
 import { basename } from "../lib/format";
 import { useLang } from "../lib/i18n";
-import { trayQuotas } from "../lib/quota-rows";
+import { providerQuotas } from "../lib/quota-rows";
 import { useModelStore } from "../stores/model";
 import { useQuotaStore } from "../stores/quotas";
 import { useSessionStore } from "../stores/session";
@@ -41,7 +41,7 @@ export function useTraySync(): void {
 	const quotasAt = useQuotaStore(s => s.fetchedAt);
 	const providers = useModelStore(s => s.providers);
 	const quotas = useMemo(
-		() => trayQuotas(reports, id => providers.find(provider => provider.id === id)?.name ?? id),
+		() => providerQuotas(reports, id => providers.find(provider => provider.id === id)?.name ?? id),
 		[reports, providers],
 	);
 

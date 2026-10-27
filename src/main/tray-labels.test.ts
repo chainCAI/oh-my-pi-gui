@@ -11,13 +11,10 @@ import {
 	aggregateTrayStatus,
 	approvalLabel,
 	formatTokens,
-	fullestWindow,
 	menuSignature,
 	moreQuotasLabel,
-	quotaLevel,
 	quotaLimitLabel,
 	quotaRowLabel,
-	splitQuotaRows,
 	statusLabel,
 	trayTooltip,
 } from "./tray-labels";
@@ -122,41 +119,13 @@ describe("tray quota rows", () => {
 			},
 		],
 	});
-	const window = (name: string, fraction: number, exhausted = false) => ({
-		window: name,
-		fraction,
-		exhausted,
-		limits: [],
-	});
 
-	it("prints each window's share on the row, and rings the used-up window before a fuller one", () => {
+	it("prints each window's share on the row, and counts the rows past the top under More quotas", () => {
 		expect(quotaRowLabel(claude(0.42))).toBe("Anthropic — 5h 42%, 7d 60%");
-		expect(fullestWindow(claude(0.42))?.window).toBe("7d");
-		expect(fullestWindow({ name: "Go", windows: [window("5h", 0.92), window("wk", 0.5, true)] })?.window).toBe("wk");
-		expect(
-			[window("5h", 0.74), window("5h", 0.75), window("5h", 0.9), window("5h", 0.2, true)].map(quotaLevel),
-		).toEqual(["ok", "warning", "critical", "critical"]);
-	});
-
-	it("keeps the five rows nearest a limit on top, in provider order, and moves the rest under More quotas", () => {
-		const row = (name: string, fraction: number, exhausted = false): TrayQuota => ({
-			name,
-			windows: [window("5h", fraction, exhausted)],
-		});
-		const rows = [
-			row("A", 0.6),
-			row("B", 0.93),
-			row("C", 0.8),
-			row("D", 0.3),
-			row("E", 0.1, true),
-			row("F", 0.55),
-			row("G", 0.7),
-			row("H", 0.6),
-		];
-		const { top, more } = splitQuotaRows(rows);
-		expect(top.map(quota => quota.name)).toEqual(["A", "B", "C", "E", "G"]);
-		expect(more.map(quota => quota.name)).toEqual(["D", "F", "H"]);
-		expect(splitQuotaRows(rows.slice(0, 5))).toEqual({ top: rows.slice(0, 5), more: [] });
+		// A long account is cut in the middle so one address does not widen the menu.
+		expect(quotaRowLabel({ ...claude(0.42), account: "zach.personal.account@verylongdomain.example.com" })).toBe(
+			"Anthropic · zach.person…example.com — 5h 42%, 7d 60%",
+		);
 		expect(moreQuotasLabel("en", 3)).toBe("More quotas (3)");
 	});
 

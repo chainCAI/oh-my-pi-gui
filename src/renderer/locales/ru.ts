@@ -453,6 +453,16 @@ export const ru: Record<string, string> = {
 	"sidebar.bulk.unarchive": "Вернуть выбранные из архива",
 	"sidebar.bulk.delete": "Удалить выбранные",
 	"sidebar.bulk.cancel": "Завершить выбор",
+	"sidebar.quotas.more": "Ещё квоты ({count})",
+	"sidebar.quotas.limit": "{label}: использовано {percent}",
+	"sidebar.quotas.reached": "лимит исчерпан",
+	"sidebar.quotas.resets": "сброс {time}",
+	"sidebar.quotas.updated": "Обновлено {time}",
+	"sidebar.quotas.refresh": "Обновить",
+	"sidebar.quotas.open": "Открыть «Использование и квоты»",
+	"sidebar.quotas.hide": "Скрыть из боковой панели",
+	"sidebar.quotas.hidden": "Квоты скрыты",
+	"sidebar.quotas.hiddenHint": "Включить снова: Настройки → GUI.",
 	"sidebar.bulk.deleteConfirm": "Удалить выбранные сессии ({count})?",
 	"sidebar.bulk.deleteMessage": "Удалить выбранные сессии ({count})? Запущенные сессии не затрагиваются.",
 	"sidebar.bulk.deleting": "Удаление: {done} из {total}…",
@@ -1670,6 +1680,9 @@ export const ru: Record<string, string> = {
 	"settings.gui.thinkingExpanded": "Разворачивать рассуждения по умолчанию",
 	"settings.gui.thinkingExpandedDesc":
 		"Показывать трассировку рассуждений модели без нажатия на каждый блок; блоки можно сворачивать отдельно.",
+	"settings.gui.sidebarQuotas": "Квоты в боковой панели",
+	"settings.gui.sidebarQuotasDesc":
+		"Показывать над «Настройками», сколько квоты каждого провайдера использовано: по кольцу на каждое окно времени. Появляется, когда провайдер, в который выполнен вход, сообщает квоты.",
 	"settings.gui.transcriptDetail": "Подробность переписки",
 	"settings.gui.transcript.compact": "Компактно (рекомендуется)",
 	"settings.gui.transcript.compactDesc":

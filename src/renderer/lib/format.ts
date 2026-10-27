@@ -3,6 +3,7 @@
  */
 
 import { languageDetails } from "../../shared/languages";
+import { truncateMiddle } from "../../shared/text";
 import { parseAnsi } from "./ansi";
 import { getCurrentLanguage, translate } from "./i18n";
 import { PREVIEW_TEXT_CHARS } from "./preview";
@@ -219,13 +220,6 @@ export function dirname(path: string | null | undefined): string {
 	// filesystem root; only genuinely rooted paths keep it.
 	if (joined) return joined;
 	return /^[\\/]/.test(path) ? "/" : "";
-}
-
-/** Cut the middle of text longer than `max` characters, keeping both ends around "…". */
-export function truncateMiddle(text: string, max: number): string {
-	if (text.length <= max) return text;
-	const keep = Math.floor((max - 1) / 2);
-	return `${text.slice(0, keep)}…${text.slice(-keep)}`;
 }
 
 /** Collapse a home-dir prefix to "~" and middle-truncate long paths. */

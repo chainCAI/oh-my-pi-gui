@@ -76,6 +76,7 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { anchorFromEvent, ContextMenu, type ContextMenuAnchor } from "../common/ContextMenu";
 import { LangSwitcher } from "../common/LangSwitcher";
 import { WorkspaceDialog } from "../dialogs/WorkspaceDialog";
+import { SidebarQuotas } from "./SidebarQuotas";
 
 const STATUS_COLOR: Record<SessionInfo["status"], string> = {
 	complete: "var(--omp-success)",
@@ -1340,8 +1341,11 @@ export function Sidebar() {
 					</div>
 				)}
 
+				<SidebarQuotas />
+
 				{/* Footer: app-level controls that are not tied to a session. */}
-				<div className="flex h-11 shrink-0 items-center gap-0.5 border-t border-[var(--omp-border-muted)] px-2">
+				{/* A container so a narrow sidebar folds Settings to its icon instead of cutting the word. */}
+				<div className="@container flex h-11 shrink-0 items-center gap-0.5 border-t border-[var(--omp-border-muted)] px-2 text-omp-md">
 					<button
 						type="button"
 						data-sidebar-settings
@@ -1351,7 +1355,7 @@ export function Sidebar() {
 						className="omp-pressable flex h-7 min-w-0 items-center gap-2 rounded-md px-2 text-omp-md text-[var(--omp-text-secondary)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]"
 					>
 						<Settings aria-hidden="true" size={15} strokeWidth={1.75} className="shrink-0" />
-						<span className="truncate">{t("titlebar.settings")}</span>
+						<span className="truncate @max-[14em]:hidden">{t("titlebar.settings")}</span>
 					</button>
 					<div className="flex-1" />
 					<button

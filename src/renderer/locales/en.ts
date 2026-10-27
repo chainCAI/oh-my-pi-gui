@@ -461,6 +461,16 @@ export const en: Record<string, string> = {
 	"sidebar.bulk.unarchive": "Unarchive selected",
 	"sidebar.bulk.delete": "Delete selected",
 	"sidebar.bulk.cancel": "Done selecting",
+	"sidebar.quotas.more": "More quotas ({count})",
+	"sidebar.quotas.limit": "{label}: {percent} used",
+	"sidebar.quotas.reached": "limit reached",
+	"sidebar.quotas.resets": "resets {time}",
+	"sidebar.quotas.updated": "Updated {time}",
+	"sidebar.quotas.refresh": "Refresh",
+	"sidebar.quotas.open": "Open Usage & quotas",
+	"sidebar.quotas.hide": "Hide from sidebar",
+	"sidebar.quotas.hidden": "Quotas hidden",
+	"sidebar.quotas.hiddenHint": "Turn them back on in Settings → GUI.",
 	"sidebar.bulk.deleteConfirm": "Delete {count} selected sessions?",
 	"sidebar.bulk.deleteMessage": "Delete the {count} selected sessions? Running sessions are left in place.",
 	"sidebar.bulk.deleting": "Deleting {done} of {total}…",
@@ -1724,6 +1734,9 @@ export const en: Record<string, string> = {
 	"settings.gui.thinkingExpanded": "Expand reasoning by default",
 	"settings.gui.thinkingExpandedDesc":
 		"Show the model's reasoning trace without clicking each block; blocks can still be collapsed individually.",
+	"settings.gui.sidebarQuotas": "Quotas in the sidebar",
+	"settings.gui.sidebarQuotasDesc":
+		"Show how much of each provider's quota is used, above Settings: a ring per time window. Appears once a signed-in provider reports quotas.",
 	"settings.gui.transcriptDetail": "Conversation detail",
 	"settings.gui.transcript.compact": "Compact (recommended)",
 	"settings.gui.transcript.compactDesc":

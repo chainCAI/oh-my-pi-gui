@@ -5,8 +5,10 @@
  * are the parts worth testing.
  */
 
-import type { TrayQuota, TrayQuotaLimit, TrayQuotaWindow, TrayState } from "../shared/ipc-types";
+import type { TrayQuota, TrayQuotaLimit, TrayState } from "../shared/ipc-types";
 import { type Language, languageDetails } from "../shared/languages";
+import { quotaPercentText } from "../shared/quotas";
+import { truncateMiddle } from "../shared/text";
 import { RU_TRAY_TEXT } from "./native-ru";
 
 export type TrayStatus = TrayState["status"];
@@ -86,10 +88,6 @@ function fill(template: string, values: Record<string, string>): string {
 	return template.replace(/\{(\w+)\}/g, (match, key: string) => values[key] ?? match);
 }
 
-function percentText(fraction: number): string {
-	return `${Math.round(fraction * 100)}%`;
-}
-
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
@@ -105,72 +103,25 @@ export function formatMenuTime(lang: TrayLang, at: number, now: number): string 
 	return `${date.toLocaleDateString(locale, { month: "short", day: "numeric" })} ${time}`;
 }
 
-/** A quota row: the provider, then each window's used share, shortest window first. */
-export function quotaRowLabel(quota: TrayQuota): string {
-	return `${quota.name} — ${quota.windows.map(window => `${window.window} ${percentText(window.fraction)}`).join(", ")}`;
-}
+/** Longest account name a menu row shows before its middle is cut, so one address does not widen the menu. */
+const ACCOUNT_CHARS = 24;
 
-/** The window a row's ring shows: a used-up one first, else the fullest. */
-export function fullestWindow(quota: TrayQuota): TrayQuotaWindow | undefined {
-	let fullest: TrayQuotaWindow | undefined;
-	for (const window of quota.windows) {
-		if (
-			!fullest ||
-			Number(window.exhausted) > Number(fullest.exhausted) ||
-			(window.exhausted === fullest.exhausted && window.fraction > fullest.fraction)
-		)
-			fullest = window;
-	}
-	return fullest;
+/** A quota row: the provider (and account), then each window's used share, shortest window first. */
+export function quotaRowLabel(quota: TrayQuota): string {
+	const name = quota.account ? `${quota.name} · ${truncateMiddle(quota.account, ACCOUNT_CHARS)}` : quota.name;
+	return `${name} — ${quota.windows.map(window => `${window.window} ${quotaPercentText(window.fraction)}`).join(", ")}`;
 }
 
 /** Quota rows the menu shows directly; the rest go under "More quotas". */
 export const QUOTA_ROWS_SHOWN = 5;
 
-/** How close a row is to its limit: a used-up window above any share. */
-function quotaUrgency(quota: TrayQuota): number {
-	const window = fullestWindow(quota);
-	if (!window) return -1;
-	return window.exhausted ? 2 : window.fraction;
-}
-
-/**
- * The rows at the top of the menu and the rest under "More quotas": with more
- * than `shown` rows, the ones nearest their limit stay on top. Both parts keep
- * provider order, so a row does not jump around between readings.
- */
-export function splitQuotaRows(
-	quotas: readonly TrayQuota[],
-	shown = QUOTA_ROWS_SHOWN,
-): { top: TrayQuota[]; more: TrayQuota[] } {
-	if (quotas.length <= shown) return { top: [...quotas], more: [] };
-	const nearest = new Set(
-		quotas
-			.map((quota, index) => ({ index, urgency: quotaUrgency(quota) }))
-			.sort((a, b) => b.urgency - a.urgency || a.index - b.index)
-			.slice(0, shown)
-			.map(entry => entry.index),
-	);
-	return {
-		top: quotas.filter((_, index) => nearest.has(index)),
-		more: quotas.filter((_, index) => !nearest.has(index)),
-	};
-}
-
 export function moreQuotasLabel(lang: TrayLang, count: number): string {
 	return fill(t(lang, "moreQuotas"), { count: String(count) });
 }
 
-/** The ring's color band, on the Usage window's bar thresholds. */
-export function quotaLevel(window: TrayQuotaWindow): "ok" | "warning" | "critical" {
-	if (window.exhausted || window.fraction >= 0.9) return "critical";
-	if (window.fraction >= 0.75) return "warning";
-	return "ok";
-}
-
 /** A submenu line for one limit: its used share, whether it is used up, and when it resets. */
 export function quotaLimitLabel(lang: TrayLang, limit: TrayQuotaLimit, now: number): string {
-	const parts = [fill(t(lang, "quotaUsed"), { percent: percentText(limit.fraction) })];
+	const parts = [fill(t(lang, "quotaUsed"), { percent: quotaPercentText(limit.fraction) })];
 	if (limit.exhausted) parts.push(t(lang, "quotaReached"));
 	if (limit.resetsAt && limit.resetsAt > now)
 		parts.push(fill(t(lang, "quotaResets"), { time: formatMenuTime(lang, limit.resetsAt, now) }));
@@ -189,7 +140,7 @@ function quotaSignature(state: TrayState): string {
 			...quota.windows.flatMap(window =>
 				window.limits.map(
 					limit =>
-						`${limit.label}\u0000${percentText(limit.fraction)}\u0000${limit.exhausted}\u0000${Math.floor((limit.resetsAt ?? 0) / 60_000)}`,
+						`${limit.label}\u0000${quotaPercentText(limit.fraction)}\u0000${limit.exhausted}\u0000${Math.floor((limit.resetsAt ?? 0) / 60_000)}`,
 				),
 			),
 		].join("\u0003"),

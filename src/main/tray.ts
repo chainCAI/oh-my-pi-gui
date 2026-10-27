@@ -18,19 +18,18 @@ import {
 	type TrayState,
 } from "../shared/ipc-types";
 import { languageDetails } from "../shared/languages";
+import { fullestWindow, quotaLevel, splitQuotaRows } from "../shared/quotas";
 import { getMainLanguage } from "./i18n";
 import { encodePng, type Rgba, ringPixels } from "./quota-icon";
 import {
 	approvalLabel,
 	formatTokens,
-	fullestWindow,
 	menuSignature,
 	moreQuotasLabel,
-	quotaLevel,
+	QUOTA_ROWS_SHOWN,
 	quotaLimitLabel,
 	quotaRowLabel,
 	quotaUpdatedLabel,
-	splitQuotaRows,
 	type TrayLang,
 	t,
 	trayTooltip,
@@ -135,7 +134,7 @@ function quotaItems(
 			{ label: t(lang, "usageStats"), click: () => send(windowManager, "open-usage") },
 		],
 	});
-	const { top, more } = splitQuotaRows(state.quotas);
+	const { top, more } = splitQuotaRows(state.quotas, QUOTA_ROWS_SHOWN);
 	const items = top.map(row);
 	if (more.length > 0) items.push({ label: moreQuotasLabel(lang, more.length), submenu: more.map(row) });
 	return items;

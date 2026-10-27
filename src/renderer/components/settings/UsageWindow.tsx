@@ -22,6 +22,7 @@ import {
 	Workflow,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { quotaPercentText } from "../../../shared/quotas";
 import type {
 	RpcResetCreditAccount,
 	RpcResetCreditRedeemResult,
@@ -52,12 +53,6 @@ export function limitHasDetail(limit: UsageLimit): boolean {
 	const hasUnit = Boolean(limit.unit && limit.unit !== "unknown");
 	if (!hasUnit) return limit.usedFraction === undefined;
 	return !(limit.unit === "percent" && limit.limit === 100 && limit.used !== undefined);
-}
-
-/** The bar's label: whole percent, except where rounding would claim full or empty. */
-function percentText(fraction: number): string {
-	const pct = fraction * 100;
-	return (pct > 99 && pct < 100) || (pct > 0 && pct < 1) ? `${pct.toFixed(1)}%` : `${Math.round(pct)}%`;
 }
 
 const STATUS_KEYS: Record<string, string> = {
@@ -120,7 +115,7 @@ function LimitRow({
 					)}
 				</div>
 			</div>
-			<ProgressBar value={fraction} height={5} valueText={percentText(fraction)} />
+			<ProgressBar value={fraction} height={5} valueText={quotaPercentText(fraction)} />
 			{resetCountdown(limit.resetsAt, t, now) && (
 				<span className="text-omp-xs text-[var(--omp-dim)]">{resetCountdown(limit.resetsAt, t, now)}</span>
 			)}

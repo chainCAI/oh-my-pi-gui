@@ -1,14 +1,13 @@
 /**
- * Provider quota reports reduced to the tray menu's quota rows (#28): one row
- * per provider account, one entry per time window. Limits that share a window
- * (Claude's overall, Opus and Sonnet 7-day caps) become one entry showing
- * whichever is closest to its cap. Limits with no time window (credit
- * balances, extra usage) stay in the Usage window only.
+ * Provider quota reports reduced to quota rows for the tray menu and the
+ * sidebar strip (#28): one row per provider account, one entry per time
+ * window. Limits that share a window (Claude's overall, Opus and Sonnet 7-day
+ * caps) become one entry showing whichever is closest to its cap. Limits with
+ * no time window (credit balances, extra usage) stay in the Usage window only.
  */
 
 import type { TrayQuota, TrayQuotaLimit, TrayQuotaWindow } from "../../shared/ipc-types";
 import type { UsageLimit, UsageReport } from "../../shared/rpc-types";
-import { truncateMiddle } from "./format";
 
 export interface QuotaRow {
 	provider: string;
@@ -106,7 +105,8 @@ function clamp(fraction: number): number {
 function reportWindows(report: UsageReport): TrayQuotaWindow[] {
 	const byWindow = new Map<string, { hours: number; limits: TrayQuotaLimit[] }>();
 	for (const limit of Array.isArray(report.limits) ? report.limits : []) {
-		const raw = limitUsedFraction(limit);
+		// A limit reported used up without figures (rate-limited, nothing remaining) is full.
+		const raw = limitUsedFraction(limit) ?? (limit.status === "exhausted" ? 1 : undefined);
 		if (raw === undefined || !limit.windowLabel) continue;
 		const window = quotaWindow(limit.windowLabel);
 		const entry = byWindow.get(window.short) ?? { hours: window.hours, limits: [] };
@@ -141,21 +141,20 @@ export function shortProviderName(name: string): string {
 	return name.replace(/\s*\([^)]*\)\s*$/, "") || name;
 }
 
-/** Longest account name a row shows before its middle is cut. */
-const ACCOUNT_CHARS = 24;
-
 /**
- * The tray's quota rows, named from the catalog. A provider signed in with
- * several accounts shows the account on each of its rows, its middle cut when
- * long so one address does not widen the whole menu.
+ * Quota rows named from the catalog. A provider signed in with several
+ * accounts carries the account on each of its rows to tell them apart.
  */
-export function trayQuotas(reports: readonly UsageReport[] | null, catalogName: (id: string) => string): TrayQuota[] {
+export function providerQuotas(
+	reports: readonly UsageReport[] | null,
+	catalogName: (id: string) => string,
+): TrayQuota[] {
 	const rows = quotaRows(reports);
 	const accounts = new Map<string, number>();
 	for (const row of rows) accounts.set(row.provider, (accounts.get(row.provider) ?? 0) + 1);
 	return rows.map(row => {
 		const name = shortProviderName(catalogName(row.provider));
 		const account = (accounts.get(row.provider) ?? 0) > 1 ? row.account : undefined;
-		return { name: account ? `${name} · ${truncateMiddle(account, ACCOUNT_CHARS)}` : name, windows: row.windows };
+		return { name, ...(account ? { account } : {}), windows: row.windows };
 	});
 }

@@ -145,6 +145,11 @@ export const GUI_SETTING_SEARCH_ITEMS = [
 	},
 	{ id: "fontSize", labelKey: "settings.gui.fontSize", aliases: "fontSize font size 字号 字体" },
 	{ id: "panelDefault", labelKey: "settings.gui.panelDefault", aliases: "panelTab sidebar panel 侧栏 面板" },
+	{
+		id: "sidebarQuotas",
+		labelKey: "settings.gui.sidebarQuotas",
+		aliases: "sidebarQuotas quota usage limit sidebar 配额 用量 侧边栏 квоты",
+	},
 	{ id: "notifications", labelKey: "settings.gui.notifications", aliases: "notifications 通知" },
 	{
 		id: "thinkingExpanded",

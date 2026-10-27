@@ -466,10 +466,12 @@ export interface TrayQuotaWindow {
 	limits: TrayQuotaLimit[];
 }
 
-/** A provider account's row at the top of the tray menu. */
+/** A provider account's quota row, in the tray menu and the sidebar strip. */
 export interface TrayQuota {
-	/** The catalog name without its plan note, plus the account when a provider has several. */
+	/** The catalog name without its plan note. */
 	name: string;
+	/** The account, only when the provider is signed in with several. */
+	account?: string;
 	/** Shortest window first. */
 	windows: TrayQuotaWindow[];
 }

@@ -205,6 +205,7 @@ export function SettingsWindow() {
 	const panelTab = useUiStore(state => state.panelTab);
 	const notifications = useUiStore(state => state.notifications);
 	const thinkingExpanded = useUiStore(state => state.thinkingExpanded);
+	const sidebarQuotas = useUiStore(state => state.sidebarQuotas);
 	const transcriptDetail = useUiStore(state => state.transcriptDetail);
 	const sidecarStatus = useSessionStore(state => state.status);
 	const sidecarReady = sidecarStatus === "ready";
@@ -425,6 +426,9 @@ export function SettingsWindow() {
 	};
 	const applyThinkingExpanded = (next: boolean) => {
 		void saveGuiPreference("thinkingExpanded", next, () => useUiStore.getState().setThinkingExpanded(next));
+	};
+	const applySidebarQuotas = (next: boolean) => {
+		void saveGuiPreference("sidebarQuotas", next, () => useUiStore.getState().setSidebarQuotas(next));
 	};
 	const applyTranscriptDetail = (next: typeof transcriptDetail) => {
 		void saveGuiPreference("transcriptDetail", next, () => setTranscriptDetail(next));
@@ -1194,6 +1198,14 @@ export function SettingsWindow() {
 													{ value: "files", label: t("settings.gui.panel.files") },
 												]}
 												value={panelTab}
+											/>
+										</Section>
+										<Section id="setting-gui-sidebarQuotas" title={t("settings.gui.sidebarQuotas")}>
+											<Toggle
+												checked={sidebarQuotas}
+												description={t("settings.gui.sidebarQuotasDesc")}
+												label={t("settings.gui.sidebarQuotas")}
+												onChange={applySidebarQuotas}
 											/>
 										</Section>
 										<Section id="setting-gui-notifications" title={t("settings.gui.notifications")}>

@@ -242,6 +242,7 @@ export function App() {
 				"fontSize",
 				"notifications",
 				"thinkingExpanded",
+				"sidebarQuotas",
 				"transcriptDetail",
 				"panelTab",
 			] as const) {
@@ -275,6 +276,9 @@ export function App() {
 				}
 				if (typeof prefs.thinkingExpanded === "boolean" && !changedPreferences.has("thinkingExpanded")) {
 					useUiStore.setState({ thinkingExpanded: prefs.thinkingExpanded });
+				}
+				if (typeof prefs.sidebarQuotas === "boolean" && !changedPreferences.has("sidebarQuotas")) {
+					useUiStore.setState({ sidebarQuotas: prefs.sidebarQuotas });
 				}
 				if (
 					(prefs.transcriptDetail === "compact" || prefs.transcriptDetail === "full") &&
