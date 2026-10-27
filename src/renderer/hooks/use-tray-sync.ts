@@ -1,18 +1,21 @@
 /**
  * Keeps the system-tray menu in sync: derives a TrayState snapshot from the
- * live stores (model, settings, session, language, workspace list) and pushes
+ * live stores (model, settings, session, language, workspace list, provider
+ * quotas) and pushes
  * it to the main process on every change. Main installs a new native menu only
  * when a visible label changed and never while one is open, so pushing on every
  * session-list refresh costs a comparison instead of swapping the menu under the
  * cursor. Actions route back here via MENU_ACTION.
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import type { TrayState } from "../../shared/ipc-types";
 import { contextUsageView } from "../lib/context-usage";
 import { basename } from "../lib/format";
 import { useLang } from "../lib/i18n";
+import { trayQuotas } from "../lib/quota-rows";
 import { useModelStore } from "../stores/model";
+import { useQuotaStore } from "../stores/quotas";
 import { useSessionStore } from "../stores/session";
 import { useSettingsStore } from "../stores/settings";
 import { useAwaitingConfirmation } from "./use-awaiting-confirmation";
@@ -34,6 +37,13 @@ export function useTraySync(): void {
 	const contextPercent = contextUsage && contextView.capacityKnown ? contextView.percent : null;
 	const contextTokens = contextUsage ? contextView.usedTokens : null;
 	const { sessions } = useSessionList("global");
+	const reports = useQuotaStore(s => s.reports);
+	const quotasAt = useQuotaStore(s => s.fetchedAt);
+	const providers = useModelStore(s => s.providers);
+	const quotas = useMemo(
+		() => trayQuotas(reports, id => providers.find(provider => provider.id === id)?.name ?? id),
+		[reports, providers],
+	);
 
 	useEffect(() => {
 		// Unique workspaces by cwd, most-recently-active first, current flagged.
@@ -63,6 +73,8 @@ export function useTraySync(): void {
 			contextPercent,
 			contextTokens,
 			workspaces,
+			quotas,
+			quotasAt,
 		});
 	}, [
 		lang,
@@ -77,5 +89,7 @@ export function useTraySync(): void {
 		contextPercent,
 		contextTokens,
 		sessions,
+		quotas,
+		quotasAt,
 	]);
 }

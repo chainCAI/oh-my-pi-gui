@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { UsageLimit, UsageReport } from "../../../shared/rpc-types";
+import { nextQuotaReset } from "../../lib/quota-rows";
 import { zh } from "../../locales/zh";
-import { limitHasDetail, limitValueText, nextQuotaReset } from "./UsageWindow";
+import { limitHasDetail, limitValueText } from "./UsageWindow";
 
 function valueText(amount: Omit<UsageLimit, "id" | "label">): string {
 	return limitValueText({ id: "quota", label: "Quota", ...amount }, (key, params) =>

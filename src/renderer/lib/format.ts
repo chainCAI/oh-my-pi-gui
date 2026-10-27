@@ -221,16 +221,17 @@ export function dirname(path: string | null | undefined): string {
 	return /^[\\/]/.test(path) ? "/" : "";
 }
 
+/** Cut the middle of text longer than `max` characters, keeping both ends around "…". */
+export function truncateMiddle(text: string, max: number): string {
+	if (text.length <= max) return text;
+	const keep = Math.floor((max - 1) / 2);
+	return `${text.slice(0, keep)}…${text.slice(-keep)}`;
+}
+
 /** Collapse a home-dir prefix to "~" and middle-truncate long paths. */
 export function shortenPath(path: string): string {
 	const home = /^\/(Users|home)\/[^/]+/.exec(path);
-	let display = home ? `~${path.slice(home[0].length)}` : path;
-	const MAX = 56;
-	if (display.length > MAX) {
-		const keep = Math.floor((MAX - 1) / 2);
-		display = `${display.slice(0, keep)}…${display.slice(-keep)}`;
-	}
-	return display;
+	return truncateMiddle(home ? `~${path.slice(home[0].length)}` : path, 56);
 }
 
 /** Plain tool text: strip terminal controls/links and expand tabs before display. */

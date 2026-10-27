@@ -6,12 +6,18 @@
  * routes on — including a workspace entry whose path moved under a stable name.
  */
 import { describe, expect, it } from "vitest";
-import type { TrayState } from "../shared/ipc-types";
+import type { TrayQuota, TrayState } from "../shared/ipc-types";
 import {
 	aggregateTrayStatus,
 	approvalLabel,
 	formatTokens,
+	fullestWindow,
 	menuSignature,
+	moreQuotasLabel,
+	quotaLevel,
+	quotaLimitLabel,
+	quotaRowLabel,
+	splitQuotaRows,
 	statusLabel,
 	trayTooltip,
 } from "./tray-labels";
@@ -29,6 +35,8 @@ function state(overrides: Partial<TrayState> = {}): TrayState {
 		contextPercent: 42.3,
 		contextTokens: 12345,
 		workspaces: [{ cwd: "/w/alpha", name: "alpha", current: true }],
+		quotas: [],
+		quotasAt: 0,
 		...overrides,
 	};
 }
@@ -93,6 +101,93 @@ describe("menuSignature", () => {
 		expect(menuSignature(state({ contextPercent: null, contextTokens: null }))).not.toBe(
 			menuSignature(state({ contextPercent: 0, contextTokens: 0 })),
 		);
+	});
+});
+
+describe("tray quota rows", () => {
+	const claude = (fiveHour: number): TrayQuota => ({
+		name: "Anthropic",
+		windows: [
+			{
+				window: "5h",
+				fraction: fiveHour,
+				exhausted: false,
+				limits: [{ label: "Claude 5 Hour", fraction: fiveHour, exhausted: false }],
+			},
+			{
+				window: "7d",
+				fraction: 0.6,
+				exhausted: false,
+				limits: [{ label: "Claude 7 Day", fraction: 0.6, exhausted: false }],
+			},
+		],
+	});
+	const window = (name: string, fraction: number, exhausted = false) => ({
+		window: name,
+		fraction,
+		exhausted,
+		limits: [],
+	});
+
+	it("prints each window's share on the row, and rings the used-up window before a fuller one", () => {
+		expect(quotaRowLabel(claude(0.42))).toBe("Anthropic — 5h 42%, 7d 60%");
+		expect(fullestWindow(claude(0.42))?.window).toBe("7d");
+		expect(fullestWindow({ name: "Go", windows: [window("5h", 0.92), window("wk", 0.5, true)] })?.window).toBe("wk");
+		expect(
+			[window("5h", 0.74), window("5h", 0.75), window("5h", 0.9), window("5h", 0.2, true)].map(quotaLevel),
+		).toEqual(["ok", "warning", "critical", "critical"]);
+	});
+
+	it("keeps the five rows nearest a limit on top, in provider order, and moves the rest under More quotas", () => {
+		const row = (name: string, fraction: number, exhausted = false): TrayQuota => ({
+			name,
+			windows: [window("5h", fraction, exhausted)],
+		});
+		const rows = [
+			row("A", 0.6),
+			row("B", 0.93),
+			row("C", 0.8),
+			row("D", 0.3),
+			row("E", 0.1, true),
+			row("F", 0.55),
+			row("G", 0.7),
+			row("H", 0.6),
+		];
+		const { top, more } = splitQuotaRows(rows);
+		expect(top.map(quota => quota.name)).toEqual(["A", "B", "C", "E", "G"]);
+		expect(more.map(quota => quota.name)).toEqual(["D", "F", "H"]);
+		expect(splitQuotaRows(rows.slice(0, 5))).toEqual({ top: rows.slice(0, 5), more: [] });
+		expect(moreQuotasLabel("en", 3)).toBe("More quotas (3)");
+	});
+
+	it("gives each limit its share and its reset as a clock time, so a menu opened later still reads right", () => {
+		const now = new Date(2026, 9, 27, 10, 0).getTime(); // a Tuesday
+		const at = (month: number, day: number, hour: number, minute = 0) =>
+			new Date(2026, month, day, hour, minute).getTime();
+		const limit = { label: "Claude 5 Hour", fraction: 0.42, exhausted: false };
+		expect(quotaLimitLabel("en", { ...limit, resetsAt: at(9, 27, 14, 30) }, now)).toBe(
+			"Claude 5 Hour — 42% used · resets 14:30",
+		);
+		expect(quotaLimitLabel("en", { ...limit, resetsAt: at(9, 30, 9) }, now)).toBe(
+			"Claude 5 Hour — 42% used · resets Fri 09:00",
+		);
+		expect(quotaLimitLabel("en", { ...limit, resetsAt: at(10, 12, 9) }, now)).toBe(
+			"Claude 5 Hour — 42% used · resets Nov 12 09:00",
+		);
+		expect(quotaLimitLabel("en", { label: "Monthly", fraction: 1, exhausted: true, resetsAt: now - 1 }, now)).toBe(
+			"Monthly — 100% used · limit reached",
+		);
+		expect(quotaLimitLabel("zh", { ...limit, resetsAt: at(9, 27, 14, 30) }, now)).toBe(
+			"Claude 5 Hour — 已用 42% · 14:30 重置",
+		);
+	});
+
+	it("rebuilds the menu when a printed quota figure or the reading time changes, not for sub-percent drift", () => {
+		const base = menuSignature(state({ quotas: [claude(0.42)], quotasAt: 600_000 }));
+		expect(menuSignature(state({ quotas: [claude(0.421)], quotasAt: 600_000 }))).toBe(base);
+		expect(menuSignature(state({ quotas: [claude(0.43)], quotasAt: 600_000 }))).not.toBe(base);
+		expect(menuSignature(state({ quotas: [claude(0.42)], quotasAt: 900_000 }))).not.toBe(base);
+		expect(menuSignature(state())).not.toBe(base);
 	});
 });
 

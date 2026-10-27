@@ -33,33 +33,15 @@ import type {
 import { formatClock, formatCost, formatDuration, formatTokens } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { useNowTick } from "../../lib/now-tick";
+import { nextQuotaReset, QUOTA_RESET_GRACE_MS } from "../../lib/quota-rows";
 import { useMessagesStore } from "../../stores/messages";
 import { useModelStore } from "../../stores/model";
+import { publishQuotaReports } from "../../stores/quotas";
 import { type SessionStore, useSessionStore } from "../../stores/session";
 import { sessionRuntimeStore, useRuntimeTabId } from "../../stores/session-runtime-context";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
 import { Badge, Button, ConfirmDialog, Modal, ProgressBar, Spinner } from "../common";
-
-/** Wait past a reset before re-reading, so the provider has rolled the window over. */
-const RESET_REREAD_GRACE_MS = 3_000;
-
-/**
- * The next reset still ahead of `now` across every report. A reset already in
- * the past is skipped: re-reading for it again would loop while a provider
- * keeps reporting the old timestamp.
- */
-export function nextQuotaReset(reports: readonly UsageReport[] | null, now: number): number | undefined {
-	let next: number | undefined;
-	for (const report of reports ?? []) {
-		for (const limit of Array.isArray(report.limits) ? report.limits : []) {
-			if (limit.resetsAt && limit.resetsAt > now && (next === undefined || limit.resetsAt < next)) {
-				next = limit.resetsAt;
-			}
-		}
-	}
-	return next;
-}
 
 /**
  * Whether the row's value text adds anything to its bar. A plain percentage
@@ -314,8 +296,11 @@ export function UsageWindow() {
 		try {
 			const res = await tabRpc.getUsage();
 			if (quotaOwnerRef.current !== owner || originSession.getState().sessionId !== sessionId) return;
-			if (res.success) setReports((res.data as { reports?: UsageReport[] })?.reports ?? []);
-			else setError(res.error);
+			if (res.success) {
+				const next = (res.data as { reports?: UsageReport[] })?.reports ?? [];
+				setReports(next);
+				publishQuotaReports(next);
+			} else setError(res.error);
 		} catch (cause) {
 			if (quotaOwnerRef.current === owner) setError(String(cause));
 		} finally {
@@ -402,7 +387,7 @@ export function UsageWindow() {
 	const nextResetAt = useMemo(() => nextQuotaReset(reports, Date.now()), [reports]);
 	useEffect(() => {
 		if (!open || nextResetAt === undefined) return;
-		const timer = setTimeout(() => void loadQuotas(), Math.max(0, nextResetAt - Date.now()) + RESET_REREAD_GRACE_MS);
+		const timer = setTimeout(() => void loadQuotas(), Math.max(0, nextResetAt - Date.now()) + QUOTA_RESET_GRACE_MS);
 		return () => clearTimeout(timer);
 	}, [open, nextResetAt, loadQuotas]);
 

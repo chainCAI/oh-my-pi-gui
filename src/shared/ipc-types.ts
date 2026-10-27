@@ -446,6 +446,34 @@ export type IpcBenchmarkRunResult =
 	| { success: false; error: string; stderr?: string };
 
 /** Compact snapshot the renderer pushes to main to build the tray menu. */
+/** One provider limit in a tray quota row. */
+export interface TrayQuotaLimit {
+	label: string;
+	/** Used fraction, clamped to 0..1. */
+	fraction: number;
+	exhausted: boolean;
+	resetsAt?: number;
+}
+
+/** The limits of one provider account that share a time window. */
+export interface TrayQuotaWindow {
+	/** Short window name: "5h", "7d", "wk", "mo". */
+	window: string;
+	/** The fullest limit's used fraction, 0..1. */
+	fraction: number;
+	exhausted: boolean;
+	/** The window's limits, fullest first. */
+	limits: TrayQuotaLimit[];
+}
+
+/** A provider account's row at the top of the tray menu. */
+export interface TrayQuota {
+	/** The catalog name without its plan note, plus the account when a provider has several. */
+	name: string;
+	/** Shortest window first. */
+	windows: TrayQuotaWindow[];
+}
+
 export interface TrayState {
 	status: "idle" | "streaming" | "waiting" | "error";
 	language: Language;
@@ -458,6 +486,10 @@ export interface TrayState {
 	contextPercent: number | null;
 	contextTokens: number | null;
 	workspaces: { cwd: string; name: string; current: boolean }[];
+	/** Provider quotas; empty until a provider reports a windowed quota. */
+	quotas: TrayQuota[];
+	/** When the quotas were read, in epoch ms; 0 before the first reading. */
+	quotasAt: number;
 }
 
 // ============================================================================

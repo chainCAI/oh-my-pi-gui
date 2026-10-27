@@ -1,6 +1,7 @@
 /**
- * System tray with a rich quick-access menu: live config info (model / thinking
- * / fast / approval), usage + token consumption, workspace jumping, quick-start
+ * System tray with a rich quick-access menu: provider quotas, live config info
+ * (model / thinking / fast / approval), usage + token consumption, workspace
+ * jumping, quick-start
  * and quick-config actions, and a language toggle. The renderer pushes a
  * TrayState snapshot on every relevant change; main installs a new native menu
  * only when a visible label actually changes, and never while one is open.
@@ -8,11 +9,32 @@
  * UI stores).
  */
 
-import { app, Menu, nativeImage, Tray } from "electron";
-import { IPC_EVENTS, type MenuAction, type MenuActionPayload, type TrayState } from "../shared/ipc-types";
+import { app, Menu, nativeImage, nativeTheme, Tray } from "electron";
+import {
+	IPC_EVENTS,
+	type MenuAction,
+	type MenuActionPayload,
+	type TrayQuota,
+	type TrayState,
+} from "../shared/ipc-types";
 import { languageDetails } from "../shared/languages";
 import { getMainLanguage } from "./i18n";
-import { approvalLabel, formatTokens, menuSignature, type TrayLang, t, trayTooltip } from "./tray-labels";
+import { encodePng, type Rgba, ringPixels } from "./quota-icon";
+import {
+	approvalLabel,
+	formatTokens,
+	fullestWindow,
+	menuSignature,
+	moreQuotasLabel,
+	quotaLevel,
+	quotaLimitLabel,
+	quotaRowLabel,
+	quotaUpdatedLabel,
+	splitQuotaRows,
+	type TrayLang,
+	t,
+	trayTooltip,
+} from "./tray-labels";
 import type { SpawnWindow, WindowManager } from "./window";
 
 let tray: Tray | null = null;
@@ -63,6 +85,62 @@ function buildIcon(): Electron.NativeImage {
 	return image;
 }
 
+/** Ring colors: the Usage window's success, warning and error tones for the menu's appearance. */
+const QUOTA_COLORS: Record<"light" | "dark", Record<"ok" | "warning" | "critical" | "track", Rgba>> = {
+	light: {
+		ok: [0x1a, 0x7f, 0x45, 1],
+		warning: [0x8a, 0x5a, 0x00, 1],
+		critical: [0xc0, 0x39, 0x2b, 1],
+		track: [0, 0, 0, 0.16],
+	},
+	dark: {
+		ok: [0x6f, 0xcf, 0x97, 1],
+		warning: [0xe8, 0xb7, 0x5f, 1],
+		critical: [0xf3, 0x8b, 0x82, 1],
+		track: [0xff, 0xff, 0xff, 0.24],
+	},
+};
+
+/** The row's ring at 16 pt (32 px for Retina), showing its fullest window. */
+function quotaIcon(quota: TrayQuota): Electron.NativeImage | undefined {
+	const window = fullestWindow(quota);
+	if (!window) return undefined;
+	const colors = QUOTA_COLORS[nativeTheme.shouldUseDarkColors ? "dark" : "light"];
+	const size = 32;
+	const png = encodePng(size, size, ringPixels(size, window.fraction, colors[quotaLevel(window)], colors.track));
+	return nativeImage.createFromBuffer(png, { scaleFactor: 2 });
+}
+
+/**
+ * A row per provider account: each window's used share, a ring for the fullest
+ * one, and a submenu listing every limit with its reset time (#28). Past five
+ * rows, the ones nearest their limit stay on top and the rest sit under
+ * "More quotas".
+ */
+function quotaItems(
+	windowManager: WindowManager,
+	state: TrayState,
+	lang: TrayLang,
+): Electron.MenuItemConstructorOptions[] {
+	const now = Date.now();
+	const row = (quota: TrayQuota): Electron.MenuItemConstructorOptions => ({
+		label: quotaRowLabel(quota),
+		icon: quotaIcon(quota),
+		submenu: [
+			...quota.windows.flatMap(window =>
+				window.limits.map(limit => ({ label: quotaLimitLabel(lang, limit, now), enabled: false })),
+			),
+			{ type: "separator" as const },
+			{ label: quotaUpdatedLabel(lang, state.quotasAt, now), enabled: false },
+			{ label: t(lang, "usageStats"), click: () => send(windowManager, "open-usage") },
+		],
+	});
+	const { top, more } = splitQuotaRows(state.quotas);
+	const items = top.map(row);
+	if (more.length > 0) items.push({ label: moreQuotasLabel(lang, more.length), submenu: more.map(row) });
+	return items;
+}
+
 function send(windowManager: WindowManager, action: MenuAction, payload?: MenuActionPayload): void {
 	const win = windowManager.getTargetWindow();
 	if (win) {
@@ -89,6 +167,10 @@ function buildContextMenu(windowManager: WindowManager, state: TrayState | null)
 	// Header: app + current project + the aggregate run status. This is where
 	// status surfaces — the icon is a static template mark by design.
 	template.push({ label: trayTooltip(state), enabled: false }, { type: "separator" });
+
+	// Provider quotas first: the figure most often wanted without opening a window.
+	if (state && state.quotas.length > 0)
+		template.push(...quotaItems(windowManager, state, lang), { type: "separator" });
 
 	// Config info (read-only): model · thinking · fast · approval.
 	if (state) {
@@ -210,12 +292,18 @@ function installMenu(): void {
 	tray.setContextMenu(menu);
 }
 
+/** Quota rings are drawn for the menu's light or dark appearance. */
+function onAppearanceChange(): void {
+	if (!menuIsOpen) installMenu();
+}
+
 export function createTray(windowManager: WindowManager, spawnWindow: SpawnWindow): Tray {
 	windowManagerRef = windowManager;
 	spawnWindowRef = spawnWindow;
 	tray = new Tray(buildIcon());
 	tray.setToolTip(trayTooltip(null));
 	installMenu();
+	nativeTheme.on("updated", onAppearanceChange);
 
 	tray.on("click", () => {
 		const win = windowManager.getTargetWindow();
@@ -247,6 +335,7 @@ export function setTrayState(state: TrayState): void {
 }
 
 export function destroyTray(): void {
+	nativeTheme.off("updated", onAppearanceChange);
 	tray?.destroy();
 	tray = null;
 	windowManagerRef = null;

@@ -47,6 +47,7 @@ import { UpdateBanner } from "./components/layout/UpdateBanner";
 import { useAwaitingConfirmation } from "./hooks/use-awaiting-confirmation";
 import { useExtensionUi } from "./hooks/use-extension-ui";
 import { useLearnedSkillsSync } from "./hooks/use-learned-skills";
+import { useQuotaPolling } from "./hooks/use-quota-polling";
 import { useRpcEvents } from "./hooks/use-rpc-events";
 import { newSessionNow, requestSessionSwitch } from "./hooks/use-session-switch";
 import { useSidebarRecency } from "./hooks/use-sidebar-recency";
@@ -143,6 +144,7 @@ const ProvidersWindow = lazy(() =>
 
 function FocusedSessionEffects() {
 	useTraySync();
+	useQuotaPolling();
 	useLearnedSkillsSync();
 	useSidebarRecency();
 	const titleRunState = useDisplayPreference("titleState");
