@@ -7,6 +7,10 @@
 - Right-click a file in the Files panel or in the Changes panel's working tree to reveal it in Finder, open or preview it, or copy its path ([#27](https://github.com/nornzach/oh-my-pi-gui/issues/27)). A file that no longer exists, such as a deleted one, offers only **Copy path**, here and on file links.
 - Provider quotas in the tray menu: clicking the omp icon in the menu bar, system tray or panel shows, at the top, a row per provider with each time window's used share (`Anthropic — 5h 42%, 7d 60%`) and a ring that turns yellow, then red, near the limit. Hover a row for every limit and when it resets. With more than five subscriptions, the five nearest their limit stay on top and the rest sit under More quotas ([#28](https://github.com/nornzach/oh-my-pi-gui/issues/28)).
 
+### Fixed
+
+- On Windows, file links to another drive open the file. A `file:///E:/…` link previewed `C:\E:\…` and failed to read, and a link written as `E:\…` or `E:/…` did nothing when clicked ([#27](https://github.com/nornzach/oh-my-pi-gui/issues/27)).
+
 ## [0.9.30] - 2026-10-27
 
 ### Added

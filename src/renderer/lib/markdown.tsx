@@ -26,6 +26,7 @@ import { useT } from "./i18n";
 import { type FileTarget, isWebUrl, looksLikeFilePath, parseFileTarget } from "./link-targets";
 import { useResolvedPath } from "./path-resolver";
 import { PREVIEW_HEIGHT_LG, PREVIEW_SCROLL_CODE } from "./preview";
+import { rehypeDrivePaths } from "./rehype-drive-paths";
 import { remarkDollarGuard } from "./remark-dollar-guard";
 import { remarkLatexMath } from "./remark-latex-math";
 
@@ -152,14 +153,20 @@ const SANITIZE_SCHEMA: SanitizeSchema = {
 	strip: ["script", "style", "iframe", "object", "embed", "title", "textarea"],
 };
 
-// Order matters: rehype-raw parses embedded HTML into the tree, rehype-sanitize
-// then filters the whole tree against the strict schema, and katex runs last so
+// Order matters: rehype-raw parses embedded HTML into the tree, drive paths
+// become file URLs so sanitize keeps them, rehype-sanitize then filters the
+// whole tree against the strict schema, and katex runs last so
 // its generated MathML is not sanitized away. Fenced code is NOT highlighted in
 // this pipeline: the `pre` component swaps every fence for the shared CodeBlock
 // (same lazy hljs path as the tool cards), which also owns the language badge,
 // copy button, and line-number gutter — one code chrome across the whole GUI.
 // Code `language-*` classes survive sanitize for that detection.
-const REHYPE_PLUGINS: Options["rehypePlugins"] = [rehypeRaw, [rehypeSanitize, SANITIZE_SCHEMA], rehypeKatex];
+const REHYPE_PLUGINS: Options["rehypePlugins"] = [
+	rehypeRaw,
+	rehypeDrivePaths,
+	[rehypeSanitize, SANITIZE_SCHEMA],
+	rehypeKatex,
+];
 
 // react-markdown's defaultUrlTransform blanks data:/file: URLs even when the
 // sanitize schema allows them. Images need both (inline base64, local files
@@ -489,12 +496,15 @@ export function classifyImageSrc(src: string | undefined): MarkdownImageSrc {
 	if (/^https?:\/\//i.test(src)) return { kind: "remote", src };
 	if (src.startsWith("//")) return { kind: "remote", src: `https:${src}` };
 	if (/^file:\/\//i.test(src)) {
-		let raw = src.replace(/^file:\/\//i, "");
+		let raw = src.replace(/^file:\/\/(?:localhost(?=\/))?/i, "");
 		try {
 			raw = decodeURIComponent(raw);
 		} catch {
 			// Malformed escapes — resolve the raw string rather than failing the image.
 		}
+		// After `file://` comes a path (`/…`), a drive written with one slash too
+		// few (`file://E:/…`), or a host: `file://nas/share/a` is the share //nas/share/a.
+		if (!/^[\\/]/.test(raw) && !/^[A-Za-z]:[\\/]/.test(raw)) raw = `//${raw}`;
 		return { kind: "local", path: raw };
 	}
 	// Bare paths — absolute (/…, ~\…, C:\…), relative (./…, ../…), or plain

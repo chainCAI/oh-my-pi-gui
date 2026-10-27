@@ -75,7 +75,7 @@ import { setTrayState } from "./tray";
 import { aggregateTrayStatus } from "./tray-labels";
 import { appVersion } from "./updater";
 import type { SpawnWindow, WindowManager } from "./window";
-import { resolveExistingPath, resolveWithin } from "./workspace-paths";
+import { resolveExistingPath, resolveWithin, toAbsolutePath } from "./workspace-paths";
 
 export interface IpcDeps {
 	sidecarPool: SidecarPool;
@@ -900,14 +900,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 	// the file in the file manager instead of failing.
 	ipcMain.handle(IPC_COMMANDS.SYSTEM_OPEN_PATH, async (event, target: string): Promise<IpcOpenPathResult> => {
 		if (typeof target !== "string" || !target.trim()) return { ok: false, error: "Empty path" };
-		let resolved = target.startsWith("~/") ? path.join(os.homedir(), target.slice(2)) : target;
-		if (!path.isAbsolute(resolved)) {
-			const rootAbs = cwdFor(deps, event);
-			if (!rootAbs) return { ok: false, error: "No workspace" };
-			const within = resolveWithin(rootAbs, resolved);
-			if (!within) return { ok: false, error: "Path escapes the workspace" };
-			resolved = within;
-		}
+		const absolute = toAbsolutePath(target, cwdFor(deps, event));
+		if ("error" in absolute) return { ok: false, error: absolute.error };
+		const resolved = absolute.path;
 		// A stale tool card can reference a file that no longer exists (or never
 		// did outside the workspace). Both openPath and showItemInFolder fail
 		// silently on missing paths, so detect it here and let the link toast.
@@ -1164,16 +1159,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 		if (typeof payload.path !== "string" || payload.path.length === 0) {
 			return fail("Invalid path");
 		}
-		const raw = payload.path.startsWith("~/") ? path.join(os.homedir(), payload.path.slice(2)) : payload.path;
-		let abs: string;
-		if (path.isAbsolute(raw)) abs = path.normalize(raw);
-		else {
-			const cwd = cwdFor(deps, event, payload.tabId);
-			if (!cwd) return fail("No workspace");
-			const within = resolveWithin(cwd, raw);
-			if (!within) return fail("Path escapes the workspace");
-			abs = within;
-		}
+		const absolute = toAbsolutePath(payload.path, cwdFor(deps, event, payload.tabId));
+		if ("error" in absolute) return fail(absolute.error);
+		const abs = absolute.path;
 		const maxBytes = clampInt(payload.maxBytes, 1, FS_READ_MAX_BYTES_CAP, FS_READ_DEFAULT_MAX_BYTES);
 		try {
 			const stat = await fsp.stat(abs);
@@ -1243,17 +1231,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 	ipcMain.handle(IPC_COMMANDS.FS_READ_IMAGE, async (event, payload: IpcFsReadImagePayload) => {
 		const fail = (error: string): IpcFsReadImageResult => ({ ok: false, dataUrl: null, mime: null, size: 0, error });
 		if (typeof payload?.path !== "string" || payload.path.length === 0) return fail("Invalid path");
-		let abs: string;
-		const raw = payload.path.startsWith("~/") ? path.join(os.homedir(), payload.path.slice(2)) : payload.path;
-		if (path.isAbsolute(raw)) {
-			abs = path.normalize(raw);
-		} else {
-			const cwd = cwdFor(deps, event, payload.tabId);
-			if (!cwd) return fail("No workspace");
-			const within = resolveWithin(cwd, raw);
-			if (!within) return fail("Path escapes the workspace");
-			abs = within;
-		}
+		const absolute = toAbsolutePath(payload.path, cwdFor(deps, event, payload.tabId));
+		if ("error" in absolute) return fail(absolute.error);
+		const abs = absolute.path;
 		try {
 			const stat = await fsp.stat(abs);
 			if (!stat.isFile()) return fail("Not a file");

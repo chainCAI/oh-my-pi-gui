@@ -8,7 +8,7 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import * as path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { resolveExistingPath } from "./workspace-paths";
+import { resolveExistingPath, toAbsolutePath } from "./workspace-paths";
 
 let root: string;
 let workspace: string;
@@ -72,5 +72,32 @@ describe("resolveExistingPath", () => {
 		expect(await resolveExistingPath(path.join(root, "missing.txt"), workspace)).toBeNull();
 		expect(await resolveExistingPath("  ", workspace)).toBeNull();
 		expect(await resolveExistingPath(42, workspace)).toBeNull();
+	});
+});
+
+describe("toAbsolutePath on Windows", () => {
+	const win = path.win32;
+
+	it("reads a URL-style drive path as that drive, not as a folder on the current drive", () => {
+		// What a `file:///E:/…` link (or a reply's `E:\…` link) leaves once its
+		// scheme is cut. Read as rooted, Windows looked for C:\E:\ymt\… (issue #27).
+		expect(toAbsolutePath("/E:/ymt/app/utils/scan.js", "C:\\work", win)).toEqual({
+			path: "E:\\ymt\\app\\utils\\scan.js",
+		});
+		expect(toAbsolutePath("/E:\\ymt\\scan.js", "C:\\work", win)).toEqual({ path: "E:\\ymt\\scan.js" });
+		expect(toAbsolutePath("E:/ymt/scan.js", null, win)).toEqual({ path: "E:\\ymt\\scan.js" });
+		// Network shares and long-path prefixes begin with two separators and keep them.
+		expect(toAbsolutePath("//nas/share/doc.md", null, win)).toEqual({ path: "\\\\nas\\share\\doc.md" });
+		expect(toAbsolutePath("\\\\?\\E:\\ymt\\scan.js", null, win)).toEqual({ path: "\\\\?\\E:\\ymt\\scan.js" });
+		// Elsewhere it is an ordinary rooted path and stays one.
+		expect(toAbsolutePath("/E:/ymt/scan.js", null, path.posix)).toEqual({ path: "/E:/ymt/scan.js" });
+	});
+
+	it("resolves relative and ~\\ paths, and refuses escapes and a missing workspace", () => {
+		vi.spyOn(os, "homedir").mockReturnValue("C:\\Users\\dev");
+		expect(toAbsolutePath("src\\app.ts", "C:\\work", win)).toEqual({ path: "C:\\work\\src\\app.ts" });
+		expect(toAbsolutePath("~\\notes.md", null, win)).toEqual({ path: "C:\\Users\\dev\\notes.md" });
+		expect(toAbsolutePath("..\\secret.txt", "C:\\work", win)).toEqual({ error: "Path escapes the workspace" });
+		expect(toAbsolutePath("src\\app.ts", null, win)).toEqual({ error: "No workspace" });
 	});
 });
