@@ -2,11 +2,17 @@
 
 ## [Unreleased]
 
+## [0.9.31] - 2026-10-28
+
 ### Added
 
 - Right-click a file in the Files panel or in the Changes panel's working tree to reveal it in Finder, open or preview it, or copy its path ([#27](https://github.com/nornzach/oh-my-pi-gui/issues/27)). A file that no longer exists, such as a deleted one, offers only **Copy path**, here and on file links.
 - Provider quotas in the tray menu: clicking the omp icon in the menu bar, system tray or panel shows, at the top, a row per provider with each time window's used share (`Anthropic — 5h 42%, 7d 60%`) and a ring that turns yellow, then red, near the limit. Hover a row for every limit and when it resets. With more than five subscriptions, the five nearest their limit stay on top and the rest sit under More quotas ([#28](https://github.com/nornzach/oh-my-pi-gui/issues/28)).
 - Quotas in the sidebar, off by default: turn on **Quotas in the sidebar** in Settings → GUI for a strip above Settings with a row per provider and a ring for each time window. Hover a row for every limit and when it resets, click it to open Usage & quotas, or right-click to refresh or hide the strip. With more than four subscriptions, the four nearest their limit show and the rest are counted under More quotas ([#28](https://github.com/nornzach/oh-my-pi-gui/issues/28)).
+
+### Changed
+
+- Bundled agent rebuilt from monorepo `59e27303`, on upstream omp main after v18.13.1 (`6163dff1`). Among upstream's changes: pressing Esc on a busy session keeps queued messages from extensions and agents, resuming a conversation that continued in a new file opens the copy with the newest turn, `@` mentions of PDF, Word, Excel, PowerPoint and EPUB files attach their text, and image descriptions use the least expensive vision model instead of the first one in the catalog.
 
 ### Fixed
 
