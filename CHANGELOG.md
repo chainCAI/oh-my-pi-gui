@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.9.32] - 2026-10-28
+
 ### Added
 
 - Drag a tab to reorder the tab bar; the order is kept after a restart, and a split pair moves as one ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
@@ -11,6 +13,7 @@
 
 ### Changed
 
+- Bundled agent rebuilt from monorepo `e1df76a4`, on upstream omp v18.13.3 (`7a3f804f`). Among upstream's changes: one Esc no longer stops a session from waking on its own background job results, `!` commands on zsh or fish no longer hang at interactive prompts, resuming after a prewalk handoff keeps the model it switched to, and auto-compaction no longer fires early on OpenAI-compatible models that don't replay past reasoning.
 - Split view keeps its pairs: two split tabs merge into one chip in the tab bar and one frame in the sidebar, and selecting either shows both. Selecting another tab shows it alone without undoing the pair, a window can hold several pairs, and all of them come back after a restart. Right-click a tab for **Split with…** to pick its partner or **Separate pair** to undo it, and drop a tab on one pane of a shown pair to put it there instead ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
 - Opening a session from the sidebar, or a new tab with ⌘T, in a workspace you already have open no longer waits for omp to start: an idle agent is kept running there and the tab takes it over instead of starting its own. A session whose saved model is gone still opens, on the default model ([#29](https://github.com/nornzach/oh-my-pi-gui/issues/29)).
 
