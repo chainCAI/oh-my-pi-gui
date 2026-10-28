@@ -1005,6 +1005,8 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 			throw new Error("Invalid preference key");
 		}
 		prefsStore.set(payload.key, payload.value);
+		// The proxy is spawn-time env: a spare booted under the old one must go.
+		if (payload.key === "proxyUrl") sidecarPool.refreshSpare();
 		if (payload.key === "language" && isLanguage(payload.value)) {
 			createMenu(windowManager, deps.spawnWindow, deps.browserHost);
 			for (const window of BrowserWindow.getAllWindows()) {
@@ -1030,6 +1032,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 		if (Object.keys(profile).length) profiles[payload.cwd] = profile;
 		else delete profiles[payload.cwd];
 		prefsStore.set("launchProfiles", profiles);
+		sidecarPool.refreshSpare();
 		return profile;
 	});
 

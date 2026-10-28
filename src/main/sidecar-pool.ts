@@ -133,6 +133,14 @@ interface PoolEntry {
 
 type WindowSplitView = NonNullable<IpcSetTabViewPayload["split"]>;
 
+/** An idle sidecar booted ahead of the next tab in `cwd` (gui#29). */
+interface WarmSpare {
+	cwd: string;
+	sidecar: SidecarManager;
+	/** Removes the pool's own spare-tracking listener. */
+	detach: () => void;
+}
+
 export class SidecarPool {
 	#entries = new Set<PoolEntry>();
 	#byTabId = new Map<string, PoolEntry>();
@@ -155,6 +163,23 @@ export class SidecarPool {
 	readonly #factory: SidecarFactory;
 	/** Suppress partial snapshots while a saved layout is being reconstructed. */
 	#restoringWindows = new Set<number>();
+	/**
+	 * Warm spare (gui#29). Opening a session used to cold-start an omp process
+	 * for its tab — seconds on a fast Mac, tens of seconds on slow Windows
+	 * hosts — while switching a running process onto a session takes well
+	 * under a second. So once an agent tab is up, one idle process is booted in
+	 * its workspace, and the next agent tab started there adopts it instead of
+	 * spawning (`#ensureStarted`). Never a tab: it holds no slot in the tab
+	 * maps, the layout, or the quit guard's inventory.
+	 */
+	#spare: WarmSpare | null = null;
+	#spareTimer: NodeJS.Timeout | null = null;
+	/**
+	 * How long after an agent tab comes up its workspace's spare boots, so the
+	 * spare does not compete with that tab's own startup and hydrate. Null (the
+	 * default) disables spares; main sets it at startup.
+	 */
+	warmSpareDelayMs: number | null = null;
 	/**
 	 * Host-tool dispatch needs the main-process executor (ipc.ts), which the
 	 * pool cannot import without a cycle. Set once at startup; the pool routes
@@ -256,7 +281,8 @@ export class SidecarPool {
 
 			if (!deferStart) this.#ensureStarted(entry);
 			this.#notifyWindowTabsChanged(win);
-			return sidecar;
+			// Starting may have swapped in the warm spare.
+			return entry.sidecar;
 		} catch {
 			return null;
 		}
@@ -269,12 +295,96 @@ export class SidecarPool {
 	 * start() carrying --session. Safe to call on every visibility change —
 	 * `status` leaves "asleep" synchronously inside start(), so a second call
 	 * can never double-spawn.
+	 *
+	 * A warm spare for the tab's workspace replaces the never-spawned manager
+	 * instead: only the light wiring was ever attached to it (full wiring
+	 * attaches after this returns), so the swap re-wires that alone.
 	 */
 	#ensureStarted(entry: PoolEntry): void {
 		if (entry.sidecar.status !== "asleep") return;
+		const spare = this.#takeSpare(entry);
+		if (spare) {
+			const asleep = entry.sidecar;
+			asleep.removeAllListeners();
+			asleep.dispose();
+			entry.sidecar = spare;
+			this.#wireLight(entry);
+			spare.adopt(entry.sessionFile);
+			return;
+		}
 		const sessionPath = entry.sessionFile;
 		if (sessionPath) entry.sidecar.restart(undefined, sessionPath);
 		else entry.sidecar.start();
+	}
+
+	/** The spare `entry` can adopt, removed from the pool; null when there is none. */
+	#takeSpare(entry: PoolEntry): SidecarManager | null {
+		const spare = this.#spare;
+		// Chat tabs run a different argv; a worktree tab's checkout is not the spare's.
+		if (!spare || entry.kind !== "agent" || entry.worktree) return null;
+		// A spare still booting is worth taking: the part of its boot already
+		// done is time the tab does not wait again.
+		const status = spare.sidecar.status;
+		if (spare.cwd !== entry.sidecar.cwd || (status !== "starting" && status !== "ready")) return null;
+		this.#spare = null;
+		spare.detach();
+		return spare.sidecar;
+	}
+
+	/** Boot a spare for `cwd` after `warmSpareDelayMs`, unless one is already warm there. */
+	#scheduleSpare(cwd: string): void {
+		const delay = this.warmSpareDelayMs;
+		if (delay === null || this.#spare?.cwd === cwd) return;
+		if (this.#spareTimer) clearTimeout(this.#spareTimer);
+		this.#spareTimer = setTimeout(() => {
+			this.#spareTimer = null;
+			this.#bootSpare(cwd);
+		}, delay);
+	}
+
+	#bootSpare(cwd: string): void {
+		this.#dropSpare();
+		let sidecar: SidecarManager;
+		try {
+			sidecar = this.#factory(cwd, "agent", true);
+		} catch {
+			return;
+		}
+		// Booting or idle are the only useful states. A spare that crashed or
+		// failed its health check is dropped, never crash-looped in the background.
+		const onStatus = ({ status }: SidecarStatusPayload): void => {
+			if (status !== "starting" && status !== "ready" && this.#spare?.sidecar === sidecar) this.#dropSpare();
+		};
+		sidecar.on("status", onStatus);
+		this.#spare = { cwd, sidecar, detach: () => sidecar.off("status", onStatus) };
+		sidecar.prewarm();
+	}
+
+	/** Cancel a pending spare boot and drop the spare. */
+	#discardSpare(): void {
+		if (this.#spareTimer) clearTimeout(this.#spareTimer);
+		this.#spareTimer = null;
+		this.#dropSpare();
+	}
+
+	#dropSpare(): void {
+		const spare = this.#spare;
+		if (!spare) return;
+		this.#spare = null;
+		spare.sidecar.removeAllListeners();
+		spare.sidecar.dispose();
+	}
+
+	/**
+	 * Replace the spare with one booted under current settings. A spare booted
+	 * before a settings, proxy, or launch-profile change would hand the next tab
+	 * the old ones (a stale default model, above all), which a cold start never
+	 * does.
+	 */
+	refreshSpare(): void {
+		const cwd = this.#spare?.cwd;
+		this.#dropSpare();
+		if (cwd) this.#scheduleSpare(cwd);
 	}
 
 	/** Per-tab light wiring, attached for the entry's whole life: TAB_STATUS pushes. */
@@ -285,6 +395,7 @@ export class SidecarPool {
 			entry.status = payload.status;
 			if (payload.status === "ready") {
 				this.sidecarLifecycle?.ready({ tabId: entry.tabId, kind: entry.kind, sidecar, win });
+				if (entry.kind === "agent" && !entry.worktree) this.#scheduleSpare(sidecar.cwd);
 			} else if (wasReady) {
 				this.sidecarLifecycle?.down(entry.tabId);
 			}
@@ -309,6 +420,10 @@ export class SidecarPool {
 		// panel shown later continues from the frames, not a gap.
 		sidecar.on("terminalFrame", (frame: RpcTerminalFrame) => {
 			forwardToWindow(win, IPC_EVENTS.TERMINAL_FRAME, { tabId: entry.tabId, frame });
+		});
+		// Settings are read at boot; the spare must not keep the ones a tab just changed.
+		sidecar.on("configUpdate", () => {
+			this.refreshSpare();
 		});
 		sidecar.on("sessionInfoUpdate", (frame: SessionInfoUpdateFrame) => {
 			if (frame.title !== undefined) entry.title = frame.title;
@@ -524,6 +639,8 @@ export class SidecarPool {
 		const split = this.#splitByWindow.get(entry.winId);
 		if (split?.firstTabId === entry.tabId || split?.secondTabId === entry.tabId)
 			this.#splitByWindow.delete(entry.winId);
+		// No tab left anywhere (a macOS app idling in the dock): nothing to be warm for.
+		if (this.#entries.size === 0) this.#discardSpare();
 		if (![...this.#entries].some(candidate => candidate.winId === entry.winId)) {
 			this.#activeByWindow.delete(entry.winId);
 			this.#visibleByWindow.delete(entry.winId);
@@ -869,6 +986,7 @@ export class SidecarPool {
 	}
 
 	disposeAll(): void {
+		this.#discardSpare();
 		for (const entry of this.#entries) {
 			entry.sidecar.removeAllListeners();
 			entry.sidecar.dispose();

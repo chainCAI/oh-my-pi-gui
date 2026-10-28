@@ -208,6 +208,9 @@ async function resolveProxyEnvForSpawn(): Promise<Record<string, string>> {
 	}
 }
 
+/** A tab's own startup and transcript load go first; the warm spare boots after. */
+const WARM_SPARE_DELAY_MS = 3_000;
+
 // Module-level instances (alive for app lifetime)
 let windowManager: WindowManager;
 let sidecarPool: SidecarPool;
@@ -380,6 +383,9 @@ app.whenReady().then(() => {
 		return sc;
 	});
 	sidecarPool.onWindowTabsChanged = () => persistTabLayouts();
+	// Keep one idle agent warm in the workspace being used, so the next tab
+	// opened there switches onto its session instead of cold-starting (gui#29).
+	sidecarPool.warmSpareDelayMs = WARM_SPARE_DELAY_MS;
 	// Agent tabs browse in their own side panel: each sidecar that comes up
 	// serves a relay for it, and its pages outlive sidecar restarts.
 	const host = new BrowserHost();

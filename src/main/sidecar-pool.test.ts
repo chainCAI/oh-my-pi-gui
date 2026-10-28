@@ -1,7 +1,8 @@
 import { EventEmitter } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import type { BrowserWindow } from "electron";
 import { describe, expect, it } from "vitest";
-import { IPC_EVENTS, type IpcTabStatusPayload } from "../shared/ipc-types";
+import { IPC_EVENTS, type IpcTabStatusPayload, type IpcTabWorktree } from "../shared/ipc-types";
 import type { RpcCommand, RpcResponse, SessionInfoUpdateFrame, SidecarStatus } from "../shared/rpc-types";
 import type { SidecarManager } from "./sidecar";
 import { SidecarPool } from "./sidecar-pool";
@@ -44,6 +45,17 @@ class FakeSidecar extends EventEmitter {
 	restart(cwd?: string, sessionPath?: string): void {
 		this.restartArgs.push({ cwd, sessionPath });
 		if (this.currentStatus === "asleep") this.emitStatus("starting");
+	}
+	prewarmed = false;
+	/** Session paths `adopt()` was handed, in call order. */
+	adoptedWith: Array<string | undefined> = [];
+	prewarm(): void {
+		this.prewarmed = true;
+		this.start();
+	}
+	adopt(sessionPath?: string): void {
+		this.adoptedWith.push(sessionPath);
+		this.emitStatus("starting");
 	}
 	kill(): void {}
 	dispose(): void {
@@ -1130,5 +1142,123 @@ describe("SidecarPool quit inventory", () => {
 		b?.emitAgentEvents(["agent_end"]);
 		expect(pool.releaseTab("tab-b")).toBe(true);
 		expect(pool.tabInventory().map(entry => entry.tabId)).toEqual(["tab-a", "tab-c"]);
+	});
+});
+
+describe("SidecarPool warm spare", () => {
+	function sparePool(): {
+		pool: SidecarPool;
+		sidecars: FakeSidecar[];
+		spawns: Array<{ cwd: string; kind: "agent" | "chat"; fresh: boolean }>;
+	} {
+		const sidecars: FakeSidecar[] = [];
+		const spawns: Array<{ cwd: string; kind: "agent" | "chat"; fresh: boolean }> = [];
+		const pool = new SidecarPool((cwd, kind, fresh) => {
+			spawns.push({ cwd, kind, fresh });
+			const sidecar = new FakeSidecar(cwd);
+			sidecars.push(sidecar);
+			return sidecar as unknown as SidecarManager;
+		});
+		pool.warmSpareDelayMs = 0;
+		return { pool, sidecars, spawns };
+	}
+
+	/** First tab in `/repo` comes up, then its spare boots and goes idle. */
+	async function warmUp(pool: SidecarPool, sidecars: FakeSidecar[], fw: FakeWindow): Promise<FakeSidecar> {
+		pool.acquire("/repo", fw.win, "tab-first");
+		sidecars[0]?.emitStatus("ready");
+		await delay(0);
+		const spare = sidecars[1];
+		if (!spare?.prewarmed) throw new Error("no spare booted");
+		spare.emitStatus("ready");
+		return spare;
+	}
+
+	it("hands the idle spare to the next session tab in its workspace instead of spawning", async () => {
+		const { pool, sidecars, spawns } = sparePool();
+		const fw = fakeWindow(1);
+		const spare = await warmUp(pool, sidecars, fw);
+		// The spare is a fresh agent in the tab's workspace, and is no tab itself.
+		expect(spawns[1]).toEqual({ cwd: "/repo", kind: "agent", fresh: true });
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.tabId)).toEqual(["tab-first"]);
+
+		const returned = pool.acquire("/repo", fw.win, "tab-session", "/repo/s.jsonl");
+		const asleep = sidecars[2];
+		expect(asleep?.disposed).toBe(true);
+		expect(asleep?.started).toBe(false);
+		expect(asleep?.restartArgs).toEqual([]);
+		expect(spare.adoptedWith).toEqual(["/repo/s.jsonl"]);
+		expect(returned).toBe(spare as unknown as SidecarManager);
+		expect(pool.sidecarForTab(fw.win, "tab-session")).toBe(spare as unknown as SidecarManager);
+
+		// The adopted process reports as the tab, through the tab's light wiring.
+		fw.sent.length = 0;
+		spare.emitStatus("ready");
+		expect(fw.sentTo(IPC_EVENTS.TAB_STATUS).map(s => s.data)).toEqual([
+			expect.objectContaining({ tabId: "tab-session", status: "ready", sessionPath: "/repo/s.jsonl" }),
+		]);
+		pool.disposeAll();
+	});
+
+	it("cold-starts tabs the spare cannot serve: another workspace, a chat, a worktree", async () => {
+		const { pool, sidecars } = sparePool();
+		const fw = fakeWindow(1);
+		const spare = await warmUp(pool, sidecars, fw);
+
+		pool.acquire("/other", fw.win, "tab-other", "/other/s.jsonl");
+		pool.acquire("/repo", fw.win, "tab-chat", undefined, "chat");
+		const worktree: IpcTabWorktree = { name: "wt", branch: "wt", baseCwd: "/repo" };
+		pool.acquire("/repo", fw.win, "tab-wt", undefined, "agent", worktree);
+
+		expect(spare.adoptedWith).toEqual([]);
+		expect(spare.disposed).toBe(false);
+		expect(sidecars[2]?.restartArgs).toEqual([{ cwd: undefined, sessionPath: "/other/s.jsonl" }]);
+		expect(sidecars[3]?.started).toBe(true);
+		expect(sidecars[4]?.started).toBe(true);
+	});
+
+	it("replaces the spare after a settings change so the next tab boots under the new settings", async () => {
+		const { pool, sidecars } = sparePool();
+		const fw = fakeWindow(1);
+		const spare = await warmUp(pool, sidecars, fw);
+
+		sidecars[0]?.emit("configUpdate", { type: "config_update" });
+		expect(spare.disposed).toBe(true);
+		await delay(0);
+		expect(sidecars[2]?.prewarmed).toBe(true);
+		expect(sidecars[2]?.cwd).toBe("/repo");
+	});
+
+	it("hands over a spare that is still booting, but never one that crashed", async () => {
+		const { pool, sidecars } = sparePool();
+		const fw = fakeWindow(1);
+		pool.acquire("/repo", fw.win, "tab-first");
+		sidecars[0]?.emitStatus("ready");
+		await delay(0);
+		const booting = sidecars[1];
+
+		pool.acquire("/repo", fw.win, "tab-early", "/repo/a.jsonl");
+		expect(booting?.adoptedWith).toEqual(["/repo/a.jsonl"]);
+		expect(sidecars[2]?.disposed).toBe(true);
+		expect(sidecars[2]?.restartArgs).toEqual([]);
+
+		booting?.emitStatus("ready");
+		await delay(0);
+		const crashed = sidecars[3];
+		expect(crashed?.prewarmed).toBe(true);
+		crashed?.emitStatus("restarting");
+		expect(crashed?.disposed).toBe(true);
+		pool.acquire("/repo", fw.win, "tab-late", "/repo/b.jsonl");
+		expect(sidecars[4]?.restartArgs).toEqual([{ cwd: undefined, sessionPath: "/repo/b.jsonl" }]);
+		expect(crashed?.adoptedWith).toEqual([]);
+	});
+
+	it("drops the spare when the last tab closes", async () => {
+		const { pool, sidecars } = sparePool();
+		const fw = fakeWindow(1);
+		const spare = await warmUp(pool, sidecars, fw);
+
+		pool.releaseTab("tab-first");
+		expect(spare.disposed).toBe(true);
 	});
 });

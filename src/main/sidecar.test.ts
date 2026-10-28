@@ -26,6 +26,58 @@ async function waitForReady(sidecar: SidecarManager): Promise<void> {
 	}
 }
 
+/**
+ * A fake omp that logs each spawn's argv and every command, raises one
+ * extension prompt at boot, and answers `switch_session` per `onSwitch`:
+ * "ok", "cancel", or "model" (the saved model is gone until the switch names
+ * one explicitly). `bootMs` delays its ready frame.
+ */
+async function writeSwitchingSidecar(dir: string, onSwitch: "ok" | "cancel" | "model", bootMs = 0) {
+	const spawnLog = path.join(dir, "spawns.jsonl");
+	const commandLog = path.join(dir, "commands.jsonl");
+	const binaryPath = path.join(dir, "fake-sidecar.ts");
+	await fs.writeFile(
+		binaryPath,
+		[
+			"#!/usr/bin/env bun",
+			'import * as fs from "node:fs";',
+			'import { createInterface } from "node:readline";',
+			`fs.appendFileSync(${JSON.stringify(spawnLog)}, JSON.stringify(process.argv.slice(2)) + "\\n");`,
+			'const out = (frame: object) => process.stdout.write(JSON.stringify(frame) + "\\n");',
+			`await Bun.sleep(${bootMs});`,
+			'out({ type: "ready", protocolVersion: 1, supportedProtocolVersions: [1] });',
+			'out({ type: "extension_ui_request", id: "boot-prompt", method: "confirm", title: "Trust?", message: "ok?" });',
+			'createInterface({ input: process.stdin }).on("line", line => {',
+			`\tfs.appendFileSync(${JSON.stringify(commandLog)}, line + "\\n");`,
+			"\tconst command = JSON.parse(line);",
+			'\tconst reply = (fields: object) => out({ type: "response", id: command.id, command: command.type, ...fields });',
+			'\tif (command.type === "get_state") return reply({ success: true, data: { model: { provider: "local", id: "default-model" } } });',
+			'\tif (command.type !== "switch_session") return reply({ success: true, data: {} });',
+			`\tconst mode = ${JSON.stringify(onSwitch)};`,
+			'\tif (mode === "cancel") return reply({ success: true, data: { cancelled: true } });',
+			'\tif (mode === "model" && !command.provider) return reply({ success: false, error: "Could not restore model gone/model-x" });',
+			"\treply({ success: true, data: { cancelled: false } });",
+			"});",
+		].join("\n"),
+	);
+	await fs.chmod(binaryPath, 0o755);
+	const readLines = async (file: string): Promise<unknown[]> => {
+		try {
+			return (await fs.readFile(file, "utf8"))
+				.split("\n")
+				.filter(Boolean)
+				.map(line => JSON.parse(line) as unknown);
+		} catch {
+			return [];
+		}
+	};
+	return {
+		binaryPath,
+		spawns: () => readLines(spawnLog),
+		commands: async () => (await readLines(commandLog)) as Array<Record<string, unknown>>,
+	};
+}
+
 describe("SidecarManager", () => {
 	it("passes the active session path on a manual restart", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gui-sidecar-"));
@@ -519,4 +571,114 @@ describe("SidecarManager", () => {
 			await fs.rm(tempDir, { recursive: true, force: true });
 		}
 	}, 15_000);
+});
+
+describe("SidecarManager warm spare", () => {
+	it("switches the booted spare onto the session and replays the prompt it held, without respawning", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gui-spare-"));
+		const fake = await writeSwitchingSidecar(tempDir, "ok");
+		const sessionPath = path.join(tempDir, "session.jsonl");
+		const sidecar = new SidecarManager({ binaryPath: fake.binaryPath, cwd: tempDir, fresh: true });
+		const statuses: SidecarStatus[] = [];
+		const prompts: string[] = [];
+		sidecar.on("status", ({ status }: SidecarStatusPayload) => statuses.push(status));
+		sidecar.on("extensionUi", (request: { id: string }) => prompts.push(request.id));
+		try {
+			const booted = waitForReady(sidecar);
+			sidecar.prewarm();
+			await booted;
+			await delay(100);
+			// No tab owns the spare yet: a prompt shown now would have no window.
+			expect(prompts).toEqual([]);
+
+			statuses.length = 0;
+			const adopted = waitForReady(sidecar);
+			sidecar.adopt(sessionPath);
+			await adopted;
+
+			expect(statuses).toEqual(["starting", "ready"]);
+			expect(prompts).toEqual(["boot-prompt"]);
+			expect(await fake.spawns()).toEqual([["--mode", "rpc-ui", "--no-auto-resume"]]);
+			expect((await fake.commands()).map(command => command.type)).toEqual(["switch_session"]);
+		} finally {
+			sidecar.dispose();
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("binds the session once a spare adopted mid-boot is ready, without respawning", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gui-spare-boot-"));
+		const fake = await writeSwitchingSidecar(tempDir, "ok", 400);
+		const sessionPath = path.join(tempDir, "session.jsonl");
+		const sidecar = new SidecarManager({ binaryPath: fake.binaryPath, cwd: tempDir, fresh: true });
+		const statuses: SidecarStatus[] = [];
+		const prompts: string[] = [];
+		sidecar.on("status", ({ status }: SidecarStatusPayload) => statuses.push(status));
+		sidecar.on("extensionUi", (request: { id: string }) => prompts.push(request.id));
+		try {
+			const ready = waitForReady(sidecar);
+			sidecar.prewarm();
+			sidecar.adopt(sessionPath);
+			await ready;
+			await delay(300);
+
+			// The boot's own ready is not the tab's: the session is not open yet.
+			expect(statuses.filter(status => status === "ready")).toHaveLength(1);
+			expect(await fake.spawns()).toEqual([["--mode", "rpc-ui", "--no-auto-resume"]]);
+			expect(await fake.commands()).toEqual([expect.objectContaining({ type: "switch_session", sessionPath })]);
+			expect(prompts).toEqual(["boot-prompt"]);
+		} finally {
+			sidecar.dispose();
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("reopens on the spare's own model when the saved session model cannot be restored", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gui-spare-model-"));
+		const fake = await writeSwitchingSidecar(tempDir, "model");
+		const sessionPath = path.join(tempDir, "session.jsonl");
+		const sidecar = new SidecarManager({ binaryPath: fake.binaryPath, cwd: tempDir, fresh: true });
+		const statuses: SidecarStatusPayload[] = [];
+		sidecar.on("status", (payload: SidecarStatusPayload) => statuses.push(payload));
+		try {
+			const booted = waitForReady(sidecar);
+			sidecar.prewarm();
+			await booted;
+			const adopted = waitForReady(sidecar);
+			sidecar.adopt(sessionPath);
+			await adopted;
+
+			// The renderer's "opened on the default model" notice keys off this.
+			expect(statuses.at(-1)).toMatchObject({ status: "ready", modelFallback: "gone/model-x" });
+			const switches = (await fake.commands()).filter(command => command.type === "switch_session");
+			expect(switches.at(-1)).toMatchObject({ sessionPath, provider: "local", modelId: "default-model" });
+			expect(await fake.spawns()).toHaveLength(1);
+		} finally {
+			sidecar.dispose();
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("falls back to a cold --session start when the agent declines the switch", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "omp-gui-spare-cancel-"));
+		const fake = await writeSwitchingSidecar(tempDir, "cancel");
+		const sessionPath = path.join(tempDir, "session.jsonl");
+		const sidecar = new SidecarManager({ binaryPath: fake.binaryPath, cwd: tempDir, fresh: true });
+		try {
+			const booted = waitForReady(sidecar);
+			sidecar.prewarm();
+			await booted;
+			const reopened = waitForReady(sidecar);
+			sidecar.adopt(sessionPath);
+			await reopened;
+
+			expect(await fake.spawns()).toEqual([
+				["--mode", "rpc-ui", "--no-auto-resume"],
+				["--mode", "rpc-ui", "--session", sessionPath],
+			]);
+		} finally {
+			sidecar.dispose();
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
 });

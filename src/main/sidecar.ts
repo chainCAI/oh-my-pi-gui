@@ -27,6 +27,7 @@ import type {
 	RpcLiveFrame,
 	RpcReadyFrame,
 	RpcResponse,
+	RpcSessionState,
 	RpcTerminalFrame,
 	SessionInfoUpdateFrame,
 	SessionSettledFrame,
@@ -42,6 +43,18 @@ import { RpcClient } from "./rpc-client";
 
 const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAYS = [1000, 2000, 4000];
+
+/**
+ * Budget for a warm spare's `switch_session` (gui#29). Loading a large
+ * transcript can outlast the 8s RPC default, and the fallback after a timeout
+ * is the cold spawn the spare exists to avoid.
+ */
+const SESSION_BIND_TIMEOUT_MS = 60_000;
+
+/** Frames a warm spare holds back until a tab adopts it. */
+type ParkedFrame =
+	| { event: "extensionUi"; frame: ExtensionUIRequest }
+	| { event: "extensionError"; frame: ExtensionErrorFrame };
 
 /** stderr lines kept per spawn for the crash report. */
 const STDERR_TAIL_LINES = 20;
@@ -61,6 +74,11 @@ function stderrExcerpt(lines: string[]): string {
 		return trimmed.length > STDERR_REASON_CHARS ? `${trimmed.slice(0, STDERR_REASON_CHARS - 1)}…` : trimmed;
 	}
 	return "";
+}
+
+/** `switch_session` answered but declined (an extension veto, another workspace's session). */
+function switchCancelled(response: RpcResponse): boolean {
+	return (response.data as { cancelled?: unknown } | null | undefined)?.cancelled === true;
 }
 
 /** Event types routed to the EventBatcher. Hoisted: one lookup table for the
@@ -256,6 +274,19 @@ export class SidecarManager extends EventEmitter {
 	 * carries it so the renderer can say so.
 	 */
 	#bootModelFallback: string | null = null;
+	/**
+	 * Non-null while this manager is a warm spare no tab has adopted yet. A
+	 * spare has no window to show extension prompts or load errors in, and a
+	 * blocking prompt dropped here would hang its caller, so they wait for
+	 * `adopt()` to replay them to the tab.
+	 */
+	#parkedFrames: ParkedFrame[] | null = null;
+	/**
+	 * Set when a tab adopted this spare while its process was still booting:
+	 * the session to switch onto once it is ready, in place of announcing it.
+	 * Per spawn — a respawn opens the session itself through `--session`.
+	 */
+	#bindOnReady: { sessionPath: string | undefined } | null = null;
 	#disposed = false;
 
 	constructor(options: SidecarOptions) {
@@ -320,6 +351,7 @@ export class SidecarManager extends EventEmitter {
 		this.#generation++;
 		this.#lastStderr = [];
 		this.#bootedThisSpawn = false;
+		this.#bindOnReady = null;
 		const { binaryPath, sourceCli, cwd, extraFlags } = this.#options;
 
 		const args = ["--mode", "rpc-ui"];
@@ -443,6 +475,10 @@ export class SidecarManager extends EventEmitter {
 
 		// Extension UI request
 		if (obj.type === "extension_ui_request") {
+			if (this.#parkedFrames) {
+				this.#parkedFrames.push({ event: "extensionUi", frame: obj as ExtensionUIRequest });
+				return;
+			}
 			this.emit("extensionUi", obj as ExtensionUIRequest);
 			this.emit("frame", obj);
 			return;
@@ -506,6 +542,10 @@ export class SidecarManager extends EventEmitter {
 			return;
 		}
 		if (obj.type === "extension_error") {
+			if (this.#parkedFrames) {
+				this.#parkedFrames.push({ event: "extensionError", frame: obj as unknown as ExtensionErrorFrame });
+				return;
+			}
 			this.emit("extensionError", obj as unknown as ExtensionErrorFrame);
 			this.emit("frame", obj);
 			return;
@@ -541,7 +581,9 @@ export class SidecarManager extends EventEmitter {
 	}
 
 	#handleReady(ready: RpcReadyFrame): void {
-		this.#resumeSessionPath = null;
+		// An adopted spare still has its session to open: a crash before the
+		// switch must respawn into it.
+		if (!this.#bindOnReady) this.#resumeSessionPath = null;
 		this.#bootedThisSpawn = true;
 		const modelFallback = this.#bootModelFallback ?? undefined;
 		this.#bootModelFallback = null;
@@ -558,6 +600,13 @@ export class SidecarManager extends EventEmitter {
 		const generation = this.#generation;
 		const announceReady = (): void => {
 			if (!this.#isLive(generation)) return;
+			const bind = this.#bindOnReady;
+			this.#bindOnReady = null;
+			if (bind && this.#rpcClient) {
+				this.#restartCount = 0;
+				this.#bindAdopted(this.#rpcClient, bind.sessionPath);
+				return;
+			}
 			this.#setStatus("ready", undefined, undefined, modelFallback);
 			this.#restartCount = 0;
 		};
@@ -686,7 +735,98 @@ export class SidecarManager extends EventEmitter {
 		return true;
 	}
 
+	/** Boot as a warm spare (gui#29): a running process bound to no tab until `adopt()`. */
+	prewarm(): void {
+		this.#parkedFrames = [];
+		this.start();
+	}
+
+	/**
+	 * Hand a warm spare to the tab taking it over: switch its blank session onto
+	 * `sessionPath` (a new tab keeps the blank one), then report `ready` as a
+	 * fresh boot would. A switch takes well under a second where a cold spawn
+	 * takes seconds — tens of seconds on slow Windows hosts (gui#29).
+	 *
+	 * A spare still booting is adopted too, keeping the part of its boot already
+	 * done: the switch waits for its `ready`, or, before the process is even
+	 * spawned, the spawn opens the session itself.
+	 *
+	 * Whatever the switch cannot open the way `--session` would falls back to
+	 * that cold start: a spare that is neither booting nor idle, or a switch the
+	 * agent refuses (another workspace's session) or fails. A saved model that
+	 * no longer resolves reopens on this process's own model — the configured
+	 * default, as the cold path's `--model @default` respawn would pick.
+	 */
+	adopt(sessionPath?: string): void {
+		if (this.#status === "starting") {
+			// A crash before the switch respawns straight into the session.
+			this.#resumeSessionPath = sessionPath ?? null;
+			if (this.#child) this.#bindOnReady = { sessionPath };
+			else this.#parkedFrames = null;
+			this.#setStatus("starting");
+			return;
+		}
+		const client = this.#rpcClient;
+		if (this.#status !== "ready" || !client) {
+			this.restart(undefined, sessionPath);
+			return;
+		}
+		this.#bindAdopted(client, sessionPath);
+	}
+
+	/** Switch a booted, adopted spare onto its tab's session, then announce it ready. */
+	#bindAdopted(client: RpcClient, sessionPath: string | undefined): void {
+		const parked = this.#parkedFrames ?? [];
+		this.#parkedFrames = null;
+		const generation = this.#generation;
+		// A crash mid-switch respawns into the session, not a blank one.
+		this.#resumeSessionPath = sessionPath ?? null;
+		if (this.#status !== "starting") this.#setStatus("starting");
+		this.#bindSession(client, sessionPath).then(
+			modelFallback => {
+				if (!this.#isLive(generation)) return;
+				this.#resumeSessionPath = null;
+				this.#setStatus("ready", undefined, undefined, modelFallback);
+				for (const { event, frame } of parked) this.emit(event, frame);
+			},
+			(err: unknown) => {
+				if (!this.#isLive(generation)) return;
+				console.warn(
+					`[sidecar] warm session switch failed, cold-starting instead: ${err instanceof Error ? err.message : String(err)}`,
+				);
+				this.restart(undefined, sessionPath);
+			},
+		);
+	}
+
+	/**
+	 * Switch the spare onto `sessionPath`. Resolves the saved model that could
+	 * not be restored (undefined when none); rejects when only a cold start can
+	 * open the session.
+	 */
+	async #bindSession(client: RpcClient, sessionPath: string | undefined): Promise<string | undefined> {
+		if (!sessionPath) return undefined;
+		const switched = await client.command({ type: "switch_session", sessionPath }, SESSION_BIND_TIMEOUT_MS);
+		if (switched.success) {
+			if (switchCancelled(switched)) throw new Error("switch_session was cancelled");
+			return undefined;
+		}
+		const missing = parseModelRestoreFailure(switched.error);
+		if (!missing) throw new Error(switched.error ?? "switch_session failed");
+		const state = await client.command({ type: "get_state" });
+		const model = state.success ? (state.data as RpcSessionState | null)?.model : null;
+		if (!model) throw new Error(switched.error ?? "switch_session failed");
+		const retried = await client.command(
+			{ type: "switch_session", sessionPath, provider: model.provider, modelId: model.id },
+			SESSION_BIND_TIMEOUT_MS,
+		);
+		if (!retried.success) throw new Error(retried.error ?? "switch_session failed");
+		if (switchCancelled(retried)) throw new Error("switch_session was cancelled");
+		return missing;
+	}
+
 	restart(cwd?: string, resumeSessionPath?: string): void {
+		this.#parkedFrames = null;
 		this.kill();
 		if (cwd) this.#options = { ...this.#options, cwd };
 		this.#resumeSessionPath = resumeSessionPath ?? null;

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Opening a session from the sidebar, or a new tab with ⌘T, in a workspace you already have open no longer waits for omp to start: an idle agent is kept running there and the tab takes it over instead of starting its own. A session whose saved model is gone still opens, on the default model ([#29](https://github.com/nornzach/oh-my-pi-gui/issues/29)).
+
 ## [0.9.31] - 2026-10-28
 
 ### Added
