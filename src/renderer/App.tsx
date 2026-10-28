@@ -87,7 +87,7 @@ import { useSessionStore } from "./stores/session";
 import { SessionRuntimeProvider } from "./stores/session-runtime-context";
 import { useSettingsStore } from "./stores/settings";
 import { ensureTabRuntime } from "./stores/tab-runtime";
-import { useSessionTabs, useTabsStore } from "./stores/tabs";
+import { cycleTab, moveActiveTab, selectTabAt, useSessionTabs, useTabsStore } from "./stores/tabs";
 import { toast } from "./stores/toast";
 import { type PanelTab, useUiStore } from "./stores/ui";
 import { subscribeUpdaterStatus } from "./stores/updater";
@@ -244,6 +244,8 @@ export function App() {
 				"thinkingExpanded",
 				"sidebarQuotas",
 				"transcriptDetail",
+				"tabWidth",
+				"tabRows",
 				"panelTab",
 			] as const) {
 				if (next[key] !== previous[key]) changedPreferences.add(key);
@@ -285,6 +287,15 @@ export function App() {
 					!changedPreferences.has("transcriptDetail")
 				) {
 					useUiStore.setState({ transcriptDetail: prefs.transcriptDetail });
+				}
+				if (
+					(prefs.tabWidth === "compact" || prefs.tabWidth === "default" || prefs.tabWidth === "wide") &&
+					!changedPreferences.has("tabWidth")
+				) {
+					useUiStore.setState({ tabWidth: prefs.tabWidth });
+				}
+				if ((prefs.tabRows === "single" || prefs.tabRows === "multi") && !changedPreferences.has("tabRows")) {
+					useUiStore.setState({ tabRows: prefs.tabRows });
 				}
 				// Restore the default workspace panel tab (written by Settings → GUI).
 				if (
@@ -401,7 +412,29 @@ export function App() {
 
 		// One dispatch switch keyed by actionId: the compiled-map lookup below and
 		// the default chords share these handlers (they were the hardcoded chains).
-		const dispatchKeymapAction = (actionId: KeymapActionId) => {
+		const dispatchKeymapAction = (actionId: KeymapActionId, chord: string) => {
+			// Tab navigation only moves the route, which switchTab already
+			// serializes, so it keeps working while a switch is still settling.
+			switch (actionId) {
+				case "tab.next":
+					cycleTab(1);
+					return;
+				case "tab.previous":
+					cycleTab(-1);
+					return;
+				case "tab.select": {
+					// The chord's digit is the position, whatever modifiers it was remapped to.
+					const position = Number(chord.at(-1));
+					if (position >= 1) selectTabAt(position);
+					return;
+				}
+				case "tab.moveLeft":
+					moveActiveTab(-1);
+					return;
+				case "tab.moveRight":
+					moveActiveTab(1);
+					return;
+			}
 			// The visible tab changes before main finishes moving the RPC/event route.
 			// Never let a shortcut mutate the outgoing sidecar during that gap.
 			if (!acceptsActiveTabEvents()) return;
@@ -562,12 +595,12 @@ export function App() {
 			if (!actionId) return;
 			if (KEYMAP_ACTION_BY_ID[actionId].overlaySafe) {
 				event.preventDefault();
-				dispatchKeymapAction(actionId);
+				dispatchKeymapAction(actionId, chord);
 				return;
 			}
 			if (!overlayOpen && !event.defaultPrevented && !document.querySelector('[role="dialog"]')) {
 				event.preventDefault();
-				dispatchKeymapAction(actionId);
+				dispatchKeymapAction(actionId, chord);
 			}
 		};
 		window.addEventListener("keydown", onKey);

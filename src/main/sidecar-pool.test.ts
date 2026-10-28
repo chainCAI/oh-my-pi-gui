@@ -413,22 +413,15 @@ describe("SidecarPool tabs", () => {
 		expect(pool.setActiveTab(fw.win, "nope")).toBe(false);
 	});
 
-	it("forwards exactly two visible sessions and persists their split geometry", () => {
+	it("forwards a shown pair's two sessions, keeps pairs in the background, and persists them all", () => {
 		const { pool, sidecars } = fakePool();
 		const fw = fakeWindow(1);
-		pool.acquire("/a", fw.win, "tab-a");
-		pool.acquire("/b", fw.win, "tab-b");
-		pool.acquire("/c", fw.win, "tab-c");
+		for (const id of ["a", "b", "c", "d", "e"]) pool.acquire(`/${id}`, fw.win, `tab-${id}`);
 		const [a, b, c] = sidecars;
+		const shown = { axis: "columns" as const, firstTabId: "tab-a", secondTabId: "tab-b", ratio: 0.65 };
+		const background = { axis: "rows" as const, firstTabId: "tab-c", secondTabId: "tab-d", ratio: 0.4 };
 
-		expect(
-			pool.setTabView(fw.win, "tab-b", ["tab-a", "tab-b"], {
-				axis: "columns",
-				firstTabId: "tab-a",
-				secondTabId: "tab-b",
-				ratio: 0.65,
-			}),
-		).toBe(true);
+		expect(pool.setTabView(fw.win, "tab-b", ["tab-a", "tab-b"], [shown, background])).toBe(true);
 		expect([a?.listenerCount("events"), b?.listenerCount("events"), c?.listenerCount("events")]).toEqual([2, 2, 1]);
 		fw.sent.length = 0;
 		a?.emitAgentEvents(["agent_start"]);
@@ -438,28 +431,71 @@ describe("SidecarPool tabs", () => {
 			{ tabId: "tab-a", payload: [{ type: "agent_start" }] },
 			{ tabId: "tab-b", payload: [{ type: "agent_start" }] },
 		]);
-		expect(
-			pool
-				.tabsForWindow(fw.win)
-				.filter(tab => tab.visible)
-				.map(tab => tab.split),
-		).toEqual([
-			{ axis: "columns", index: 0, ratio: 0.65 },
-			{ axis: "columns", index: 1, ratio: 0.65 },
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.group)).toEqual([
+			{ axis: "columns", index: 0, ratio: 0.65, partnerTabId: "tab-b" },
+			{ axis: "columns", index: 1, ratio: 0.65, partnerTabId: "tab-a" },
+			{ axis: "rows", index: 0, ratio: 0.4, partnerTabId: "tab-d" },
+			{ axis: "rows", index: 1, ratio: 0.4, partnerTabId: "tab-c" },
+			undefined,
 		]);
-		expect(pool.tabLayoutForWindow(fw.win)?.split).toEqual({
-			axis: "columns",
-			firstIndex: 0,
-			secondIndex: 1,
-			ratio: 0.65,
-		});
+		expect(pool.tabLayoutForWindow(fw.win)?.groups).toEqual([
+			{ axis: "columns", firstIndex: 0, secondIndex: 1, ratio: 0.65 },
+			{ axis: "rows", firstIndex: 2, secondIndex: 3, ratio: 0.4 },
+		]);
+		// Two panes are always one pair; three never show.
 		expect(pool.setTabView(fw.win, "tab-b", ["tab-a", "tab-b", "tab-c"])).toBe(false);
+		expect(pool.setTabView(fw.win, "tab-e", ["tab-a", "tab-e"])).toBe(false);
 
-		expect(pool.releaseTab("tab-b")).toBe(true);
-		expect(pool.activeTabForWindow(fw.win)).toBe("tab-a");
-		expect(pool.tabLayoutForWindow(fw.win)?.split).toBeUndefined();
-		expect(a?.listenerCount("events")).toBe(2);
-		expect(c?.listenerCount("events")).toBe(1);
+		// Showing a single tab keeps every pair for when either side is picked again.
+		expect(pool.setActiveTab(fw.win, "tab-e")).toBe(true);
+		expect(pool.tabLayoutForWindow(fw.win)?.groups).toHaveLength(2);
+		expect(pool.setTabView(fw.win, "tab-c", ["tab-c", "tab-d"])).toBe(true);
+
+		// A closed tab takes its pair with it; the partner stays a single tab.
+		expect(pool.releaseTab("tab-c")).toBe(true);
+		expect(pool.activeTabForWindow(fw.win)).toBe("tab-d");
+		expect(pool.tabLayoutForWindow(fw.win)?.groups).toEqual([
+			{ axis: "columns", firstIndex: 0, secondIndex: 1, ratio: 0.65 },
+		]);
+	});
+
+	it("drops pairs that reuse a tab or name another window's tab", () => {
+		const { pool } = fakePool();
+		const fw = fakeWindow(1);
+		const other = fakeWindow(2);
+		for (const id of ["a", "b", "c"]) pool.acquire(`/${id}`, fw.win, `tab-${id}`);
+		pool.acquire("/x", other.win, "tab-x");
+
+		expect(
+			pool.setTabView(
+				fw.win,
+				"tab-a",
+				["tab-a"],
+				[
+					{ axis: "columns", firstTabId: "tab-a", secondTabId: "tab-b", ratio: 0.5 },
+					{ axis: "columns", firstTabId: "tab-b", secondTabId: "tab-c", ratio: 0.5 },
+					{ axis: "rows", firstTabId: "tab-c", secondTabId: "tab-x", ratio: 0.5 },
+				],
+			),
+		).toBe(true);
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.group?.partnerTabId)).toEqual(["tab-b", "tab-a", undefined]);
+	});
+
+	it("reorders one window's tabs for GET_TABS and the saved layout", () => {
+		const { pool } = fakePool();
+		const fw = fakeWindow(1);
+		const other = fakeWindow(2);
+		const snapshots: Array<PersistedTabLayout | null> = [];
+		for (const id of ["a", "b", "c"]) pool.acquire(`/${id}`, fw.win, `tab-${id}`);
+		pool.acquire("/x", other.win, "tab-x");
+		pool.onWindowTabsChanged = (_win, layout) => snapshots.push(layout);
+
+		// A tab the list leaves out keeps its order after the listed ones.
+		expect(pool.setTabOrder(fw.win, ["tab-c", "tab-a", "tab-x"])).toBe(true);
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.tabId)).toEqual(["tab-c", "tab-a", "tab-b"]);
+		expect(snapshots.at(-1)?.tabs.map(tab => tab.cwd)).toEqual(["/c", "/a", "/b"]);
+		expect(pool.tabsForWindow(other.win).map(tab => tab.tabId)).toEqual(["tab-x"]);
+		expect(pool.setTabOrder(fakeWindow(3).win, ["tab-a"])).toBe(false);
 	});
 
 	it("caches session meta per tab and includes it in TAB_STATUS and GET_TABS", () => {
@@ -595,7 +631,7 @@ describe("SidecarPool tabs", () => {
 				{ cwd: "/agent", kind: "agent", sessionPath: "/sessions/a.jsonl" },
 				{ cwd: "/chat", kind: "chat" },
 			],
-			split: { axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.6 },
+			groups: [{ axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.6 }],
 		});
 
 		expect(restored).toBe(2);
@@ -606,9 +642,11 @@ describe("SidecarPool tabs", () => {
 		expect(sidecars[0]?.restartArgs).toEqual([{ cwd: undefined, sessionPath: "/sessions/a.jsonl" }]);
 		expect(sidecars[1]?.started).toBe(true);
 		expect(pool.tabsForWindow(fw.win).map(tab => tab.active ?? false)).toEqual([false, true]);
-		expect(pool.tabsForWindow(fw.win).map(tab => tab.split)).toEqual([
-			{ axis: "rows", index: 0, ratio: 0.6 },
-			{ axis: "rows", index: 1, ratio: 0.6 },
+		// The active tab's pair comes back on screen with it.
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.visible ?? false)).toEqual([true, true]);
+		expect(pool.tabsForWindow(fw.win).map(tab => tab.group?.partnerTabId)).toEqual([
+			pool.tabsForWindow(fw.win)[1]?.tabId,
+			pool.tabsForWindow(fw.win)[0]?.tabId,
 		]);
 		expect(pool.tabLayoutForWindow(fw.win)).toEqual({
 			version: 1,
@@ -617,7 +655,7 @@ describe("SidecarPool tabs", () => {
 				{ cwd: "/agent", kind: "agent", sessionPath: "/sessions/a.jsonl" },
 				{ cwd: "/chat", kind: "chat" },
 			],
-			split: { axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.6 },
+			groups: [{ axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.6 }],
 		});
 	});
 

@@ -4,12 +4,17 @@
  * labels disambiguate with an index suffix), a slow status signal, a muted
  * workspace subtitle, a close × (hidden at the single-tab floor,
  * inline-confirmed while a run is live), and a trailing "+" that opens a
- * fresh session tab in the current cwd. The strip scrolls horizontally on
- * overflow instead of shrinking chips past readability.
+ * fresh session tab in the current cwd.
+ *
+ * gui#30: chips drag to reorder; a split pair is one merged chip whose halves
+ * select its tabs; chips shrink to their set minimum width before the strip
+ * scrolls (or wraps onto up to three rows), and an "all tabs" list reaches
+ * whatever is out of view.
  */
 
 import {
 	Check,
+	ChevronDown,
 	Columns2,
 	GitBranch,
 	GitBranchPlus,
@@ -18,13 +23,18 @@ import {
 	MoreHorizontal,
 	Plus,
 	Rows2,
+	SplitSquareHorizontal,
+	Unlink,
 	X,
 } from "lucide-react";
 import {
 	Fragment,
 	type DragEvent as ReactDragEvent,
 	type MouseEvent as ReactMouseEvent,
+	type ReactNode,
+	useCallback,
 	useEffect,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -48,13 +58,44 @@ import type { SessionStore } from "../../stores/session";
 import { useSessionStore } from "../../stores/session";
 import { sessionRuntimeStore } from "../../stores/session-runtime-context";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
-import { type SessionTab, tabDisplayTitle, useTabsStore, visibleTabIds } from "../../stores/tabs";
-import { useUiStore } from "../../stores/ui";
+import {
+	groupOf,
+	type SessionTab,
+	type TabDropSide,
+	type TabUnit,
+	tabDisplayTitle,
+	tabUnits,
+	unitFocusTabId,
+	useTabsStore,
+	visibleTabIds,
+} from "../../stores/tabs";
+import { type TabWidth, useUiStore } from "../../stores/ui";
 import { AgentPageChips } from "../agents/AgentPageChips";
-import { anchorFromEvent, ContextMenu, type ContextMenuAnchor } from "../common/ContextMenu";
+import { anchorFromEvent, ContextMenu, type ContextMenuAnchor, type ContextMenuItem } from "../common/ContextMenu";
+import { type TabSearchEntry, TabSearchMenu } from "./TabSearchMenu";
 
 /** Auto-cancel window for the armed close confirm (injectable for tests). */
 const CONFIRM_CLOSE_MS = 3000;
+
+/** Chip width bounds per Settings → GUI → Tab bar: chips shrink to the minimum before the strip scrolls. */
+const CHIP_WIDTH: Record<TabWidth, string> = {
+	compact: "min-w-20 max-w-36",
+	default: "min-w-28 max-w-52",
+	wide: "min-w-36 max-w-80",
+};
+
+/** Which side of a chip a drag over it would land on. */
+function dropSide(event: ReactDragEvent<HTMLElement>): TabDropSide {
+	const bounds = event.currentTarget.getBoundingClientRect();
+	return event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+}
+
+interface ChipDropProps {
+	"data-drop"?: TabDropSide;
+	onDragOver?: (event: ReactDragEvent<HTMLDivElement>) => void;
+	onDragLeave?: (event: ReactDragEvent<HTMLDivElement>) => void;
+	onDrop?: (event: ReactDragEvent<HTMLDivElement>) => void;
+}
 
 function TabChip({
 	tab,
@@ -62,6 +103,9 @@ function TabChip({
 	visible,
 	label,
 	workspaceLabel,
+	width,
+	paired,
+	dropProps,
 	confirmingClose,
 	closeNeedsConfirm,
 	onArmClose,
@@ -75,6 +119,11 @@ function TabChip({
 	visible: boolean;
 	label: string;
 	workspaceLabel: string;
+	width: TabWidth;
+	/** A half of a merged split-pair chip: the pair draws the frame and takes drops. */
+	paired: boolean;
+	/** Reorder drop target wiring for a single chip (a pair's frame takes it instead). */
+	dropProps?: ChipDropProps;
 	confirmingClose: boolean;
 	closeNeedsConfirm: boolean;
 	onArmClose: () => void;
@@ -105,6 +154,8 @@ function TabChip({
 			draggable
 			aria-selected={selected}
 			tabIndex={active ? 0 : -1}
+			data-tab-unit={paired ? undefined : ""}
+			{...dropProps}
 			onClick={select}
 			onContextMenu={onContextMenu}
 			onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
@@ -131,11 +182,15 @@ function TabChip({
 			}}
 			title={`${label} — ${workspaceLabel}${tab.worktree ? ` — ${tab.worktree.branch}` : ""}`}
 			className={cx(
-				"no-drag group relative flex h-8 w-auto min-w-28 max-w-52 shrink-0 cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-3 text-omp-md select-none",
+				"no-drag group relative flex shrink cursor-pointer items-center gap-2 overflow-hidden text-omp-md select-none",
+				CHIP_WIDTH[width],
+				paired ? "h-7 rounded-md px-2" : "omp-tab-unit h-8 rounded-lg px-3",
 				selected
 					? "bg-[var(--omp-selected-bg)] font-medium text-[var(--omp-text)]"
 					: visible || active
-						? "bg-[var(--omp-selected-bg)]/55 text-[var(--omp-text)] ring-1 ring-inset ring-[var(--omp-border)]"
+						? paired
+							? "text-[var(--omp-text)] hover:bg-[var(--omp-sidebar-item-hover)]"
+							: "bg-[var(--omp-selected-bg)]/55 text-[var(--omp-text)] ring-1 ring-inset ring-[var(--omp-border)]"
 						: "text-[var(--omp-muted)] hover:bg-[var(--omp-sidebar-item-hover)] hover:text-[var(--omp-text)]",
 			)}
 		>
@@ -223,17 +278,57 @@ function TabChip({
 	);
 }
 
+/** A split pair's merged chip: one frame around its two tabs, in pane order. */
+function PairChip({
+	unit,
+	onScreen,
+	dropProps,
+	children,
+}: {
+	unit: TabUnit;
+	onScreen: boolean;
+	dropProps: ChipDropProps;
+	children: ReactNode;
+}) {
+	const t = useT();
+	const PairIcon = unit.group?.axis === "rows" ? Rows2 : Columns2;
+	return (
+		<div
+			data-tab-unit=""
+			data-tab-pair=""
+			{...dropProps}
+			className={cx(
+				"omp-tab-unit no-drag relative flex h-8 shrink items-center gap-0.5 rounded-lg pr-0.5 pl-2",
+				onScreen
+					? "bg-[var(--omp-selected-bg)]/40 ring-1 ring-inset ring-[var(--omp-border)]"
+					: "ring-1 ring-inset ring-[var(--omp-border-muted)]",
+			)}
+		>
+			<PairIcon
+				aria-label={t("tabs.pair")}
+				size={11}
+				className={cx("shrink-0", onScreen ? "text-[var(--omp-accent)]" : "text-[var(--omp-dim)]")}
+			/>
+			{children}
+		</div>
+	);
+}
+
 export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?: number }) {
 	const t = useT();
 	const { sessions } = useSessionList("global");
 	const tabs = useTabsStore(s => s.tabs);
 	const activeTabId = useTabsStore(s => s.activeTabId);
+	const groups = useTabsStore(s => s.groups);
 	const split = useTabsStore(s => s.split);
 	const groupAliases = useSidebarPrefs(s => s.groupAliases);
 	const closeTab = useTabsStore(s => s.closeTab);
 	const openTab = useTabsStore(s => s.openTab);
 	const splitTab = useTabsStore(s => s.splitTab);
 	const unsplit = useTabsStore(s => s.unsplit);
+	const moveTab = useTabsStore(s => s.moveTab);
+	const tabWidth = useUiStore(s => s.tabWidth);
+	const tabRows = useUiStore(s => s.tabRows);
 	const liveDraft = useComposerStore(s => s.draft);
 	const liveImageCount = useComposerStore(s => s.images.length);
 	const liveMessageCount = useSessionStore(s => s.messageCount);
@@ -242,6 +337,7 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 	const liveRenderedMessages = useMessagesStore(s => s.messages.length);
 	const liveQueuedMessages = useQueueStore(s => s.steering.length + s.followUp.length);
 	const pruningPlaceholderRef = useRef<string | null>(null);
+	const stripRef = useRef<HTMLDivElement>(null);
 	const sessionsById = useMemo(() => new Map(sessions.map(session => [session.id, session])), [sessions]);
 	const sessionsByPath = useMemo(() => new Map(sessions.map(session => [session.path, session])), [sessions]);
 	// Inline close confirm for live tabs (AgentHub abort parity): the first action
@@ -251,7 +347,65 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 	const armCloseTab = useUiStore(s => s.armCloseTab);
 	const cancelCloseTab = useUiStore(s => s.cancelCloseTab);
 	const [tabMenu, setTabMenu] = useState<{ anchor: ContextMenuAnchor; tabId: string } | null>(null);
+	/** The all-tabs list ("switch"), or the partner picker for one tab's "Split with…". */
+	const [searchMenu, setSearchMenu] = useState<{ anchor: ContextMenuAnchor; pairWith: string | null } | null>(null);
+	const [dragTabId, setDragTabId] = useState<string | null>(null);
+	const [dropMark, setDropMark] = useState<{ tabId: string; side: TabDropSide } | null>(null);
+	const [overflow, setOverflow] = useState({ hidden: 0, start: false, end: false });
 	const tabOrder = useMemo(() => tabs.map(tab => tab.id), [tabs]);
+	const units = useMemo(() => tabUnits(tabs, groups), [tabs, groups]);
+	const multiRow = tabRows === "multi";
+
+	const labelOf = (tab: SessionTab) => {
+		const indexedSession =
+			(tab.sessionPath ? sessionsByPath.get(tab.sessionPath) : undefined) ??
+			(tab.sessionId ? sessionsById.get(tab.sessionId) : undefined);
+		return tabDisplayTitle(tab, tabs, indexedSession, t("sidebar.untitled"));
+	};
+	const workspaceOf = (tab: SessionTab) =>
+		tab.kind === "chat" ? t("sidebar.chats") : (groupAliases[tab.cwd] ?? basename(tab.cwd) ?? tab.cwd);
+
+	// The strip tracks a drag that started on one of its chips (the split
+	// workspace listens to the same signal for its pane drop zones).
+	useEffect(() => {
+		const onTabDrag = (event: Event) => {
+			const tabId = (event as CustomEvent<{ tabId: string | null }>).detail.tabId;
+			setDragTabId(tabId);
+			if (!tabId) setDropMark(null);
+		};
+		window.addEventListener("omp:tab-drag", onTabDrag);
+		return () => window.removeEventListener("omp:tab-drag", onTabDrag);
+	}, []);
+
+	// How many chips are out of view (the all-tabs button's count), and which
+	// ends of the strip fade because more chips lie beyond them.
+	const measure = useCallback(() => {
+		const strip = stripRef.current;
+		if (!strip) return;
+		const bounds = strip.getBoundingClientRect();
+		let hidden = 0;
+		for (const chip of strip.querySelectorAll<HTMLElement>("[data-tab-unit]")) {
+			const box = chip.getBoundingClientRect();
+			if (box.left < bounds.left - 1 || box.right > bounds.right + 1) hidden++;
+			else if (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1) hidden++;
+		}
+		const start = multiRow ? strip.scrollTop > 1 : strip.scrollLeft > 1;
+		const end = multiRow
+			? strip.scrollTop + strip.clientHeight < strip.scrollHeight - 1
+			: strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+		setOverflow(current =>
+			current.hidden === hidden && current.start === start && current.end === end ? current : { hidden, start, end },
+		);
+	}, [multiRow]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: chip count, width and labels change the strip's extent.
+	useLayoutEffect(measure, [measure, units, tabWidth, sessions]);
+	useEffect(() => {
+		const strip = stripRef.current;
+		if (!strip || typeof ResizeObserver === "undefined") return;
+		const observer = new ResizeObserver(measure);
+		observer.observe(strip);
+		return () => observer.disconnect();
+	}, [measure]);
 
 	// Keep the selected chip in view when it changes or the strip grows past the
 	// window (a new tab lands at the end). A shown agent page selects its own
@@ -381,186 +535,326 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 	const protectedFromBatchClose = (tab: SessionTab) => tab.worktree != null || tabNeedsCloseConfirm(tab, liveRuntime);
 	const actionTabId = activeTabId ?? tabs[0]?.id;
 
+	/** Reorder drop wiring for one chip (a pair's frame): drop before or after it. */
+	const unitDropProps = (unit: TabUnit): ChipDropProps => {
+		const targetId = unit.tabs[0]?.id ?? "";
+		const accepts = dragTabId !== null && !unit.tabs.some(tab => tab.id === dragTabId);
+		return {
+			"data-drop": dropMark?.tabId === targetId ? dropMark.side : undefined,
+			onDragOver: event => {
+				if (!accepts) return;
+				event.preventDefault();
+				event.stopPropagation();
+				event.dataTransfer.dropEffect = "move";
+				const side = dropSide(event);
+				setDropMark(mark => (mark?.tabId === targetId && mark.side === side ? mark : { tabId: targetId, side }));
+			},
+			onDragLeave: event => {
+				if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return;
+				setDropMark(mark => (mark?.tabId === targetId ? null : mark));
+			},
+			onDrop: event => {
+				if (!accepts || !dragTabId) return;
+				event.preventDefault();
+				event.stopPropagation();
+				moveTab(dragTabId, targetId, dropSide(event));
+				setDropMark(null);
+			},
+		};
+	};
+	// Past the last chip the strip itself takes the drop: the tab goes to the end.
+	const lastUnitTabId = units.at(-1)?.tabs[0]?.id;
+	const stripDropProps = {
+		onDragOver: (event: ReactDragEvent<HTMLDivElement>) => {
+			if (!dragTabId || !lastUnitTabId || event.target !== event.currentTarget) return;
+			if (groupOf(groups, dragTabId) === groupOf(groups, lastUnitTabId) && groupOf(groups, dragTabId)) return;
+			if (dragTabId === lastUnitTabId) return;
+			event.preventDefault();
+			event.dataTransfer.dropEffect = "move";
+			setDropMark(mark =>
+				mark?.tabId === lastUnitTabId && mark.side === "after" ? mark : { tabId: lastUnitTabId, side: "after" },
+			);
+		},
+		onDrop: (event: ReactDragEvent<HTMLDivElement>) => {
+			if (!dragTabId || !lastUnitTabId || event.target !== event.currentTarget) return;
+			event.preventDefault();
+			moveTab(dragTabId, lastUnitTabId, "after");
+			setDropMark(null);
+		},
+	};
+
+	const visible = visibleTabIds({ activeTabId, split });
+	const renderChip = (tab: SessionTab, paired: boolean, dropProps?: ChipDropProps) => (
+		<TabChip
+			key={tab.id}
+			tab={tab}
+			active={tab.id === activeTabId}
+			visible={visible.includes(tab.id)}
+			label={labelOf(tab)}
+			workspaceLabel={workspaceOf(tab)}
+			width={tabWidth}
+			paired={paired}
+			dropProps={dropProps}
+			confirmingClose={armedCloseTab?.tabId === tab.id}
+			closeNeedsConfirm={tabNeedsCloseConfirm(tab, liveRuntime)}
+			onArmClose={() => armCloseTab(tab.id)}
+			onConfirmClose={() => confirmClose(tab.id)}
+			onCancelClose={cancelCloseTab}
+			onContextMenu={event => setTabMenu({ anchor: anchorFromEvent(event), tabId: tab.id })}
+			onKeyboardNavigate={key => {
+				const index = tabOrder.indexOf(tab.id);
+				const targetIndex =
+					key === "Home"
+						? 0
+						: key === "End"
+							? tabOrder.length - 1
+							: (index + (key === "ArrowLeft" ? -1 : 1) + tabOrder.length) % tabOrder.length;
+				const target = tabOrder[targetIndex];
+				if (target) {
+					void useTabsStore.getState().switchTab(target);
+					requestAnimationFrame(() => document.getElementById(`omp-tab-${target}`)?.focus());
+				}
+			}}
+		/>
+	);
+
+	const searchEntries = (excludeTabId: string | null): TabSearchEntry[] =>
+		excludeTabId
+			? tabs
+					.filter(tab => tab.id !== excludeTabId)
+					.map(tab => ({
+						tabId: tab.id,
+						labels: [labelOf(tab)],
+						detail: workspaceOf(tab),
+						current: tab.id === activeTabId,
+					}))
+			: units.flatMap(unit => {
+					const tabId = unitFocusTabId(unit);
+					if (!tabId) return [];
+					return [
+						{
+							tabId,
+							labels: unit.tabs.map(labelOf),
+							detail: [...new Set(unit.tabs.map(workspaceOf))].join(" · "),
+							axis: unit.group?.axis,
+							current: unit.tabs.some(tab => tab.id === activeTabId),
+						},
+					];
+				});
+
+	const iconButtonClass =
+		"no-drag omp-pressable flex h-6 shrink-0 items-center justify-center gap-0.5 rounded-lg text-[var(--omp-muted)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
+	const anchorBelow = (element: HTMLElement): ContextMenuAnchor => {
+		const rect = element.getBoundingClientRect();
+		return {
+			x: Number.isFinite(rect.left) ? rect.left : 8,
+			y: (Number.isFinite(rect.bottom) ? rect.bottom : 40) + 4,
+		};
+	};
+
 	return (
 		<>
-			<div className="drag-region flex h-11 shrink-0 items-center gap-1 border-b border-[var(--omp-border-muted)] bg-[var(--omp-titlebar-bg)] px-2.5">
+			<div
+				className={cx(
+					"drag-region flex shrink-0 gap-1 border-b border-[var(--omp-border-muted)] bg-[var(--omp-titlebar-bg)] px-2.5",
+					multiRow ? "min-h-11 items-start py-1.5" : "h-11 items-center",
+				)}
+			>
 				{/* Only the chips scroll: the tab actions and "+" stay pinned at the end,
 				    reachable however many tabs are open. */}
 				<div
+					ref={stripRef}
 					role="tablist"
 					aria-label={t("tabs.strip")}
-					className="omp-tab-scroller flex min-w-0 items-center gap-1 overflow-x-auto"
-					onWheel={scrollStripOnWheel}
+					data-rows={tabRows}
+					data-fade-start={overflow.start || undefined}
+					data-fade-end={overflow.end || undefined}
+					className={cx(
+						"omp-tab-scroller flex min-w-0 items-center gap-1",
+						multiRow ? "max-h-[6.5rem] flex-wrap overflow-y-auto" : "overflow-x-auto",
+					)}
+					onWheel={multiRow ? undefined : scrollStripOnWheel}
+					onScroll={measure}
+					{...stripDropProps}
 				>
-					{tabs.map(tab => {
-						const visible = visibleTabIds({ activeTabId, split }).includes(tab.id);
-						const indexedSession =
-							(tab.sessionPath ? sessionsByPath.get(tab.sessionPath) : undefined) ??
-							(tab.sessionId ? sessionsById.get(tab.sessionId) : undefined);
-						const label = tabDisplayTitle(tab, tabs, indexedSession, t("sidebar.untitled"));
-						const workspaceLabel =
-							tab.kind === "chat" ? t("sidebar.chats") : (groupAliases[tab.cwd] ?? basename(tab.cwd) ?? tab.cwd);
+					{units.map(unit => {
+						const first = unit.tabs[0];
+						if (!first) return null;
+						const pageChips = unit.tabs.map(tab => (
+							<AgentPageChips
+								key={`${tab.id}-pages`}
+								parentLabel={labelOf(tab)}
+								tabActive={tab.id === activeTabId}
+								tabId={tab.id}
+							/>
+						));
+						if (!unit.group) {
+							return (
+								<Fragment key={first.id}>
+									{renderChip(first, false, unitDropProps(unit))}
+									{pageChips}
+								</Fragment>
+							);
+						}
 						return (
-							<Fragment key={tab.id}>
-								<TabChip
-									tab={tab}
-									active={tab.id === activeTabId}
-									visible={visible}
-									label={label}
-									workspaceLabel={workspaceLabel}
-									confirmingClose={armedCloseTab?.tabId === tab.id}
-									closeNeedsConfirm={tabNeedsCloseConfirm(tab, liveRuntime)}
-									onArmClose={() => armCloseTab(tab.id)}
-									onConfirmClose={() => confirmClose(tab.id)}
-									onCancelClose={cancelCloseTab}
-									onContextMenu={event => setTabMenu({ anchor: anchorFromEvent(event), tabId: tab.id })}
-									onKeyboardNavigate={key => {
-										const index = tabOrder.indexOf(tab.id);
-										const targetIndex =
-											key === "Home"
-												? 0
-												: key === "End"
-													? tabOrder.length - 1
-													: (index + (key === "ArrowLeft" ? -1 : 1) + tabOrder.length) % tabOrder.length;
-										const target = tabOrder[targetIndex];
-										if (target) {
-											void useTabsStore.getState().switchTab(target);
-											requestAnimationFrame(() => document.getElementById(`omp-tab-${target}`)?.focus());
-										}
-									}}
-								/>
-								<AgentPageChips parentLabel={label} tabActive={tab.id === activeTabId} tabId={tab.id} />
+							<Fragment key={`${unit.group.firstTabId}|${unit.group.secondTabId}`}>
+								<PairChip
+									unit={unit}
+									onScreen={unit.tabs.some(tab => visible.includes(tab.id))}
+									dropProps={unitDropProps(unit)}
+								>
+									{unit.tabs.map((tab, index) => (
+										<Fragment key={tab.id}>
+											{index > 0 && (
+												<span aria-hidden className="h-4 w-px shrink-0 bg-[var(--omp-border)]" />
+											)}
+											{renderChip(tab, true)}
+										</Fragment>
+									))}
+								</PairChip>
+								{pageChips}
 							</Fragment>
 						);
 					})}
 				</div>
+				{tabs.length > 1 && (
+					<button
+						type="button"
+						aria-label={
+							overflow.hidden > 0 ? t("tabs.allTabsHidden", { count: overflow.hidden }) : t("tabs.allTabs")
+						}
+						title={overflow.hidden > 0 ? t("tabs.allTabsHidden", { count: overflow.hidden }) : t("tabs.allTabs")}
+						onClick={event => setSearchMenu({ anchor: anchorBelow(event.currentTarget), pairWith: null })}
+						className={cx(iconButtonClass, overflow.hidden > 0 ? "px-1.5" : "w-6", multiRow && "mt-1")}
+					>
+						<ChevronDown aria-hidden="true" size={14} />
+						{overflow.hidden > 0 && (
+							<span className="text-omp-xs tabular-nums text-[var(--omp-text)]">{overflow.hidden}</span>
+						)}
+					</button>
+				)}
 				{actionTabId && (
 					<button
 						type="button"
 						aria-label={t("tabs.actions")}
 						title={t("tabs.actions")}
-						onClick={event => {
-							const rect = event.currentTarget.getBoundingClientRect();
-							setTabMenu({
-								anchor: {
-									x: Number.isFinite(rect.left) ? rect.left : 8,
-									y: (Number.isFinite(rect.bottom) ? rect.bottom : 40) + 4,
-								},
-								tabId: actionTabId,
-							});
-						}}
-						className="no-drag omp-pressable flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[var(--omp-muted)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]"
+						onClick={event => setTabMenu({ anchor: anchorBelow(event.currentTarget), tabId: actionTabId })}
+						className={cx(iconButtonClass, "w-6", multiRow && "mt-1")}
 					>
 						<MoreHorizontal aria-hidden="true" size={14} />
 					</button>
 				)}
-				<NewTabMenu />
+				<NewTabMenu buttonClass={cx(iconButtonClass, "w-6", multiRow && "mt-1")} />
 			</div>
+			{searchMenu && (
+				<TabSearchMenu
+					x={searchMenu.anchor.x}
+					y={searchMenu.anchor.y}
+					title={(() => {
+						const anchorTab = searchMenu.pairWith ? tabs.find(tab => tab.id === searchMenu.pairWith) : undefined;
+						return anchorTab ? t("tabs.pickPartner", { title: labelOf(anchorTab) }) : undefined;
+					})()}
+					entries={searchEntries(searchMenu.pairWith)}
+					onClose={() => setSearchMenu(null)}
+					onPick={tabId => {
+						if (searchMenu.pairWith) void splitTab(tabId, "right", searchMenu.pairWith);
+						else void useTabsStore.getState().switchTab(tabId);
+					}}
+				/>
+			)}
 			{tabMenu &&
 				(() => {
-					const index = tabs.findIndex(tab => tab.id === tabMenu.tabId);
-					const target = tabs[index];
-					if (!target) return null;
-					const left = tabs.slice(0, index);
-					const right = tabs.slice(index + 1);
+					const target = tabs.find(tab => tab.id === tabMenu.tabId);
+					const unitIndex = units.findIndex(unit => unit.tabs.some(tab => tab.id === tabMenu.tabId));
+					if (!target || unitIndex < 0) return null;
+					const left = units.slice(0, unitIndex).flatMap(unit => unit.tabs);
+					const right = units.slice(unitIndex + 1).flatMap(unit => unit.tabs);
+					const targetPair = groupOf(groups, target.id);
 					const closeItems = (ids: readonly string[]) => {
 						setTabMenu(null);
 						void closeTabs(ids);
 					};
 					const blockedReason = t("tabs.menu.closeProtected");
-					const splitDisabled = target.id === activeTabId && !split;
-					const splitItems = [
-						{
-							id: "split-left",
-							label: t("tabs.menu.splitLeft"),
-							icon: Columns2,
-							disabled: splitDisabled,
-							disabledReason: splitDisabled ? t("tabs.menu.splitCurrent") : undefined,
-							onSelect: () => {
-								setTabMenu(null);
-								void splitTab(target.id, "left");
-							},
+					// Placing a tab beside the focused one: never the focused tab itself,
+					// nor the partner already there.
+					const splitBlockedReason =
+						target.id === activeTabId
+							? t("tabs.menu.splitCurrent")
+							: split && targetPair === split
+								? t("tabs.menu.alreadyPaired")
+								: undefined;
+					const placements = [
+						{ id: "split-left", label: t("tabs.menu.splitLeft"), icon: Columns2, placement: "left" },
+						{ id: "split-right", label: t("tabs.menu.splitRight"), icon: Columns2, placement: "right" },
+						{ id: "split-top", label: t("tabs.menu.splitTop"), icon: Rows2, placement: "top" },
+						{ id: "split-bottom", label: t("tabs.menu.splitBottom"), icon: Rows2, placement: "bottom" },
+					] as const;
+					const items: ContextMenuItem[] = placements.map(entry => ({
+						id: entry.id,
+						label: entry.label,
+						icon: entry.icon,
+						disabled: splitBlockedReason !== undefined,
+						disabledReason: splitBlockedReason,
+						onSelect: () => {
+							setTabMenu(null);
+							void splitTab(target.id, entry.placement);
 						},
-						{
-							id: "split-right",
-							label: t("tabs.menu.splitRight"),
-							icon: Columns2,
-							disabled: splitDisabled,
-							disabledReason: splitDisabled ? t("tabs.menu.splitCurrent") : undefined,
-							onSelect: () => {
-								setTabMenu(null);
-								void splitTab(target.id, "right");
-							},
+					}));
+					items.push({
+						id: "split-with",
+						label: t("tabs.menu.splitWith"),
+						icon: SplitSquareHorizontal,
+						disabled: tabs.length < 2,
+						onSelect: () => {
+							setTabMenu(null);
+							setSearchMenu({ anchor: tabMenu.anchor, pairWith: target.id });
 						},
-						{
-							id: "split-top",
-							label: t("tabs.menu.splitTop"),
-							icon: Rows2,
-							disabled: splitDisabled,
-							disabledReason: splitDisabled ? t("tabs.menu.splitCurrent") : undefined,
+					});
+					if (targetPair) {
+						items.push({
+							id: "separate-pair",
+							label: t("tabs.menu.separatePair"),
+							icon: Unlink,
 							onSelect: () => {
 								setTabMenu(null);
-								void splitTab(target.id, "top");
-							},
-						},
-						{
-							id: "split-bottom",
-							label: t("tabs.menu.splitBottom"),
-							icon: Rows2,
-							disabled: splitDisabled,
-							disabledReason: splitDisabled ? t("tabs.menu.splitCurrent") : undefined,
-							onSelect: () => {
-								setTabMenu(null);
-								void splitTab(target.id, "bottom");
-							},
-						},
-					];
-					if (split) {
-						splitItems.push({
-							id: "remove-split",
-							label: t("tabs.menu.removeSplit"),
-							icon: X,
-							disabled: false,
-							disabledReason: undefined,
-							onSelect: () => {
-								setTabMenu(null);
-								void unsplit(target.id);
+								// The pair on screen keeps the focused tab there alone.
+								void unsplit(targetPair === split && activeTabId ? activeTabId : target.id);
 							},
 						});
 					}
+					items.push(
+						{
+							id: "close-left",
+							label: t("tabs.menu.closeLeft"),
+							disabled: left.length === 0 || left.some(protectedFromBatchClose),
+							disabledReason: left.some(protectedFromBatchClose) ? blockedReason : undefined,
+							onSelect: () => closeItems(left.map(tab => tab.id)),
+						},
+						{
+							id: "close-right",
+							label: t("tabs.menu.closeRight"),
+							disabled: right.length === 0 || right.some(protectedFromBatchClose),
+							disabledReason: right.some(protectedFromBatchClose) ? blockedReason : undefined,
+							onSelect: () => closeItems(right.map(tab => tab.id)),
+						},
+						{
+							id: "close-all",
+							label: t("tabs.menu.closeAll"),
+							danger: true,
+							disabled: tabs.some(protectedFromBatchClose),
+							disabledReason: tabs.some(protectedFromBatchClose) ? blockedReason : undefined,
+							onSelect: () => {
+								setTabMenu(null);
+								void closeAllTabs(target);
+							},
+						},
+					);
 					return (
 						<ContextMenu
 							x={tabMenu.anchor.x}
 							y={tabMenu.anchor.y}
 							onClose={() => setTabMenu(null)}
-							items={[
-								...splitItems,
-								{
-									id: "close-left",
-									label: t("tabs.menu.closeLeft"),
-									disabled: left.length === 0 || left.some(protectedFromBatchClose),
-									disabledReason: left.some(protectedFromBatchClose) ? blockedReason : undefined,
-									onSelect: () => closeItems(left.map(tab => tab.id)),
-								},
-								{
-									id: "close-right",
-									label: t("tabs.menu.closeRight"),
-									disabled: right.length === 0 || right.some(protectedFromBatchClose),
-									disabledReason: right.some(protectedFromBatchClose) ? blockedReason : undefined,
-									onSelect: () => closeItems(right.map(tab => tab.id)),
-								},
-								{
-									id: "close-all",
-									label: t("tabs.menu.closeAll"),
-									danger: true,
-									disabled: tabs.some(protectedFromBatchClose),
-									disabledReason: tabs.some(protectedFromBatchClose) ? blockedReason : undefined,
-									onSelect: () => {
-										setTabMenu(null);
-										void closeAllTabs(target);
-									},
-								},
-							]}
+							items={items}
 						/>
 					);
 				})()}
@@ -571,12 +865,10 @@ export function TabBar({ confirmCloseMs = CONFIRM_CLOSE_MS }: { confirmCloseMs?:
 /**
  * New-tab affordance: agent, tool-free chat, and worktree.
  */
-function NewTabMenu() {
+function NewTabMenu({ buttonClass }: { buttonClass: string }) {
 	const t = useT();
 	const openTab = useTabsStore(s => s.openTab);
 	const openWorktreeDialog = useUiStore(s => s.openWorktreeDialog);
-	const buttonClass =
-		"no-drag omp-pressable flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[var(--omp-muted)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
 	return (
 		<>
 			<button

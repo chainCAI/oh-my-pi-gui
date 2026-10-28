@@ -40,6 +40,7 @@ import type {
 	IpcSessionsRenamePayload,
 	IpcSessionsSearchPayload,
 	IpcSetActiveTabPayload,
+	IpcSetTabOrderPayload,
 	IpcSetTabViewPayload,
 	IpcSidecarRestartPayload,
 	IpcSpawnTabPayload,
@@ -734,7 +735,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 	ipcMain.handle(IPC_COMMANDS.SET_TAB_VIEW, (event, payload: IpcSetTabViewPayload) => {
 		const win = BrowserWindow.fromWebContents(event.sender);
 		if (!win || typeof payload?.focusedTabId !== "string" || !Array.isArray(payload.visibleTabIds)) return false;
-		return deps.sidecarPool.setTabView(win, payload.focusedTabId, payload.visibleTabIds, payload.split);
+		const groups = Array.isArray(payload.groups) ? payload.groups : undefined;
+		return deps.sidecarPool.setTabView(win, payload.focusedTabId, payload.visibleTabIds, groups);
+	});
+
+	ipcMain.handle(IPC_COMMANDS.SET_TAB_ORDER, (event, payload: IpcSetTabOrderPayload) => {
+		const win = BrowserWindow.fromWebContents(event.sender);
+		if (!win || !Array.isArray(payload?.tabIds)) return false;
+		return deps.sidecarPool.setTabOrder(win, payload.tabIds);
 	});
 
 	// Built-in browser. Every call names its tab, and the tab must belong to

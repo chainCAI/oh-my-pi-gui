@@ -284,6 +284,36 @@ export const KEYMAP_ACTIONS = [
 		overlaySafe: false,
 		hotkeyGroup: "session",
 	},
+	{ id: "tab.next", labelKey: "hotkeys.row.tabNext", defaults: ["⌃⇥"], overlaySafe: false, hotkeyGroup: "session" },
+	{
+		id: "tab.previous",
+		labelKey: "hotkeys.row.tabPrevious",
+		defaults: ["⇧⌃⇥"],
+		overlaySafe: false,
+		hotkeyGroup: "session",
+	},
+	{
+		// The digit picks the chip: ⌘1…⌘8 by position, ⌘9 the last (gui#30).
+		id: "tab.select",
+		labelKey: "hotkeys.row.tabSelect",
+		defaults: ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘6", "⌘7", "⌘8", "⌘9"],
+		overlaySafe: false,
+		hotkeyGroup: "session",
+	},
+	{
+		id: "tab.moveLeft",
+		labelKey: "hotkeys.row.tabMoveLeft",
+		defaults: ["⌥⇧⌘←"],
+		overlaySafe: false,
+		hotkeyGroup: "session",
+	},
+	{
+		id: "tab.moveRight",
+		labelKey: "hotkeys.row.tabMoveRight",
+		defaults: ["⌥⇧⌘→"],
+		overlaySafe: false,
+		hotkeyGroup: "session",
+	},
 	{
 		id: "settings",
 		labelKey: "hotkeys.row.settings",

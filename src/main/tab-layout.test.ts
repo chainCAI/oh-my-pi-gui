@@ -51,7 +51,7 @@ describe("persisted tab layout", () => {
 		expect(layout?.tabs[1]?.title).toBeUndefined();
 	});
 
-	it("remaps and clamps a restored two-pane layout after invalid tabs are dropped", () => {
+	it("reads a split saved before pairs existed as one pair, remapped and clamped after invalid tabs drop", () => {
 		const value = {
 			version: 1,
 			activeIndex: 2,
@@ -70,8 +70,31 @@ describe("persisted tab layout", () => {
 				{ cwd: "/a", kind: "agent" },
 				{ cwd: "/b", kind: "chat" },
 			],
-			split: { axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.8 },
+			groups: [{ axis: "rows", firstIndex: 0, secondIndex: 1, ratio: 0.8 }],
 		});
+	});
+
+	it("keeps every valid pair and drops one that lost a tab or reuses a paired tab", () => {
+		const value = {
+			version: 1,
+			activeIndex: 5,
+			tabs: ["/a", "/b", "/missing", "/c", "/d", "/e"].map(cwd => ({ cwd, kind: "agent" })),
+			groups: [
+				{ axis: "columns", firstIndex: 0, secondIndex: 1, ratio: 0.4 },
+				{ axis: "rows", firstIndex: 2, secondIndex: 3, ratio: 0.5 },
+				{ axis: "rows", firstIndex: 1, secondIndex: 4, ratio: 0.5 },
+				{ axis: "columns", firstIndex: 4, secondIndex: 5, ratio: 0.6 },
+			],
+			// A stale legacy field never adds a pair next to the new one.
+			split: { axis: "rows", firstIndex: 0, secondIndex: 3, ratio: 0.5 },
+		};
+
+		const layout = sanitizePersistedTabLayout(value, pathChecks(["/a", "/b", "/c", "/d", "/e"], []));
+		expect(layout?.activeIndex).toBe(4);
+		expect(layout?.groups).toEqual([
+			{ axis: "columns", firstIndex: 0, secondIndex: 1, ratio: 0.4 },
+			{ axis: "columns", firstIndex: 3, secondIndex: 4, ratio: 0.6 },
+		]);
 	});
 
 	it("drops missing workspaces and selects the nearest surviving tab", () => {
@@ -237,12 +260,12 @@ describe("persisted session (all windows)", () => {
 
 	it("restores every window whole, with no tab budget shared across windows", () => {
 		const paths = pathChecks(dirs("a", "b"), []);
-		const split = { axis: "rows", firstIndex: 2, secondIndex: 3, ratio: 0.5 };
-		const restored = sanitizePersistedTabLayouts([layout(10, "a"), { ...layout(4, "b", 3), split }], paths);
+		const groups = [{ axis: "rows", firstIndex: 2, secondIndex: 3, ratio: 0.5 }];
+		const restored = sanitizePersistedTabLayouts([layout(10, "a"), { ...layout(4, "b", 3), groups }], paths);
 
 		expect(restored.map(entry => entry.tabs.length)).toEqual([10, 4]);
 		expect(restored[1]?.activeIndex).toBe(3);
-		expect(restored[1]?.split).toEqual(split);
+		expect(restored[1]?.groups).toEqual(groups);
 	});
 
 	it("returns nothing for a session with no restorable window", () => {

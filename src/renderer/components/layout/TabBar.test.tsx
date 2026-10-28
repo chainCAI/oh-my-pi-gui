@@ -26,11 +26,13 @@ import { useToolsStore } from "../../stores/tools";
 import { useUiStore } from "../../stores/ui";
 import { TabBar } from "./TabBar";
 
-const { document, window, Event, HTMLElement, Node } = parseHTML("<html><body></body></html>");
+const { document, window, Event, CustomEvent, HTMLElement, Node } = parseHTML("<html><body></body></html>");
 const globals = globalThis as Record<string, unknown>;
 globals.document = document;
 globals.window = window;
 globals.Event = Event;
+// The strip announces chip drags as a window event.
+globals.CustomEvent = CustomEvent;
 globals.HTMLElement = HTMLElement;
 globals.Node = Node;
 globals.IS_REACT_ACT_ENVIRONMENT = true;
@@ -76,7 +78,8 @@ interface MockOmp {
 		spawn: Mock<(payload: IpcSpawnTabPayload) => Promise<{ tabId: string } | null>>;
 		close: Mock<(tabId: string) => Promise<boolean>>;
 		setActive: Mock<(tabId: string) => Promise<boolean>>;
-		setView: Mock<(tabId: string, visibleTabIds: string[], split?: unknown) => Promise<boolean>>;
+		setView: Mock<(tabId: string, visibleTabIds: string[], groups?: unknown) => Promise<boolean>>;
+		setOrder: Mock<(tabIds: string[]) => Promise<boolean>>;
 	};
 	events: {
 		onTabStatus: Mock<(callback: (payload: IpcTabStatusPayload) => void) => () => void>;
@@ -104,6 +107,7 @@ function installMockOmp(): MockOmp {
 			close: vi.fn(async () => true),
 			setActive: vi.fn(async () => true),
 			setView: vi.fn(async () => true),
+			setOrder: vi.fn(async () => true),
 		},
 		events: {
 			onTabStatus: vi.fn(() => () => {}),
@@ -211,6 +215,18 @@ async function rightClick(element: TestElement): Promise<void> {
 		: undefined;
 	if (!props?.onContextMenu) throw new Error("element onContextMenu not found");
 	await act(async () => props.onContextMenu?.({ clientX: 80, clientY: 40, preventDefault: () => {} }));
+	await flush();
+}
+
+/** Call one React handler prop of an element with a stand-in event. */
+async function fire(element: TestElement, prop: string, event: Record<string, unknown> = {}): Promise<void> {
+	const record = element as unknown as Record<string, unknown>;
+	const propsKey = Object.getOwnPropertyNames(record).find(key => key.startsWith("__reactProps$"));
+	const handler = propsKey ? (record[propsKey] as Record<string, unknown>)[prop] : undefined;
+	if (typeof handler !== "function") throw new Error(`element ${prop} not found`);
+	await act(async () =>
+		handler({ preventDefault: () => {}, stopPropagation: () => {}, currentTarget: element, ...event }),
+	);
 	await flush();
 }
 
@@ -456,11 +472,12 @@ describe("TabBar", () => {
 		expect(rendered.every(chip => chip.getAttribute("draggable") === "true")).toBe(true);
 	});
 
-	it("right-click creates and removes a two-session split without changing either runtime", async () => {
+	it("right-click pairs two tabs into one merged chip and separates them again", async () => {
 		useTabsStore.setState({
 			tabs: [
 				{ kind: "agent", id: "t0", cwd: "/alpha", status: "ready", unreadDone: false },
 				{ kind: "agent", id: "t1", cwd: "/beta", status: "ready", unreadDone: false },
+				{ kind: "agent", id: "t2", cwd: "/gamma", status: "ready", unreadDone: false },
 			],
 			activeTabId: "t0",
 			split: null,
@@ -468,23 +485,79 @@ describe("TabBar", () => {
 		});
 		await mount(<TabBar />);
 
-		await rightClick(chips()[1]!);
+		await rightClick(chips()[2]!);
 		await click(menuItem("Split right")!);
-		expect(useTabsStore.getState()).toMatchObject({
-			activeTabId: "t1",
-			split: { axis: "columns", firstTabId: "t0", secondTabId: "t1", ratio: 0.5 },
-		});
-		expect(omp.tabs.setView).toHaveBeenCalledWith("t1", ["t0", "t1"], {
-			axis: "columns",
-			firstTabId: "t0",
-			secondTabId: "t1",
-			ratio: 0.5,
-		});
+		const pair = { axis: "columns", firstTabId: "t0", secondTabId: "t2", ratio: 0.5 };
+		expect(useTabsStore.getState()).toMatchObject({ activeTabId: "t2", split: pair, groups: [pair] });
+		expect(omp.tabs.setView).toHaveBeenCalledWith("t2", ["t0", "t2"], [pair]);
+		// One merged chip, its halves in pane order, ahead of the single tab.
+		const merged = container.querySelectorAll("[data-tab-pair]");
+		expect(merged).toHaveLength(1);
+		expect(merged[0]?.querySelectorAll('[role="tab"]').map(chip => chip.getAttribute("id"))).toEqual([
+			"omp-tab-t0",
+			"omp-tab-t2",
+		]);
+		expect(chips().map(chip => chip.getAttribute("id"))).toEqual(["omp-tab-t0", "omp-tab-t2", "omp-tab-t1"]);
 
 		await rightClick(chips()[1]!);
-		await click(menuItem("Exit split view")!);
+		await click(menuItem("Separate pair")!);
 		expect(useTabsStore.getState().split).toBeNull();
-		expect(omp.tabs.setActive).toHaveBeenLastCalledWith("t1");
+		expect(useTabsStore.getState().activeTabId).toBe("t2");
+		expect(omp.tabs.setView).toHaveBeenLastCalledWith("t2", ["t2"], []);
+		expect(container.querySelectorAll("[data-tab-pair]")).toHaveLength(0);
+	});
+
+	it("dropping a dragged chip on the near or far half of another moves it there", async () => {
+		useTabsStore.setState({
+			tabs: ["t0", "t1", "t2"].map(id => ({ kind: "agent", id, cwd: `/${id}`, status: "ready", unreadDone: false })),
+			activeTabId: "t0",
+			bundles: new Map(),
+		});
+		await mount(<TabBar />);
+		const rect = { left: 100, right: 200, width: 100, top: 0, bottom: 32, height: 32 };
+		const over = (chip: TestElement, clientX: number) => ({
+			clientX,
+			dataTransfer: { dropEffect: "none" },
+			currentTarget: { ...chip, getBoundingClientRect: () => rect, contains: () => false },
+		});
+
+		await fire(chips()[2]!, "onDragStart", { dataTransfer: { setData: () => {}, effectAllowed: "none" } });
+		await fire(chips()[0]!, "onDragOver", over(chips()[0]!, 120));
+		expect(chips()[0]?.getAttribute("data-drop")).toBe("before");
+		await fire(chips()[0]!, "onDrop", over(chips()[0]!, 120));
+		expect(useTabsStore.getState().tabs.map(tab => tab.id)).toEqual(["t2", "t0", "t1"]);
+
+		await fire(chips()[0]!, "onDragStart", { dataTransfer: { setData: () => {}, effectAllowed: "none" } });
+		await fire(chips()[1]!, "onDrop", over(chips()[1]!, 180));
+		expect(useTabsStore.getState().tabs.map(tab => tab.id)).toEqual(["t0", "t2", "t1"]);
+		await vi.waitFor(() => expect(omp.tabs.setOrder).toHaveBeenLastCalledWith(["t0", "t2", "t1"]));
+	});
+
+	it("the all-tabs list finds a tab by title and switches to it", async () => {
+		useTabsStore.setState({
+			tabs: [
+				{ kind: "agent", id: "t0", cwd: "/alpha", status: "ready", unreadDone: false, title: "Fix login" },
+				{ kind: "agent", id: "t1", cwd: "/beta", status: "ready", unreadDone: false, title: "Write docs" },
+				{ kind: "agent", id: "t2", cwd: "/gamma", status: "ready", unreadDone: false, title: "Ship release" },
+			],
+			activeTabId: "t0",
+			bundles: new Map(),
+		});
+		await mount(<TabBar />);
+
+		const rect = { left: 600, bottom: 40 };
+		await fire(container.querySelector('[aria-label="All tabs"]')!, "onClick", {
+			currentTarget: { getBoundingClientRect: () => rect },
+		});
+		const body = document.body as unknown as TestElement;
+		const input = body.querySelector('[aria-label="Search tabs"]')!;
+		await fire(input, "onChange", { target: { value: "docs" } });
+		const options = body.querySelectorAll('[role="option"]');
+		expect(options.map(option => option.textContent)).toEqual([expect.stringContaining("Write docs")]);
+		await click(options[0]!);
+
+		expect(useTabsStore.getState().activeTabId).toBe("t1");
+		expect(body.querySelector('[aria-label="Search tabs"]')).toBeNull();
 	});
 
 	it("right-click closes tabs to either side or replaces all original tabs", async () => {

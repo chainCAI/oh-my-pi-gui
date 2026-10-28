@@ -31,7 +31,7 @@ import type { BrowserWindow } from "electron";
 import {
 	IPC_EVENTS,
 	type IpcSessionOwner,
-	type IpcSetTabViewPayload,
+	type IpcTabGroup,
 	type IpcTabInfo,
 	type IpcTabRetry,
 	type IpcTabStatusPayload,
@@ -131,8 +131,6 @@ interface PoolEntry {
 	detachFull: (() => void) | null;
 }
 
-type WindowSplitView = NonNullable<IpcSetTabViewPayload["split"]>;
-
 /** An idle sidecar booted ahead of the next tab in `cwd` (gui#29). */
 interface WarmSpare {
 	cwd: string;
@@ -148,8 +146,8 @@ export class SidecarPool {
 	#activeByWindow = new Map<number, string>();
 	/** Window → the one or two tabs whose full event streams are rendered. */
 	#visibleByWindow = new Map<number, Set<string>>();
-	/** Window → persisted order, axis, and ratio for its optional two-pane view. */
-	#splitByWindow = new Map<number, WindowSplitView>();
+	/** Window → its split pairs (gui#30): each pair is shown whenever either tab is. */
+	#groupsByWindow = new Map<number, IpcTabGroup[]>();
 	/** Session file → owning tab/window (F-OWN double-attach guard). */
 	#sessionOwners = new Map<string, IpcSessionOwner>();
 	/**
@@ -636,15 +634,16 @@ export class SidecarPool {
 		this.sidecarLifecycle?.released(entry.tabId);
 		const visible = this.#visibleByWindow.get(entry.winId);
 		visible?.delete(entry.tabId);
-		const split = this.#splitByWindow.get(entry.winId);
-		if (split?.firstTabId === entry.tabId || split?.secondTabId === entry.tabId)
-			this.#splitByWindow.delete(entry.winId);
+		// A closed tab dissolves its pair; the partner stays as a single tab.
+		const groups = this.#groupsByWindow.get(entry.winId)?.filter(group => !groupHas(group, entry.tabId)) ?? [];
+		if (groups.length > 0) this.#groupsByWindow.set(entry.winId, groups);
+		else this.#groupsByWindow.delete(entry.winId);
 		// No tab left anywhere (a macOS app idling in the dock): nothing to be warm for.
 		if (this.#entries.size === 0) this.#discardSpare();
 		if (![...this.#entries].some(candidate => candidate.winId === entry.winId)) {
 			this.#activeByWindow.delete(entry.winId);
 			this.#visibleByWindow.delete(entry.winId);
-			this.#splitByWindow.delete(entry.winId);
+			this.#groupsByWindow.delete(entry.winId);
 			return;
 		}
 		if (this.#activeByWindow.get(entry.winId) !== entry.tabId) {
@@ -701,35 +700,74 @@ export class SidecarPool {
 		return this.setTabView(win, tabId, [tabId]);
 	}
 
-	/** Atomically focus one tab and wire full streams for one or two visible tabs. */
+	/**
+	 * Atomically focus one tab and wire full streams for one or two visible
+	 * tabs. Two visible tabs must be one of the window's split pairs; `groups`
+	 * replaces those pairs, and leaving it out keeps them.
+	 */
 	setTabView(
 		win: BrowserWindow,
 		focusedTabId: string,
 		visibleTabIds: readonly string[],
-		split?: IpcSetTabViewPayload["split"],
+		groups?: readonly IpcTabGroup[],
 	): boolean {
 		const ids = [...new Set(visibleTabIds)];
 		if (ids.length < 1 || ids.length > 2 || !ids.includes(focusedTabId)) return false;
-		if (
-			split &&
-			(ids.length !== 2 ||
-				!ids.includes(split.firstTabId) ||
-				!ids.includes(split.secondTabId) ||
-				split.firstTabId === split.secondTabId ||
-				(split.axis !== "columns" && split.axis !== "rows") ||
-				!Number.isFinite(split.ratio))
-		)
-			return false;
 		for (const tabId of ids) {
 			const entry = this.#byTabId.get(tabId);
 			if (!entry || entry.win !== win) return false;
 		}
 		const winId = win.webContents.id;
+		const nextGroups = groups ? this.#ownGroups(win, groups) : (this.#groupsByWindow.get(winId) ?? []);
+		if (ids.length === 2 && !nextGroups.some(group => ids.every(tabId => groupHas(group, tabId)))) return false;
 		this.#activeByWindow.set(winId, focusedTabId);
 		this.#visibleByWindow.set(winId, new Set(ids));
-		if (split) this.#splitByWindow.set(winId, { ...split, ratio: Math.min(0.8, Math.max(0.2, split.ratio)) });
-		else this.#splitByWindow.delete(winId);
+		if (nextGroups.length > 0) this.#groupsByWindow.set(winId, nextGroups);
+		else this.#groupsByWindow.delete(winId);
 		this.#syncFullWiring(winId);
+		this.#notifyWindowTabsChanged(win);
+		return true;
+	}
+
+	/** The valid pairs of `groups`: two distinct tabs of `win`, each in one pair at most. */
+	#ownGroups(win: BrowserWindow, groups: readonly IpcTabGroup[]): IpcTabGroup[] {
+		const paired = new Set<string>();
+		const valid: IpcTabGroup[] = [];
+		for (const group of groups) {
+			if (!group) continue;
+			const { axis, firstTabId, secondTabId, ratio } = group;
+			if (
+				(axis !== "columns" && axis !== "rows") ||
+				typeof ratio !== "number" ||
+				!Number.isFinite(ratio) ||
+				firstTabId === secondTabId ||
+				paired.has(firstTabId) ||
+				paired.has(secondTabId) ||
+				this.#byTabId.get(firstTabId)?.win !== win ||
+				this.#byTabId.get(secondTabId)?.win !== win
+			)
+				continue;
+			paired.add(firstTabId);
+			paired.add(secondTabId);
+			valid.push({ axis, firstTabId, secondTabId, ratio: Math.min(0.8, Math.max(0.2, ratio)) });
+		}
+		return valid;
+	}
+
+	/**
+	 * Put the window's tabs in the strip's order, so GET_TABS and the saved
+	 * layout follow a drag. Tabs the list leaves out keep their order after it.
+	 */
+	setTabOrder(win: BrowserWindow, tabIds: readonly string[]): boolean {
+		const own = [...this.#entries].filter(entry => entry.win === win);
+		if (own.length === 0) return false;
+		const rank = new Map(tabIds.map((tabId, index) => [tabId, index]));
+		const ordered = own.toSorted(
+			(a, b) => (rank.get(a.tabId) ?? tabIds.length) - (rank.get(b.tabId) ?? tabIds.length),
+		);
+		if (ordered.every((entry, index) => entry === own[index])) return true;
+		for (const entry of own) this.#entries.delete(entry);
+		for (const entry of ordered) this.#entries.add(entry);
 		this.#notifyWindowTabsChanged(win);
 		return true;
 	}
@@ -871,14 +909,22 @@ export class SidecarPool {
 		const tabs: IpcTabInfo[] = [];
 		const activeTabId = this.#activeByWindow.get(win.webContents.id);
 		const visibleTabIds = this.#visibleByWindow.get(win.webContents.id);
-		const split = this.#splitByWindow.get(win.webContents.id);
+		const groups = this.#groupsByWindow.get(win.webContents.id) ?? [];
 		for (const entry of this.#entries) {
 			if (entry.win !== win) continue;
 			const tab = tabStatusPayload(entry);
 			if (entry.tabId === activeTabId) tab.active = true;
 			if (visibleTabIds?.has(entry.tabId)) tab.visible = true;
-			if (split?.firstTabId === entry.tabId) tab.split = { axis: split.axis, index: 0, ratio: split.ratio };
-			else if (split?.secondTabId === entry.tabId) tab.split = { axis: split.axis, index: 1, ratio: split.ratio };
+			const group = groups.find(candidate => groupHas(candidate, entry.tabId));
+			if (group) {
+				const first = group.firstTabId === entry.tabId;
+				tab.group = {
+					axis: group.axis,
+					index: first ? 0 : 1,
+					ratio: group.ratio,
+					partnerTabId: first ? group.secondTabId : group.firstTabId,
+				};
+			}
 			tabs.push(tab);
 		}
 		return tabs;
@@ -902,9 +948,13 @@ export class SidecarPool {
 			0,
 			entries.findIndex(entry => entry.tabId === activeTabId),
 		);
-		const split = this.#splitByWindow.get(win.webContents.id);
-		const firstIndex = split ? entries.findIndex(entry => entry.tabId === split.firstTabId) : -1;
-		const secondIndex = split ? entries.findIndex(entry => entry.tabId === split.secondTabId) : -1;
+		const groups = (this.#groupsByWindow.get(win.webContents.id) ?? []).flatMap(group => {
+			const firstIndex = entries.findIndex(entry => entry.tabId === group.firstTabId);
+			const secondIndex = entries.findIndex(entry => entry.tabId === group.secondTabId);
+			return firstIndex >= 0 && secondIndex >= 0
+				? [{ axis: group.axis, firstIndex, secondIndex, ratio: group.ratio }]
+				: [];
+		});
 		return {
 			version: TAB_LAYOUT_VERSION,
 			activeIndex,
@@ -918,9 +968,7 @@ export class SidecarPool {
 				if (entry.title !== undefined) descriptor.title = entry.title ?? undefined;
 				return descriptor;
 			}),
-			...(split && firstIndex >= 0 && secondIndex >= 0
-				? { split: { axis: split.axis, firstIndex, secondIndex, ratio: split.ratio } }
-				: {}),
+			...(groups.length > 0 ? { groups } : {}),
 		};
 	}
 
@@ -960,18 +1008,18 @@ export class SidecarPool {
 			}
 			const activeTabId = activeRestoredTabId ?? firstRestoredTabId;
 			if (activeTabId) {
-				const firstTabId = layout.split ? restoredTabIds[layout.split.firstIndex] : undefined;
-				const secondTabId = layout.split ? restoredTabIds[layout.split.secondIndex] : undefined;
-				// Routing the view is what spawns the shown tabs, so a split whose
-				// panes were both dropped still falls back to one visible tab.
-				if (layout.split && firstTabId && secondTabId) {
-					this.setTabView(win, activeTabId, [firstTabId, secondTabId], {
-						axis: layout.split.axis,
-						firstTabId,
-						secondTabId,
-						ratio: layout.split.ratio,
-					});
-				} else this.setTabView(win, activeTabId, [activeTabId]);
+				// A pair loses its place when either tab failed to come back.
+				const groups = (layout.groups ?? []).flatMap(group => {
+					const firstTabId = restoredTabIds[group.firstIndex];
+					const secondTabId = restoredTabIds[group.secondIndex];
+					return firstTabId && secondTabId
+						? [{ axis: group.axis, firstTabId, secondTabId, ratio: group.ratio }]
+						: [];
+				});
+				// Routing the view is what spawns the shown tabs: the active tab,
+				// with its partner when it is one of a pair.
+				const shown = groups.find(group => groupHas(group, activeTabId));
+				this.setTabView(win, activeTabId, shown ? [shown.firstTabId, shown.secondTabId] : [activeTabId], groups);
 			}
 		} finally {
 			this.#restoringWindows.delete(winId);
@@ -996,14 +1044,17 @@ export class SidecarPool {
 		this.#byTabId.clear();
 		this.#activeByWindow.clear();
 		this.#visibleByWindow.clear();
-		this.#splitByWindow.clear();
+		this.#groupsByWindow.clear();
 		this.#sessionOwners.clear();
 		this.#requestOwners.clear();
 		this.#restoringWindows.clear();
 	}
 }
 
-/** TAB_STATUS push / GET_TABS item: full tab snapshot incl. cached session meta. */
+function groupHas(group: IpcTabGroup, tabId: string): boolean {
+	return group.firstTabId === tabId || group.secondTabId === tabId;
+}
+
 /** A terminal agent_end decides the run's outcome from its final assistant reply. */
 function settleAttention(entry: PoolEntry, messages: AgentMessage[] | undefined): void {
 	const last = messages?.findLast(message => message.role === "assistant");
@@ -1017,6 +1068,7 @@ function settleAttention(entry: PoolEntry, messages: AgentMessage[] | undefined)
 	}
 }
 
+/** TAB_STATUS push / GET_TABS item: full tab snapshot incl. cached session meta. */
 function tabStatusPayload(entry: PoolEntry): IpcTabStatusPayload {
 	const payload: IpcTabStatusPayload = {
 		tabId: entry.tabId,

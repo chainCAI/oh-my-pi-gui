@@ -207,6 +207,8 @@ export function SettingsWindow() {
 	const thinkingExpanded = useUiStore(state => state.thinkingExpanded);
 	const sidebarQuotas = useUiStore(state => state.sidebarQuotas);
 	const transcriptDetail = useUiStore(state => state.transcriptDetail);
+	const tabWidth = useUiStore(state => state.tabWidth);
+	const tabRows = useUiStore(state => state.tabRows);
 	const sidecarStatus = useSessionStore(state => state.status);
 	const sidecarReady = sidecarStatus === "ready";
 	const sidecarError = useUiStore(state => state.sidecarError);
@@ -420,6 +422,13 @@ export function SettingsWindow() {
 	// ── GUI-local preferences (prefs IPC) ──
 	const applyPanelTab = (next: typeof panelTab) => {
 		void saveGuiPreference("defaultPanelTab", next, () => setPanelTab(next));
+	};
+	const applyTabWidth = (next: typeof tabWidth) => {
+		void saveGuiPreference("tabWidth", next, () => useUiStore.getState().setTabWidth(next));
+	};
+	const applyTabRows = (multi: boolean) => {
+		const next = multi ? "multi" : "single";
+		void saveGuiPreference("tabRows", next, () => useUiStore.getState().setTabRows(next));
 	};
 	const applyNotifications = (next: boolean) => {
 		void saveGuiPreference("notifications", next, () => setNotifications(next));
@@ -1198,6 +1207,36 @@ export function SettingsWindow() {
 													{ value: "files", label: t("settings.gui.panel.files") },
 												]}
 												value={panelTab}
+											/>
+										</Section>
+										<Section id="setting-gui-tabStrip" title={t("settings.gui.tabStrip")}>
+											<RadioGroup
+												name="tabWidth"
+												onChange={applyTabWidth}
+												options={[
+													{
+														value: "compact",
+														label: t("settings.gui.tabWidth.compact"),
+														description: t("settings.gui.tabWidth.compactDesc"),
+													},
+													{
+														value: "default",
+														label: t("settings.gui.tabWidth.default"),
+														description: t("settings.gui.tabWidth.defaultDesc"),
+													},
+													{
+														value: "wide",
+														label: t("settings.gui.tabWidth.wide"),
+														description: t("settings.gui.tabWidth.wideDesc"),
+													},
+												]}
+												value={tabWidth}
+											/>
+											<Toggle
+												checked={tabRows === "multi"}
+												description={t("settings.gui.tabRowsDesc")}
+												label={t("settings.gui.tabRows")}
+												onChange={applyTabRows}
 											/>
 										</Section>
 										<Section id="setting-gui-sidebarQuotas" title={t("settings.gui.sidebarQuotas")}>

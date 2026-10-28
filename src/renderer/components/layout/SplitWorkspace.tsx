@@ -61,6 +61,33 @@ function SplitDropOverlay({ placement }: { placement: SplitPlacement }) {
 	);
 }
 
+/** Over a pair, a dragged tab takes the pane under the pointer; that pane's tab goes back to the strip. */
+function PaneDropOverlay({ axis, ratio, firstPane }: { axis: SplitAxis; ratio: number; firstPane: boolean }) {
+	const t = useT();
+	const cell = (targeted: boolean) => (
+		<div
+			className={cx(
+				"m-4 flex items-center justify-center rounded-xl border text-omp-sm font-medium transition-colors",
+				targeted
+					? "border-[var(--omp-accent)] bg-[var(--omp-accent-dim)] text-[var(--omp-accent)]"
+					: "border-transparent text-transparent",
+			)}
+		>
+			{t("split.replacePane")}
+		</div>
+	);
+	return (
+		<div
+			className="pointer-events-none absolute inset-0 z-50 grid bg-[var(--omp-overlay-bg)] backdrop-blur-[2px]"
+			style={splitGrid(axis, ratio)}
+		>
+			{cell(firstPane)}
+			<div />
+			{cell(!firstPane)}
+		</div>
+	);
+}
+
 function SessionPane({ tabId, split, label }: { tabId: string; split: boolean; label: string }) {
 	const t = useT();
 	const runtime = ensureTabRuntime(tabId);
@@ -184,13 +211,17 @@ export function SplitWorkspace() {
 	const activeTabId = useTabsStore(state => state.activeTabId);
 	const split = useTabsStore(state => state.split);
 	const splitTab = useTabsStore(state => state.splitTab);
+	const replacePane = useTabsStore(state => state.replacePane);
 	const setSplitRatio = useTabsStore(state => state.setSplitRatio);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const draggingRef = useRef(false);
 	const pendingRatioRef = useRef<number | null>(null);
 	const frameRef = useRef<number | null>(null);
 	const [dragTabId, setDragTabId] = useState<string | null>(null);
+	/** The drag is over this workspace (a drag along the tab strip only reorders). */
+	const [dragOver, setDragOver] = useState(false);
 	const [dropPlacement, setDropPlacement] = useState<SplitPlacement>("right");
+	const [dropPane, setDropPane] = useState<string | null>(null);
 	const sessionsById = useMemo(() => new Map(sessions.map(session => [session.id, session])), [sessions]);
 	const sessionsByPath = useMemo(() => new Map(sessions.map(session => [session.path, session])), [sessions]);
 	const pane = (tabId: string, isSplit: boolean) => {
@@ -216,39 +247,61 @@ export function SplitWorkspace() {
 	);
 	useEffect(() => {
 		const onTabDrag = (event: Event) => {
-			setDragTabId((event as CustomEvent<{ tabId: string | null }>).detail.tabId);
+			const tabId = (event as CustomEvent<{ tabId: string | null }>).detail.tabId;
+			setDragTabId(tabId);
+			if (!tabId) setDragOver(false);
 		};
 		window.addEventListener("omp:tab-drag", onTabDrag);
 		return () => window.removeEventListener("omp:tab-drag", onTabDrag);
 	}, []);
 
 	if (!activeTabId) return null;
-	// A tab already occupying a pane is not a valid drop target — re-dropping
-	// it would silently reset the ratio/axis (splitTab refuses it anyway; the
-	// overlay must not invite the gesture).
+	// A tab already on screen is not a valid drop target — re-dropping it would
+	// silently reset the ratio/axis (the store refuses it anyway; the overlay
+	// must not invite the gesture).
 	const canDrop =
 		dragTabId !== null &&
 		dragTabId !== activeTabId &&
 		!(split && (split.firstTabId === dragTabId || split.secondTabId === dragTabId));
+	// Over one session the drop pairs the dragged tab with it, on the side the
+	// pointer picks; over a pair it replaces the pane under the pointer.
+	const paneFromPointer = (event: DragEvent<HTMLDivElement>): string | null => {
+		if (!split) return null;
+		const bounds = event.currentTarget.getBoundingClientRect();
+		const along =
+			split.axis === "columns"
+				? (event.clientX - bounds.left) / bounds.width
+				: (event.clientY - bounds.top) / bounds.height;
+		return along < split.ratio ? split.firstTabId : split.secondTabId;
+	};
 	const dropProps = {
 		onDragOver: (event: DragEvent<HTMLDivElement>) => {
 			if (!canDrop) return;
 			event.preventDefault();
 			event.dataTransfer.dropEffect = "move";
-			setDropPlacement(placementFromPointer(event));
+			setDragOver(true);
+			if (split) setDropPane(paneFromPointer(event));
+			else setDropPlacement(placementFromPointer(event));
+		},
+		onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+			if (!event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) setDragOver(false);
 		},
 		onDrop: (event: DragEvent<HTMLDivElement>) => {
 			if (!canDrop || !dragTabId) return;
 			event.preventDefault();
-			void splitTab(dragTabId, placementFromPointer(event));
+			const pane = paneFromPointer(event);
+			if (pane) void replacePane(pane, dragTabId);
+			else void splitTab(dragTabId, placementFromPointer(event));
 			setDragTabId(null);
+			setDragOver(false);
 		},
 	};
+	const showDrop = canDrop && dragOver;
 	if (!split) {
 		return (
 			<div ref={rootRef} className="omp-split-workspace relative grid min-h-0 flex-1" {...dropProps}>
 				{pane(activeTabId, false)}
-				{canDrop && <SplitDropOverlay placement={dropPlacement} />}
+				{showDrop && <SplitDropOverlay placement={dropPlacement} />}
 			</div>
 		);
 	}
@@ -324,7 +377,9 @@ export function SplitWorkspace() {
 				</span>
 			</div>
 			{pane(split.secondTabId, true)}
-			{canDrop && <SplitDropOverlay placement={dropPlacement} />}
+			{showDrop && dropPane && (
+				<PaneDropOverlay axis={split.axis} ratio={split.ratio} firstPane={dropPane === split.firstTabId} />
+			)}
 		</div>
 	);
 }

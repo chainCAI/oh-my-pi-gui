@@ -41,10 +41,14 @@ import { sessionRuntime, sessionRuntimeStore, setFocusedSessionRuntime } from ".
 import { useSubagentsStore } from "./subagents";
 import { ensureTabRuntime } from "./tab-runtime";
 import {
+	cycleTab,
 	isTabClosed,
+	moveActiveTab,
 	pushTabExtensionUiRequest,
 	restoreTabComposer,
 	type SessionTab,
+	type SplitLayout,
+	selectTabAt,
 	settleTabPlanApproval,
 	tabChipLabel,
 	tabDisplayTitle,
@@ -101,6 +105,8 @@ interface MockOmp {
 		spawn: Mock<(payload: IpcSpawnTabPayload) => Promise<IpcSpawnTabResult | null>>;
 		close: Mock<(tabId: string) => Promise<boolean>>;
 		setActive: Mock<(tabId: string) => Promise<boolean>>;
+		setView: Mock<(tabId: string, visibleTabIds: string[], groups?: SplitLayout[]) => Promise<boolean>>;
+		setOrder: Mock<(tabIds: string[]) => Promise<boolean>>;
 	};
 	events: {
 		onTabStatus: Mock<(callback: (payload: IpcTabStatusPayload) => void) => () => void>;
@@ -128,6 +134,8 @@ function installMockOmp(): { omp: MockOmp; emitTabStatus: TabStatusHandler } {
 			spawn: vi.fn(async () => null),
 			close: vi.fn(async () => true),
 			setActive: vi.fn(async () => true),
+			setView: vi.fn(async () => true),
+			setOrder: vi.fn(async () => true),
 		},
 		events: {
 			onTabStatus: vi.fn((callback: TabStatusHandler) => {
@@ -695,6 +703,162 @@ describe("tabs store switch", () => {
 	});
 });
 
+describe("tabs store split pairs (gui#30)", () => {
+	const pair = (firstTabId: string, secondTabId: string, ratio = 0.5): SplitLayout => ({
+		axis: "columns",
+		firstTabId,
+		secondTabId,
+		ratio,
+	});
+	const ids = () => useTabsStore.getState().tabs.map(tab => tab.id);
+
+	/** Seed ready tabs t0…tN-1 with these pairs, `active` focused. */
+	function seedStrip(count: number, active: string, groups: SplitLayout[]): void {
+		const tabs: SessionTab[] = Array.from({ length: count }, (_, index) => ({
+			kind: "agent",
+			id: `t${index}`,
+			cwd: `/w${index}`,
+			status: "ready",
+			unreadDone: false,
+		}));
+		for (const tab of tabs) ensureTabRuntime(tab.id);
+		const split = groups.find(group => group.firstTabId === active || group.secondTabId === active) ?? null;
+		useTabsStore.setState({ tabs, activeTabId: active, groups, split, bundles: new Map() });
+		setFocusedSessionRuntime(active);
+	}
+
+	it("shows a pair whenever either tab is picked, and a single tab alone without breaking the pair", async () => {
+		seedStrip(3, "t2", [pair("t0", "t1", 0.3)]);
+		const hydrated: string[] = [];
+		(omp.rpc as unknown as { commandForTab: unknown }).commandForTab = vi.fn(
+			async (tabId: string, command: { type: string }) => {
+				if (command.type === "get_state") hydrated.push(tabId);
+				return command.type === "get_state" ? ok(serverState()) : ok({ messages: [] });
+			},
+		);
+
+		await useTabsStore.getState().switchTab("t1");
+
+		expect(useTabsStore.getState().split).toEqual(pair("t0", "t1", 0.3));
+		expect(omp.tabs.setView).toHaveBeenLastCalledWith("t1", ["t0", "t1"], [pair("t0", "t1", 0.3)]);
+		// The partner came on screen beside the picked tab, so both hydrate.
+		expect(hydrated.sort()).toEqual(["t0", "t1"]);
+
+		await useTabsStore.getState().switchTab("t2");
+		expect(useTabsStore.getState().split).toBeNull();
+		expect(useTabsStore.getState().groups).toEqual([pair("t0", "t1", 0.3)]);
+		// Main already holds the pair: the single tab is named alone.
+		expect(omp.tabs.setActive).toHaveBeenLastCalledWith("t2");
+
+		await useTabsStore.getState().switchTab("t0");
+		expect(useTabsStore.getState().activeTabId).toBe("t0");
+		expect(useTabsStore.getState().split).toEqual(pair("t0", "t1", 0.3));
+	});
+
+	it("pairs a tab beside the focused one, breaking both old pairs, and keeps the new pair's chips together", async () => {
+		seedStrip(5, "t3", [pair("t0", "t1"), pair("t3", "t4")]);
+
+		await useTabsStore.getState().splitTab("t0", "left");
+
+		const state = useTabsStore.getState();
+		expect(state.groups).toEqual([{ axis: "columns", firstTabId: "t0", secondTabId: "t3", ratio: 0.5 }]);
+		expect(state.activeTabId).toBe("t0");
+		expect(state.split).toBe(state.groups[0]);
+		expect(ids()).toEqual(["t0", "t3", "t1", "t2", "t4"]);
+		expect(omp.tabs.setOrder).toHaveBeenLastCalledWith(["t0", "t3", "t1", "t2", "t4"]);
+	});
+
+	it("drops a tab into one pane of the shown pair; the tab it replaces stays open on its own", async () => {
+		seedStrip(4, "t0", [pair("t0", "t1", 0.7), pair("t2", "t3")]);
+
+		await useTabsStore.getState().replacePane("t1", "t2");
+
+		const state = useTabsStore.getState();
+		expect(state.groups).toEqual([pair("t0", "t2", 0.7)]);
+		expect(state.activeTabId).toBe("t2");
+		expect(ids()).toEqual(["t0", "t2", "t1", "t3"]);
+		expect(omp.tabs.setView).toHaveBeenLastCalledWith("t2", ["t0", "t2"], [pair("t0", "t2", 0.7)]);
+	});
+
+	it("separates the pair on screen in place, and a background pair without moving the view", async () => {
+		seedStrip(4, "t0", [pair("t0", "t1"), pair("t2", "t3")]);
+
+		await useTabsStore.getState().unsplit("t2");
+		expect(useTabsStore.getState().groups).toEqual([pair("t0", "t1")]);
+		expect(useTabsStore.getState().activeTabId).toBe("t0");
+		expect(useTabsStore.getState().split).toEqual(pair("t0", "t1"));
+
+		await useTabsStore.getState().unsplit("t1");
+		expect(useTabsStore.getState().groups).toEqual([]);
+		expect(useTabsStore.getState().activeTabId).toBe("t1");
+		expect(omp.tabs.setView).toHaveBeenLastCalledWith("t1", ["t1"], []);
+	});
+
+	it("closing a tab of the shown pair leaves its partner on screen; a background pair just loses it", async () => {
+		seedStrip(4, "t1", [pair("t0", "t1"), pair("t2", "t3")]);
+
+		await useTabsStore.getState().closeTab("t1");
+		expect(useTabsStore.getState().activeTabId).toBe("t0");
+		expect(useTabsStore.getState().split).toBeNull();
+
+		await useTabsStore.getState().closeTab("t3");
+		expect(useTabsStore.getState().groups).toEqual([]);
+		expect(useTabsStore.getState().activeTabId).toBe("t0");
+		expect(ids()).toEqual(["t0", "t2"]);
+	});
+
+	it("drags a chip before or after another, moving a pair as one", async () => {
+		seedStrip(4, "t0", [pair("t1", "t2")]);
+		const { moveTab } = useTabsStore.getState();
+
+		moveTab("t3", "t1", "before");
+		expect(ids()).toEqual(["t0", "t3", "t1", "t2"]);
+		moveTab("t2", "t0", "before");
+		expect(ids()).toEqual(["t1", "t2", "t0", "t3"]);
+		moveTab("t0", "t2", "after");
+		expect(ids()).toEqual(["t1", "t2", "t0", "t3"]);
+		// Onto its own partner: nothing to move.
+		moveTab("t1", "t2", "after");
+		expect(ids()).toEqual(["t1", "t2", "t0", "t3"]);
+		await vi.waitFor(() => expect(omp.tabs.setOrder).toHaveBeenCalledTimes(2));
+		expect(omp.tabs.setOrder).toHaveBeenLastCalledWith(["t1", "t2", "t0", "t3"]);
+	});
+
+	it("rebuilds pairs from main's tab list on reconcile", async () => {
+		omp.tabs.list.mockResolvedValue([
+			{ ...tabInfo("t0", "/a"), group: { axis: "rows", index: 0, ratio: 0.6, partnerTabId: "t1" } },
+			{ ...tabInfo("t1", "/b"), active: true, group: { axis: "rows", index: 1, ratio: 0.6, partnerTabId: "t0" } },
+			tabInfo("t2", "/c"),
+		]);
+
+		await useTabsStore.getState().reconcileTabs();
+
+		const pairFromMain = { axis: "rows", firstTabId: "t0", secondTabId: "t1", ratio: 0.6 };
+		expect(useTabsStore.getState().groups).toEqual([pairFromMain]);
+		expect(useTabsStore.getState().split).toEqual(pairFromMain);
+	});
+
+	it("steps through chips by keyboard with a pair counting once and returning to its last focused tab", async () => {
+		seedStrip(4, "t0", [pair("t1", "t2")]);
+		await useTabsStore.getState().switchTab("t2");
+		await useTabsStore.getState().switchTab("t0");
+
+		cycleTab(1);
+		await vi.waitFor(() => expect(useTabsStore.getState().activeTabId).toBe("t2"));
+		cycleTab(1);
+		await vi.waitFor(() => expect(useTabsStore.getState().activeTabId).toBe("t3"));
+		cycleTab(1);
+		await vi.waitFor(() => expect(useTabsStore.getState().activeTabId).toBe("t0"));
+		selectTabAt(9);
+		await vi.waitFor(() => expect(useTabsStore.getState().activeTabId).toBe("t3"));
+		selectTabAt(2);
+		await vi.waitFor(() => expect(useTabsStore.getState().activeTabId).toBe("t2"));
+
+		moveActiveTab(-1);
+		expect(ids()).toEqual(["t1", "t2", "t0", "t3"]);
+	});
+});
+
 describe("tabs store close", () => {
 	it("keeps the last tab open", async () => {
 		omp.tabs.list.mockResolvedValue([tabInfo("t0", "/alpha")]);
@@ -1241,9 +1405,8 @@ describe("tab runtime lifecycle guards", () => {
 
 	it("refuses to re-split a tab that already occupies a pane", async () => {
 		seedTabs("t0");
-		useTabsStore.setState({
-			split: { axis: "columns", firstTabId: "t0", secondTabId: "t1", ratio: 0.7 },
-		});
+		const pair = { axis: "columns" as const, firstTabId: "t0", secondTabId: "t1", ratio: 0.7 };
+		useTabsStore.setState({ groups: [pair], split: pair });
 
 		await useTabsStore.getState().splitTab("t1", "top");
 

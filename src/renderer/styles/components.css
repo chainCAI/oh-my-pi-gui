@@ -1719,6 +1719,45 @@
 	display: none;
 }
 
+/* Session tabs (gui#30): the ends of an overflowing strip fade where more
+   chips lie beyond them — sideways for one row, top/bottom when wrapped. */
+.omp-tab-scroller[data-fade-start] {
+	mask-image: linear-gradient(to right, transparent, #000 1.5rem);
+}
+.omp-tab-scroller[data-fade-end] {
+	mask-image: linear-gradient(to left, transparent, #000 1.5rem);
+}
+.omp-tab-scroller[data-fade-start][data-fade-end] {
+	mask-image: linear-gradient(to right, transparent, #000 1.5rem, #000 calc(100% - 1.5rem), transparent);
+}
+.omp-tab-scroller[data-rows="multi"][data-fade-start] {
+	mask-image: linear-gradient(to bottom, transparent, #000 0.75rem);
+}
+.omp-tab-scroller[data-rows="multi"][data-fade-end] {
+	mask-image: linear-gradient(to top, transparent, #000 0.75rem);
+}
+.omp-tab-scroller[data-rows="multi"][data-fade-start][data-fade-end] {
+	mask-image: linear-gradient(to bottom, transparent, #000 0.75rem, #000 calc(100% - 0.75rem), transparent);
+}
+
+/* Where a dragged tab will land: a bar on that side of the chip it is over. */
+.omp-tab-unit[data-drop]::after {
+	content: "";
+	position: absolute;
+	top: 0.375rem;
+	bottom: 0.375rem;
+	width: 2px;
+	border-radius: 1px;
+	background: var(--omp-accent);
+	pointer-events: none;
+}
+.omp-tab-unit[data-drop="before"]::after {
+	left: 0;
+}
+.omp-tab-unit[data-drop="after"]::after {
+	right: 0;
+}
+
 /* ---------------------------------------------------------------------------
  * Scheduled tasks — Insights bars and meters grow from their baseline once
  * per mount; the per-bar delay (inline) staggers the chart left to right.

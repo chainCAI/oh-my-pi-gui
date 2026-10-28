@@ -11,6 +11,7 @@ import {
 	ChevronRight,
 	Code2,
 	Coins,
+	Columns2,
 	Command,
 	ExternalLink,
 	Folder,
@@ -30,6 +31,7 @@ import {
 	PinOff,
 	Plug,
 	RefreshCw,
+	Rows2,
 	Search,
 	Settings,
 	Sparkles,
@@ -67,7 +69,7 @@ import { useSchedulerStore } from "../../stores/scheduler";
 import { useSessionStore } from "../../stores/session";
 import { useSidebarPrefs } from "../../stores/sidebar-prefs";
 import { usePendingSkillReviews } from "../../stores/skill-review";
-import { useTabsStore } from "../../stores/tabs";
+import { type SplitAxis, useTabsStore } from "../../stores/tabs";
 import { toast } from "../../stores/toast";
 import { useUiStore } from "../../stores/ui";
 import { SessionAgentsScope, type SidebarAgentsInfo } from "../agents/SidebarAgents";
@@ -109,6 +111,16 @@ type PendingDelete =
 	| { kind: "selection"; sessions: SessionInfo[] };
 
 type SidebarMode = "code" | "work";
+
+/** Two sessions open as a split pair of tabs, by session file in pane order. */
+interface SessionPair {
+	key: string;
+	first: string;
+	second: string;
+	axis: SplitAxis;
+	/** The pair is the one on screen. */
+	onScreen: boolean;
+}
 
 function modifiedAt(session: SessionInfo): number {
 	const timestamp = Date.parse(session.modified);
@@ -209,6 +221,43 @@ export function Sidebar() {
 	const tabs = useTabsStore(s => s.tabs);
 	const activeTabId = useTabsStore(s => s.activeTabId);
 	const activeTab = tabs.find(tab => tab.id === activeTabId);
+	const tabGroups = useTabsStore(s => s.groups);
+	const shownPair = useTabsStore(s => s.split);
+	// Split pairs by session file (gui#30): a pair's rows sit together like its
+	// merged tab chip, and follow it as pairs form, move or come apart.
+	const sessionPairs = useMemo(() => {
+		const pairs = new Map<string, SessionPair>();
+		for (const group of tabGroups) {
+			const first = tabs.find(tab => tab.id === group.firstTabId)?.sessionPath;
+			const second = tabs.find(tab => tab.id === group.secondTabId)?.sessionPath;
+			if (!first || !second) continue;
+			const pair = { key: `${first}|${second}`, first, second, axis: group.axis, onScreen: group === shownPair };
+			pairs.set(first, pair);
+			pairs.set(second, pair);
+		}
+		return pairs;
+	}, [tabGroups, tabs, shownPair]);
+	/** A list's sessions with each pair's rows adjacent, in pane order, where the earlier one was. */
+	const pairedOrder = (list: readonly SessionInfo[]): SessionInfo[] => {
+		const byPath = new Map(list.map(session => [session.path, session]));
+		const placed = new Set<string>();
+		const ordered: SessionInfo[] = [];
+		for (const session of list) {
+			if (placed.has(session.path)) continue;
+			const pair = sessionPairs.get(session.path);
+			const members =
+				pair && byPath.has(pair.first) && byPath.has(pair.second)
+					? [byPath.get(pair.first), byPath.get(pair.second)]
+					: [session];
+			for (const member of members) {
+				if (!member) continue;
+				placed.add(member.path);
+				ordered.push(member);
+			}
+		}
+		return ordered;
+	};
+	const [hoveredPair, setHoveredPair] = useState<string | null>(null);
 	const activeTabKind = activeTab?.kind;
 	const pinnedGroups = useSidebarPrefs(s => s.pinnedGroups);
 	const pinnedSessions = useSidebarPrefs(s => s.pinnedSessions);
@@ -339,11 +388,12 @@ export function Sidebar() {
 	const chatsCollapsed = collapsed.__chats__ ?? false;
 	const archivedCollapsed = collapsed.__archived__ ?? true;
 	// Rows in the order they are drawn: what "select all" and a ⇧-click range cover.
+	// Within a section a pair's rows are drawn together, and a ⇧-click range follows that.
 	const visibleSessions = [
-		...(mode === "work" ? workSessions : []),
-		...visibleGroups.flatMap(group => (isCollapsedGroup(group.cwd) ? [] : group.sessions)),
-		...(mode === "code" && !chatsCollapsed ? chatSessions : []),
-		...(archivedCollapsed ? [] : archivedSessions),
+		...(mode === "work" ? pairedOrder(workSessions) : []),
+		...visibleGroups.flatMap(group => (isCollapsedGroup(group.cwd) ? [] : pairedOrder(group.sessions))),
+		...(mode === "code" && !chatsCollapsed ? pairedOrder(chatSessions) : []),
+		...(archivedCollapsed ? [] : pairedOrder(archivedSessions)),
 	];
 	const selectedSessions = selection ? sessions.filter(session => selection.has(session.path)) : [];
 	const bulkLabel =
@@ -572,18 +622,47 @@ export function Sidebar() {
 	const rowActionButton =
 		"omp-sidebar-action flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--omp-dim)] hover:bg-[var(--omp-selected-bg)] hover:text-[var(--omp-text)]";
 
-	const renderSessionRow = (session: SessionInfo) => {
+	const renderSessionRow = (session: SessionInfo, inPairFrame = false) => {
 		// Sessions open in a tab list this turn's agents under them (plan/24 §3.1).
 		const tab = tabForSession(session);
-		if (!tab) return sessionRowElement(session, null);
+		if (!tab) return sessionRowElement(session, null, inPairFrame);
 		return (
 			<SessionAgentsScope key={session.path} sessionKey={session.path} tabId={tab.id}>
-				{agents => sessionRowElement(session, agents)}
+				{agents => sessionRowElement(session, agents, inPairFrame)}
 			</SessionAgentsScope>
 		);
 	};
 
-	const sessionRowElement = (session: SessionInfo, agents: SidebarAgentsInfo | null) => {
+	/** One section's rows; a pair whose two sessions are both in it shares a frame. */
+	const renderSessionRows = (list: readonly SessionInfo[]) => {
+		const ordered = pairedOrder(list);
+		const rows: ReactNode[] = [];
+		for (let index = 0; index < ordered.length; index++) {
+			const session = ordered[index];
+			if (!session) continue;
+			const pair = sessionPairs.get(session.path);
+			const partner = ordered[index + 1];
+			if (pair && partner && pair.first === session.path && pair.second === partner.path) {
+				rows.push(
+					<div
+						key={pair.key}
+						data-sidebar-pair
+						data-on-screen={pair.onScreen || undefined}
+						className="omp-sidebar-pair space-y-px"
+					>
+						{renderSessionRow(session, true)}
+						{renderSessionRow(partner, true)}
+					</div>,
+				);
+				index++;
+				continue;
+			}
+			rows.push(renderSessionRow(session));
+		}
+		return rows;
+	};
+
+	const sessionRowElement = (session: SessionInfo, agents: SidebarAgentsInfo | null, inPairFrame: boolean) => {
 		const active = session.id === sessionId;
 		const tabSignal = sessionTabSignal(session);
 		const waiting = active && awaitingConfirmation;
@@ -606,10 +685,21 @@ export function Sidebar() {
 		const recency = recencyForSession(session);
 		const selected = selection?.has(session.path) === true;
 		const SelectIcon = selected ? SquareCheck : Square;
+		// A pair split across sections can't share a frame: its rows carry a mark,
+		// and hovering one lights the other.
+		const pair = sessionPairs.get(session.path);
+		const partnerSession = pair
+			? sessions.find(entry => entry.path === (pair.first === session.path ? pair.second : pair.first))
+			: undefined;
+		const PairIcon = pair?.axis === "rows" ? Rows2 : Columns2;
 		return (
 			<div
 				key={session.path}
 				role="button"
+				data-pair-key={pair?.key}
+				data-pair-hover={(pair && !inPairFrame && hoveredPair === pair.key) || undefined}
+				onMouseEnter={pair && !inPairFrame ? () => setHoveredPair(pair.key) : undefined}
+				onMouseLeave={pair && !inPairFrame ? () => setHoveredPair(null) : undefined}
 				tabIndex={0}
 				aria-pressed={selecting ? selected : undefined}
 				aria-expanded={agents && !selecting ? agents.expanded : undefined}
@@ -697,6 +787,18 @@ export function Sidebar() {
 				</span>
 				{pinned && (
 					<Pin size={11} className="mr-1.5 shrink-0 text-[var(--omp-dim)]" aria-label={t("sidebar.pinned")} />
+				)}
+				{pair && !inPairFrame && (
+					<PairIcon
+						size={11}
+						className={cx(
+							"mr-1.5 shrink-0",
+							pair.onScreen ? "text-[var(--omp-accent)]" : "text-[var(--omp-dim)]",
+						)}
+						aria-label={t("sidebar.pairedWith", {
+							title: partnerSession ? sessionDisplayTitle(partnerSession, t("sidebar.untitled")) : "",
+						})}
+					/>
 				)}
 				{renaming ? (
 					<input
@@ -1145,7 +1247,7 @@ export function Sidebar() {
 					)}
 					{mode === "work" && workSessions.length > 0 && (
 						<div className="space-y-px" data-work-section>
-							{workSessions.map(session => renderSessionRow(session))}
+							{renderSessionRows(workSessions)}
 						</div>
 					)}
 					{visibleGroups.map(group => {
@@ -1220,7 +1322,7 @@ export function Sidebar() {
 								{!groupCollapsed && (
 									<div className="omp-sidebar-group" data-session-group={group.cwd} data-state="expanded">
 										<div className="omp-sidebar-group-content space-y-px">
-											{group.sessions.map(session => renderSessionRow(session))}
+											{renderSessionRows(group.sessions)}
 										</div>
 									</div>
 								)}
@@ -1239,9 +1341,7 @@ export function Sidebar() {
 							})}
 							{!chatsCollapsed && (
 								<div className="omp-sidebar-group" data-session-group="__chats__" data-state="expanded">
-									<div className="omp-sidebar-group-content space-y-px">
-										{chatSessions.map(session => renderSessionRow(session))}
-									</div>
+									<div className="omp-sidebar-group-content space-y-px">{renderSessionRows(chatSessions)}</div>
 								</div>
 							)}
 						</div>
@@ -1259,7 +1359,7 @@ export function Sidebar() {
 							{!archivedCollapsed && (
 								<div className="omp-sidebar-group" data-session-group="__archived__" data-state="expanded">
 									<div className="omp-sidebar-group-content space-y-px">
-										{archivedSessions.map(session => renderSessionRow(session))}
+										{renderSessionRows(archivedSessions)}
 									</div>
 								</div>
 							)}

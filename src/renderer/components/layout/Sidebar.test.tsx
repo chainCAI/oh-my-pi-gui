@@ -836,6 +836,59 @@ describe("Sidebar menus and pinned ordering", () => {
 	});
 });
 
+describe("Sidebar split pairs (gui#30)", () => {
+	const titles = (root: ParentNode, selector: string) =>
+		[...root.querySelectorAll(selector)].map(el => el.querySelector(".omp-sidebar-title")?.textContent ?? "");
+
+	it("draws a pair's sessions together in one frame and marks a pair whose partner is listed elsewhere", async () => {
+		installMockOmp([
+			session("/work/alpha/newest.jsonl", "/work/alpha", { modified: "2026-01-05T00:00:00Z" }),
+			...LIST,
+		]);
+		seedStores();
+		const tab = (id: string, sessionPath: string) => ({
+			id,
+			cwd: "/work/alpha",
+			status: "ready" as const,
+			kind: "agent" as const,
+			unreadDone: false,
+			sessionPath,
+		});
+		const shown = { axis: "columns" as const, firstTabId: "t1", secondTabId: "t0", ratio: 0.5 };
+		useTabsStore.setState({
+			tabs: [
+				tab("t0", "/work/alpha/newest.jsonl"),
+				tab("t1", "/work/alpha/two.jsonl"),
+				tab("t2", "/work/alpha/one.jsonl"),
+				tab("t3", "/work/beta/three.jsonl"),
+			],
+			activeTabId: "t0",
+			groups: [shown, { axis: "rows", firstTabId: "t2", secondTabId: "t3", ratio: 0.5 }],
+			split: shown,
+		});
+		await mount(<Sidebar />);
+
+		// The pair takes the place of its more recent session, in pane order.
+		expect(titles(document, '[data-session-group="/work/alpha"] .omp-sidebar-session-row')).toEqual([
+			"Session /work/alpha/two.jsonl",
+			"Session /work/alpha/newest.jsonl",
+			"Session /work/alpha/one.jsonl",
+		]);
+		const frames = [...document.querySelectorAll("[data-sidebar-pair]")];
+		expect(frames).toHaveLength(1);
+		expect(frames[0]?.getAttribute("data-on-screen")).toBe("true");
+		expect(titles(frames[0] as ParentNode, ".omp-sidebar-session-row")).toEqual([
+			"Session /work/alpha/two.jsonl",
+			"Session /work/alpha/newest.jsonl",
+		]);
+		// Its partner sits in another workspace: the row names it instead.
+		const one = [...document.querySelectorAll(".omp-sidebar-session-row")].find(el =>
+			(el.textContent ?? "").includes("alpha/one"),
+		);
+		expect(one?.querySelector('[aria-label="Split with “Session /work/beta/three.jsonl”"]')).not.toBeNull();
+	});
+});
+
 describe("Sidebar bulk selection", () => {
 	const row = (title: string) =>
 		[...document.querySelectorAll(".omp-sidebar-session-row")].find(el =>

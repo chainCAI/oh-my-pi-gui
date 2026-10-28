@@ -24,6 +24,10 @@ export type DiffScope = "repository" | "current" | "timeline" | "artifacts";
 /** Center-dock card identifiers: todo/plan/agents render as live cards above the composer. */
 export type DockCardId = "todo" | "plan" | "agents";
 export type TranscriptDetail = "compact" | "full";
+/** Chip size on the tab strip (Settings → GUI → Tab bar). */
+export type TabWidth = "compact" | "default" | "wide";
+/** One scrolling row of tabs, or up to three wrapped rows. */
+export type TabRows = "single" | "multi";
 
 export interface GuiDisplayPreferences {
 	hideThinkingBlock?: boolean | null;
@@ -141,6 +145,8 @@ interface UiStore {
 	sidebarQuotas: boolean;
 	/** Transcript density: compact folds reasoning/tools; full shows every step. */
 	transcriptDetail: TranscriptDetail;
+	tabWidth: TabWidth;
+	tabRows: TabRows;
 	/** Expand/collapse-all signal for tool cards (⌃O); `seq` bumps per toggle so cards re-sync their local state. */
 	toolsExpandAll: { expanded: boolean; seq: number };
 	toggleSidebar: () => void;
@@ -266,6 +272,8 @@ interface UiStore {
 	setThinkingExpanded: (enabled: boolean) => void;
 	setSidebarQuotas: (enabled: boolean) => void;
 	setTranscriptDetail: (detail: TranscriptDetail) => void;
+	setTabWidth: (width: TabWidth) => void;
+	setTabRows: (rows: TabRows) => void;
 	/**
 	 * User keybinding overrides (B3 remap layer): actionId → replacement chord
 	 * list, compiled with the defaults in lib/keymap.ts into the keydown
@@ -302,6 +310,8 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	thinkingExpanded: false,
 	sidebarQuotas: false,
 	transcriptDetail: "compact",
+	tabWidth: "default",
+	tabRows: "single",
 	toggleSidebar: () => set({ sidebarVisible: !get().sidebarVisible }),
 	// The bare toggle (title bar, shortcut) opens on Overview; links that open the
 	// drawer for a reason (Review, a file, /btw) go through setPanelTab instead.
@@ -546,6 +556,8 @@ export const useUiStore = create<UiStore>()((set, get) => ({
 	setThinkingExpanded: enabled => set({ thinkingExpanded: enabled }),
 	setSidebarQuotas: enabled => set({ sidebarQuotas: enabled }),
 	setTranscriptDetail: detail => set({ transcriptDetail: detail }),
+	setTabWidth: width => set({ tabWidth: width }),
+	setTabRows: rows => set({ tabRows: rows }),
 	keymapOverrides: {} as KeymapOverrides,
 	keymapHydrated: false,
 	hydrateKeymap: async () => {

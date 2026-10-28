@@ -503,6 +503,23 @@ kbd,
 	background: var(--omp-sidebar-item-hover);
 }
 
+/* A split pair's sessions (gui#30): one frame around both rows, like the
+   pair's merged tab chip, brighter while the pair is on screen. An outline
+   keeps the rows' own geometry lined up with every other row. */
+.omp-sidebar-pair {
+	border-radius: 0.5rem;
+	outline: 1px solid var(--omp-border-muted);
+	outline-offset: -1px;
+}
+.omp-sidebar-pair[data-on-screen] {
+	outline-color: var(--omp-border);
+}
+
+/* A pair split across sections: hovering one row lights its partner. */
+.omp-sidebar-session-row[data-pair-hover] {
+	background: var(--omp-sidebar-item-hover);
+}
+
 .omp-sidebar-session-actions,
 .omp-sidebar-workspace-actions {
 	position: absolute;

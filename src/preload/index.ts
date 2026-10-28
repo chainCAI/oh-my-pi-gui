@@ -28,12 +28,14 @@ import type {
 	IpcResolvedPath,
 	IpcSessionOpenNewWindowPayload,
 	IpcSessionOwner,
+	IpcSetTabOrderPayload,
 	IpcSetTabViewPayload,
 	IpcSidecarRestartPayload,
 	IpcSidecarStatusPayload,
 	IpcSpawnTabPayload,
 	IpcSpawnTabResult,
 	IpcStatsUrlResult,
+	IpcTabGroup,
 	IpcTabInfo,
 	IpcTabStatusPayload,
 	IpcTerminalFramePayload,
@@ -349,14 +351,15 @@ const api: OmpApi = {
 			if (switched) activeTabId = tabId;
 			return switched;
 		},
-		setView: async (focusedTabId: string, visibleTabIds: string[], split?: IpcSetTabViewPayload["split"]) => {
-			const switched = (await ipcRenderer.invoke(IPC_COMMANDS.SET_TAB_VIEW, {
-				focusedTabId,
-				visibleTabIds,
-				split,
-			})) as boolean;
+		setView: async (focusedTabId: string, visibleTabIds: string[], groups?: IpcTabGroup[]) => {
+			const payload: IpcSetTabViewPayload = { focusedTabId, visibleTabIds, groups };
+			const switched = (await ipcRenderer.invoke(IPC_COMMANDS.SET_TAB_VIEW, payload)) as boolean;
 			if (switched) activeTabId = focusedTabId;
 			return switched;
+		},
+		setOrder: (tabIds: string[]) => {
+			const payload: IpcSetTabOrderPayload = { tabIds };
+			return ipcRenderer.invoke(IPC_COMMANDS.SET_TAB_ORDER, payload) as Promise<boolean>;
 		},
 		getSessionOwner: (sessionPath: string) =>
 			ipcRenderer.invoke(IPC_COMMANDS.GET_SESSION_OWNER, { sessionPath }) as Promise<IpcSessionOwner | null>,

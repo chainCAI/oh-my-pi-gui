@@ -2,8 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Drag a tab to reorder the tab bar; the order is kept after a restart, and a split pair moves as one ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
+- **Tab bar** settings in Settings → GUI: compact, default or wide tabs, and an option to wrap tabs onto up to three rows instead of scrolling ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
+- An all-tabs button at the end of the tab bar counts the tabs scrolled out of view and opens a searchable list of every tab ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
+- Tab shortcuts: ⌘1–⌘9 select a tab (⌘9 the last), ⌃Tab and ⌃⇧Tab go to the next or previous tab, and ⌥⇧⌘← / ⌥⇧⌘→ move the current tab ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
+
 ### Changed
 
+- Split view keeps its pairs: two split tabs merge into one chip in the tab bar and one frame in the sidebar, and selecting either shows both. Selecting another tab shows it alone without undoing the pair, a window can hold several pairs, and all of them come back after a restart. Right-click a tab for **Split with…** to pick its partner or **Separate pair** to undo it, and drop a tab on one pane of a shown pair to put it there instead ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).
 - Opening a session from the sidebar, or a new tab with ⌘T, in a workspace you already have open no longer waits for omp to start: an idle agent is kept running there and the tab takes it over instead of starting its own. A session whose saved model is gone still opens, on the default model ([#29](https://github.com/nornzach/oh-my-pi-gui/issues/29)).
 
 ## [0.9.31] - 2026-10-28

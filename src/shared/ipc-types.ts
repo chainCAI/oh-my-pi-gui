@@ -256,6 +256,8 @@ export const IPC_COMMANDS = {
 	SET_ACTIVE_TAB: "tab:set-active",
 	/** Atomically set the focused tab and the one or two tabs receiving full event streams. */
 	SET_TAB_VIEW: "tab:set-view",
+	/** Reorder the calling window's tabs (strip order, restored on the next launch). */
+	SET_TAB_ORDER: "tab:set-order",
 	/** List the calling window's tabs (boot reconciliation) */
 	GET_TABS: "tab:get-all",
 	/** Look up the tab/window currently attached to a session file (F-OWN double-attach guard) */
@@ -923,8 +925,8 @@ export interface IpcTabInfo {
 	active?: boolean;
 	/** Present on GET_TABS for the one or two tabs whose full stream is visible. */
 	visible?: boolean;
-	/** Restored split geometry for this visible tab. */
-	split?: { axis: "columns" | "rows"; index: 0 | 1; ratio: number };
+	/** This tab's split pair: its pane (0 = left/top) and its partner. */
+	group?: { axis: "columns" | "rows"; index: 0 | 1; ratio: number; partnerTabId: string };
 	/** True while automatic transcript compaction is mutating this session. */
 	compacting?: boolean;
 	/** Immutable session kind, fixed when the tab's sidecar was spawned. */
@@ -1091,10 +1093,24 @@ export interface IpcSetActiveTabPayload {
 	tabId: string;
 }
 
+/** Two tabs shown side by side whenever either is selected (gui#30). */
+export interface IpcTabGroup {
+	axis: "columns" | "rows";
+	/** The left (columns) or top (rows) pane. */
+	firstTabId: string;
+	secondTabId: string;
+	ratio: number;
+}
+
 export interface IpcSetTabViewPayload {
 	focusedTabId: string;
 	visibleTabIds: string[];
-	split?: { axis: "columns" | "rows"; firstTabId: string; secondTabId: string; ratio: number };
+	/** The window's split pairs; omitted keeps the ones main already has. */
+	groups?: IpcTabGroup[];
+}
+
+export interface IpcSetTabOrderPayload {
+	tabIds: string[];
 }
 
 export interface IpcSidecarRestartPayload {
@@ -1505,8 +1521,10 @@ export interface OmpApi {
 		close(tabId: string): Promise<boolean>;
 		/** Move full event forwarding to this tab. False when unknown or foreign. */
 		setActive(tabId: string): Promise<boolean>;
-		/** Set the focused tab plus the one or two tabs rendered by the window. */
-		setView(focusedTabId: string, visibleTabIds: string[], split?: IpcSetTabViewPayload["split"]): Promise<boolean>;
+		/** Set the focused tab plus the one or two tabs rendered by the window, and its split pairs. */
+		setView(focusedTabId: string, visibleTabIds: string[], groups?: IpcTabGroup[]): Promise<boolean>;
+		/** Reorder this window's tabs. False when the window has none. */
+		setOrder(tabIds: string[]): Promise<boolean>;
 		/** The tab/window currently attached to a session file, if any (F-OWN). */
 		getSessionOwner(sessionPath: string): Promise<IpcSessionOwner | null>;
 	};

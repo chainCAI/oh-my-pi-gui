@@ -20,16 +20,21 @@ export interface PersistedTabDescriptor {
 	title?: string;
 }
 
+/** Two tabs shown side by side whenever either is selected (gui#30). */
+export interface PersistedTabGroup {
+	axis: "columns" | "rows";
+	firstIndex: number;
+	secondIndex: number;
+	ratio: number;
+}
+
 export interface PersistedTabLayout {
 	version: typeof TAB_LAYOUT_VERSION;
 	tabs: PersistedTabDescriptor[];
 	activeIndex: number;
-	split?: {
-		axis: "columns" | "rows";
-		firstIndex: number;
-		secondIndex: number;
-		ratio: number;
-	};
+	groups?: PersistedTabGroup[];
+	/** The single on-screen split saved before gui#30; read once into `groups`. */
+	split?: PersistedTabGroup;
 }
 
 export interface TabLayoutPathChecks {
@@ -146,36 +151,42 @@ export function sanitizePersistedTabLayout(
 	let activeIndex = effective.findIndex(entry => entry.sourceIndex === requestedActiveIndex);
 	if (activeIndex < 0) activeIndex = effective.findIndex(entry => entry.sourceIndex > requestedActiveIndex);
 	if (activeIndex < 0) activeIndex = effective.length - 1;
-	let split: PersistedTabLayout["split"];
-	if (isRecord(value.split)) {
-		const axis = value.split.axis;
-		const firstSourceIndex = value.split.firstIndex;
-		const secondSourceIndex = value.split.secondIndex;
-		const ratio = value.split.ratio;
-		const firstIndex = effective.findIndex(entry => entry.sourceIndex === firstSourceIndex);
-		const secondIndex = effective.findIndex(entry => entry.sourceIndex === secondSourceIndex);
+	const groups: PersistedTabGroup[] = [];
+	const paired = new Set<number>();
+	const legacySplit = !Array.isArray(value.groups) && isRecord(value.split);
+	const candidates: unknown[] = Array.isArray(value.groups) ? value.groups : legacySplit ? [value.split] : [];
+	for (const candidate of candidates) {
+		if (!isRecord(candidate)) continue;
+		const { axis, ratio } = candidate;
+		const firstIndex = effective.findIndex(entry => entry.sourceIndex === candidate.firstIndex);
+		const secondIndex = effective.findIndex(entry => entry.sourceIndex === candidate.secondIndex);
 		if (
-			(axis === "columns" || axis === "rows") &&
-			firstIndex >= 0 &&
-			secondIndex >= 0 &&
-			firstIndex !== secondIndex &&
-			typeof ratio === "number" &&
-			Number.isFinite(ratio)
-		) {
-			// Both panes survived but the persisted focus was dropped (e.g. its
-			// cwd vanished): keep the split and refocus a pane — discarding the
-			// whole split here would also be re-persisted on restore, permanently
-			// forgetting the layout after one bad launch.
-			if (activeIndex !== firstIndex && activeIndex !== secondIndex) activeIndex = firstIndex;
-			split = { axis, firstIndex, secondIndex, ratio: Math.min(0.8, Math.max(0.2, ratio)) };
-		}
+			(axis !== "columns" && axis !== "rows") ||
+			firstIndex < 0 ||
+			secondIndex < 0 ||
+			firstIndex === secondIndex ||
+			paired.has(firstIndex) ||
+			paired.has(secondIndex) ||
+			typeof ratio !== "number" ||
+			!Number.isFinite(ratio)
+		)
+			continue;
+		paired.add(firstIndex);
+		paired.add(secondIndex);
+		groups.push({ axis, firstIndex, secondIndex, ratio: Math.min(0.8, Math.max(0.2, ratio)) });
 	}
+	// The old single split was always on screen. When its persisted focus was
+	// dropped (e.g. its cwd vanished) but both panes survived, refocus a pane
+	// so the launch still opens on the split instead of a neighbor.
+	const legacy = legacySplit ? groups[0] : undefined;
+	if (legacy && activeIndex !== legacy.firstIndex && activeIndex !== legacy.secondIndex)
+		activeIndex = legacy.firstIndex;
 
 	return {
 		version: TAB_LAYOUT_VERSION,
 		tabs: effective.map(entry => entry.descriptor),
 		activeIndex,
-		...(split ? { split } : {}),
+		...(groups.length > 0 ? { groups } : {}),
 	};
 }
 
