@@ -2,15 +2,18 @@ import { Check, Pencil, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../lib/i18n";
 import {
+	actionChords,
 	chordFromEvent,
 	chordOwner,
 	detectConflicts,
 	type HotkeyGroupId,
+	IS_MAC,
 	KEYMAP_ACTION_BY_ID,
 	KEYMAP_ACTIONS,
 	type KeymapActionId,
 	type KeymapConflict,
 	keymapActionsForGroup,
+	platformChord,
 	type ReservedChordGroup,
 	reservedChordsForGroup,
 } from "../../lib/keymap";
@@ -85,15 +88,17 @@ const HOTKEY_GROUPS: HotkeyGroup[] = [
 		rows: [
 			...remapRows("view"),
 			{ keys: "Enter / ⇧Enter", labelKey: "hotkeys.row.findStep" },
-			{ keys: "⌘G / ⇧⌘G", labelKey: "hotkeys.row.findStepMenu" },
+			// The menu's accelerators: ⌘G on macOS, F3 elsewhere (main/menu.ts).
+			{ keys: IS_MAC ? "⌘G / ⇧⌘G" : "F3 / ⇧F3", labelKey: "hotkeys.row.findStepMenu" },
 		],
 	},
 	{
 		titleKey: "hotkeys.group.sidebar",
 		rows: [
-			{ keys: "⌘-click", labelKey: "hotkeys.row.sidebarToggleSelect" },
+			// The sidebar takes either modifier; each platform is shown its own.
+			{ keys: IS_MAC ? "⌘-click" : "⌃-click", labelKey: "hotkeys.row.sidebarToggleSelect" },
 			{ keys: "⇧-click", labelKey: "hotkeys.row.sidebarRangeSelect" },
-			{ keys: "⌘A", labelKey: "hotkeys.row.sidebarSelectAll" },
+			{ keys: platformChord("⌘A"), labelKey: "hotkeys.row.sidebarSelectAll" },
 			{ keys: "⌫", labelKey: "hotkeys.row.sidebarDeleteSelected" },
 			{ keys: "Esc", labelKey: "hotkeys.row.sidebarEndSelect" },
 		],
@@ -181,7 +186,7 @@ export function HotkeysDialog({ open }: { open: boolean }) {
 				const action = KEYMAP_ACTION_BY_ID[row.actionId];
 				return {
 					label: t(action.labelKey),
-					keys: (overrides[action.id] ?? action.defaults).join(" / "),
+					keys: actionChords(action, overrides).join(" / "),
 					actionId: row.actionId,
 				};
 			}

@@ -479,12 +479,12 @@ export function App() {
 					ui.toggleToolsExpandAll();
 					return;
 				case "thinking.toggle": {
-					// ⌃T — show/hide thinking blocks (TUI app.thinking.toggle).
+					// ⌃T (⌥⇧T off macOS) — show/hide thinking blocks (TUI app.thinking.toggle).
 					void setDisplayPreference("hideThinkingBlock", !readDisplayPreference("hideThinkingBlock"));
 					return;
 				}
 				case "tab.new":
-					// ⌘T — new agent tab (type chosen at creation, immutable).
+					// ⌘T (⌃T off macOS) — new agent tab (type chosen at creation, immutable).
 					void useTabsStore.getState().openTab();
 					return;
 				case "tab.newChat":

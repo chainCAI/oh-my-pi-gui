@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { I18nProvider } from "../../lib/i18n";
-import { KEYMAP_ACTIONS, RESERVED_CHORDS } from "../../lib/keymap";
+import { defaultChords, KEYMAP_ACTIONS, RESERVED_CHORDS } from "../../lib/keymap";
 import { useUiStore } from "../../stores/ui";
 import { HotkeysDialog } from "./HotkeysDialog";
 
@@ -62,7 +62,7 @@ describe("HotkeysDialog", () => {
 		await mount();
 		const chords = displayedChords();
 		for (const action of KEYMAP_ACTIONS) {
-			const displayed = action.defaults.join(" / ");
+			const displayed = defaultChords(action).join(" / ");
 			expect(
 				chords.filter(chord => chord === displayed),
 				action.id,

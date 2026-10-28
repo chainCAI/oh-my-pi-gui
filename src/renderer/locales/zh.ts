@@ -92,8 +92,8 @@ export const zh: Record<string, string> = {
 	// 会话标签页栏(TabBar)
 	"tabs.strip": "会话标签页",
 	"tabs.actions": "标签页操作",
-	"tabs.new.agentHint": "新建代理标签页（⌘T）",
-	"tabs.new.chatHint": "新建聊天标签页——无工具纯对话（⇧⌘T）",
+	"tabs.new.agentHint": "新建代理标签页（{chord}）",
+	"tabs.new.chatHint": "新建聊天标签页——无工具纯对话（{chord}）",
 	"tabs.new.agent": "新建代理标签页",
 	"tabs.new.chat": "新建聊天标签页",
 	"tabs.new.worktree": "新建 Worktree 标签页",

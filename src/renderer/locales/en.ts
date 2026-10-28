@@ -96,8 +96,8 @@ export const en: Record<string, string> = {
 	"tabs.actions": "Tab actions",
 	// Session tab strip (TabBar)
 	"tabs.strip": "Session tabs",
-	"tabs.new.agentHint": "New agent tab (⌘T)",
-	"tabs.new.chatHint": "New chat tab — tool-free conversation (⇧⌘T)",
+	"tabs.new.agentHint": "New agent tab ({chord})",
+	"tabs.new.chatHint": "New chat tab — tool-free conversation ({chord})",
 	"tabs.new.agent": "New Agent Tab",
 	"tabs.new.chat": "New Chat Tab",
 	"tabs.new.worktree": "New Worktree Tab",

@@ -42,7 +42,7 @@ import {
 import { useSessionList } from "../../hooks/use-session-list";
 import { basename, cx } from "../../lib/format";
 import { useT } from "../../lib/i18n";
-import { onEscape } from "../../lib/keymap";
+import { actionChords, KEYMAP_ACTION_BY_ID, onEscape } from "../../lib/keymap";
 import { sessionHasContent } from "../../lib/session-title";
 import { scrollStripOnWheel } from "../../lib/strip-scroll";
 import { type LiveTabRuntime, performTabClose, tabNeedsCloseConfirm } from "../../lib/tab-close";
@@ -869,12 +869,15 @@ function NewTabMenu({ buttonClass }: { buttonClass: string }) {
 	const t = useT();
 	const openTab = useTabsStore(s => s.openTab);
 	const openWorktreeDialog = useUiStore(s => s.openWorktreeDialog);
+	const keymapOverrides = useUiStore(s => s.keymapOverrides);
+	const [agentChord = ""] = actionChords(KEYMAP_ACTION_BY_ID["tab.new"], keymapOverrides);
+	const [chatChord = ""] = actionChords(KEYMAP_ACTION_BY_ID["tab.newChat"], keymapOverrides);
 	return (
 		<>
 			<button
 				type="button"
 				aria-label={t("tabs.new.agent")}
-				title={t("tabs.new.agentHint")}
+				title={t("tabs.new.agentHint", { chord: agentChord })}
 				onClick={() => void openTab()}
 				className={buttonClass}
 			>
@@ -883,7 +886,7 @@ function NewTabMenu({ buttonClass }: { buttonClass: string }) {
 			<button
 				type="button"
 				aria-label={t("tabs.new.chat")}
-				title={t("tabs.new.chatHint")}
+				title={t("tabs.new.chatHint", { chord: chatChord })}
 				onClick={() => void openTab({ kind: "chat" })}
 				className={buttonClass}
 			>

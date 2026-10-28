@@ -22,6 +22,10 @@
  * meta/super — joined by "+" or "-" ("ctrl+shift+p", "Control-Shift-P").
  * Every chord needs a real modifier (⌃/⌥/⌘): an unmodified key would eat
  * typing app-wide and a shift-only chord would hijack capital letters.
+ *
+ * Defaults are spelled for macOS. Off macOS ⌘ is the Windows/Super key, which
+ * the OS keeps for itself, so a default's ⌘ becomes ⌃ there (Electron's
+ * CmdOrCtrl); user bindings are taken literally on every platform.
  */
 
 import { type Chord, serializeChord } from "../../shared/chord";
@@ -40,8 +44,13 @@ export interface KeymapAction {
 	readonly id: string;
 	/** i18n key for the row label in HotkeysDialog. */
 	readonly labelKey: string;
-	/** Canonical default chords (first is the primary display chord). */
+	/** Canonical default chords (first is the primary display chord), as macOS spells them. */
 	readonly defaults: readonly string[];
+	/**
+	 * Defaults off macOS, for an action whose ⌃ chord is another action's ⌘
+	 * chord there once that becomes ⌃.
+	 */
+	readonly offMacDefaults?: readonly string[];
 	/**
 	 * True = fires even while an overlay/dialog owns the keyboard or a focused
 	 * control consumed the key — the pre-B3 behavior of the unguarded ⌘ block
@@ -66,6 +75,9 @@ export interface ReservedChord {
 
 /** actionId → replacement chord list (canonical or aliased; sanitized on hydration). */
 export type KeymapOverrides = Record<string, string[]>;
+
+/** Whether this renderer runs on macOS, where ⌘ is the command key. */
+export const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
 const MOD_SYMBOLS: Record<string, "ctrl" | "alt" | "shift" | "meta"> = {
 	"⌃": "ctrl",
@@ -226,9 +238,11 @@ export const KEYMAP_ACTIONS = [
 		hotkeyGroup: "view",
 	},
 	{
+		// Off macOS ⌃T is a new tab (⌘T), as in a browser.
 		id: "thinking.toggle",
 		labelKey: "hotkeys.row.thinkingToggle",
 		defaults: ["⌃T"],
+		offMacDefaults: ["⌥⇧T"],
 		overlaySafe: false,
 		hotkeyGroup: "generation",
 	},
@@ -345,16 +359,40 @@ const COMPOSER_CHORDS: readonly ReservedChord[] = [
 	{ id: "composer.editor", labelKey: "hotkeys.row.composerEditor", chord: "⌃G", hotkeyGroup: "input" },
 ];
 
-/** Every chord the GUI already owns that the registry cannot dispatch. */
-export const RESERVED_CHORDS: readonly ReservedChord[] = [
-	...COMPOSER_CHORDS,
-	...NATIVE_CHORDS.map(entry => ({
-		id: entry.id,
-		labelKey: entry.labelKey,
-		chord: entry.chord,
-		hotkeyGroup: "native" as const,
-	})),
-];
+/** `chord` as the platform's keyboard has it: off macOS a default's ⌘ is ⌃. */
+export function platformChord(chord: string, mac = IS_MAC): string {
+	const parsed = parseChord(chord);
+	if (mac || !parsed?.meta) return chord;
+	return serializeChord({ ...parsed, ctrl: true, meta: false });
+}
+
+/** An action's default chords on this platform. */
+export function defaultChords(action: KeymapAction, mac = IS_MAC): readonly string[] {
+	if (mac) return action.defaults;
+	return [...new Set((action.offMacDefaults ?? action.defaults).map(chord => platformChord(chord, false)))];
+}
+
+/** The chords that fire an action: the user's binding, else its platform defaults. */
+export function actionChords(action: KeymapAction, overrides: KeymapOverrides, mac = IS_MAC): readonly string[] {
+	const userChords = overrides[action.id];
+	return userChords?.length ? userChords : defaultChords(action, mac);
+}
+
+/** Every chord the GUI already owns that the registry cannot dispatch. The
+ *  native accelerators are CmdOrCtrl, so their ⌘ follows the platform too. */
+export function reservedChords(mac = IS_MAC): readonly ReservedChord[] {
+	return [
+		...COMPOSER_CHORDS,
+		...NATIVE_CHORDS.map(entry => ({
+			id: entry.id,
+			labelKey: entry.labelKey,
+			chord: platformChord(entry.chord, mac),
+			hotkeyGroup: "native" as const,
+		})),
+	];
+}
+
+export const RESERVED_CHORDS: readonly ReservedChord[] = reservedChords();
 
 /** Rows the reference dialog files under a group, in registry order. */
 export function keymapActionsForGroup<const Group extends HotkeyGroupId>(
@@ -404,11 +442,12 @@ export const KEYMAP_ACTION_BY_ID: Readonly<Record<KeymapActionId, KeymapAction>>
 export function compileKeymap<A extends KeymapAction>(
 	actions: readonly A[],
 	overrides: KeymapOverrides,
+	mac = IS_MAC,
 ): Map<string, A["id"]> {
 	const map = new Map<string, A["id"]>();
 	for (const action of actions) {
 		if (overrides[action.id]?.length) continue; // replaced, not merged
-		for (const raw of action.defaults) {
+		for (const raw of defaultChords(action, mac)) {
 			const parsed = parseChord(raw);
 			if (parsed) map.set(serializeChord(parsed), action.id);
 		}
@@ -446,16 +485,17 @@ export interface KeymapConflict {
 export function detectConflicts(
 	actions: readonly KeymapAction[],
 	overrides: KeymapOverrides,
-	reserved: readonly ReservedChord[] = RESERVED_CHORDS,
+	mac = IS_MAC,
+	reserved: readonly ReservedChord[] = reservedChords(mac),
 ): KeymapConflict[] {
-	const defaultChords = new Map<string, Set<string>>();
+	const liveDefaults = new Map<string, Set<string>>();
 	for (const action of actions) {
 		const chords = new Set<string>();
-		for (const raw of action.defaults) {
+		for (const raw of defaultChords(action, mac)) {
 			const parsed = parseChord(raw);
 			if (parsed) chords.add(serializeChord(parsed));
 		}
-		defaultChords.set(action.id, chords);
+		liveDefaults.set(action.id, chords);
 	}
 	const userClaims = new Map<string, string[]>();
 	for (const action of actions) {
@@ -482,7 +522,7 @@ export function detectConflicts(
 		for (const action of actions) {
 			if (action.id === userAction) continue;
 			if (overrides[action.id]?.length) continue; // that action's defaults were replaced — dead
-			if (defaultChords.get(action.id)?.has(chord)) {
+			if (liveDefaults.get(action.id)?.has(chord)) {
 				conflicts.push({ kind: "warning", chord, actionIds: [userAction, action.id] });
 			}
 		}

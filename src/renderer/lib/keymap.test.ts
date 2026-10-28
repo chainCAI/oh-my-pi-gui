@@ -15,11 +15,12 @@ import { NATIVE_CHORDS } from "../../shared/hotkeys";
 import {
 	chordFromEvent,
 	compileKeymap,
+	defaultChords,
 	detectConflicts,
 	KEYMAP_ACTIONS,
 	keymapActionsForGroup,
 	parseChord,
-	RESERVED_CHORDS,
+	reservedChords,
 	reservedChordsForGroup,
 	sanitizeOverrides,
 	serializeChord,
@@ -124,7 +125,7 @@ describe("chordFromEvent", () => {
 
 describe("compileKeymap", () => {
 	it("maps every default chord to its action when there are no overrides", () => {
-		const map = compileKeymap(KEYMAP_ACTIONS, {});
+		const map = compileKeymap(KEYMAP_ACTIONS, {}, true);
 		expect(map.get("⌃O")).toBe("tools.expand");
 		expect(map.get("⇧⌃P")).toBe("model.cycleBackward");
 		expect(map.get("⌥↑")).toBe("dequeue");
@@ -133,7 +134,7 @@ describe("compileKeymap", () => {
 	});
 
 	it("replaces an action's defaults with its override — never a union", () => {
-		const map = compileKeymap(KEYMAP_ACTIONS, { "tools.expand": ["ctrl+shift+o"] });
+		const map = compileKeymap(KEYMAP_ACTIONS, { "tools.expand": ["ctrl+shift+o"] }, true);
 		expect(map.get("⇧⌃O")).toBe("tools.expand");
 		// The old default chord is dead…
 		expect(map.has("⌃O")).toBe(false);
@@ -144,6 +145,21 @@ describe("compileKeymap", () => {
 	it("lets an explicit user chord win a shadowed default slot", () => {
 		const map = compileKeymap(KEYMAP_ACTIONS, { retry: ["ctrl+o"] });
 		expect(map.get("⌃O")).toBe("retry");
+	});
+
+	it("turns the defaults' ⌘ into ⌃ off macOS, where ⌘ is the Windows key", () => {
+		// Windows keeps Win+T and Win+1…9 for itself, so ⌘ defaults never fired
+		// there. ⌃T becomes the new tab, as in a browser, which moves thinking.
+		const offMac = compileKeymap(KEYMAP_ACTIONS, {}, false);
+		expect(offMac.get("⌃T")).toBe("tab.new");
+		expect(offMac.get("⌃W")).toBe("tab.close");
+		expect(offMac.get("⌃1")).toBe("tab.select");
+		expect(offMac.get("⌥⇧⌃←")).toBe("tab.moveLeft");
+		expect(offMac.get("⌥⇧T")).toBe("thinking.toggle");
+		expect([...offMac.keys()].filter(chord => chord.includes("⌘"))).toEqual([]);
+		const mac = compileKeymap(KEYMAP_ACTIONS, {}, true);
+		expect(mac.get("⌘T")).toBe("tab.new");
+		expect(mac.get("⌃T")).toBe("thinking.toggle");
 	});
 });
 
@@ -171,8 +187,12 @@ describe("detectConflicts", () => {
 	it("blocks a binding on a chord the native layer already registers", () => {
 		// Electron resolves the menu/global accelerator before the renderer sees
 		// the keydown, so such a binding could never fire.
-		expect(detectConflicts(KEYMAP_ACTIONS, { retry: ["⌘N"] })).toEqual([
+		expect(detectConflicts(KEYMAP_ACTIONS, { retry: ["⌘N"] }, true)).toEqual([
 			{ kind: "error", chord: "⌘N", actionIds: ["retry", "session.new"] },
+		]);
+		// The accelerator is CmdOrCtrl: off macOS the menu takes ⌃N instead.
+		expect(detectConflicts(KEYMAP_ACTIONS, { retry: ["⌃N"] }, false)).toEqual([
+			{ kind: "error", chord: "⌃N", actionIds: ["retry", "session.new"] },
 		]);
 	});
 
@@ -199,17 +219,21 @@ describe("hotkey reference table", () => {
 		expect([...seen].sort()).toEqual(KEYMAP_ACTIONS.map(action => action.id).sort());
 	});
 
-	it("gives every chord the app owns exactly one claimant", () => {
+	it.each([
+		["macOS", true],
+		["Windows and Linux", false],
+	])("gives every chord the app owns exactly one claimant on %s", (_platform, mac) => {
 		// Two owners of one chord is a dead binding: the compiled map lets the
 		// later action win, and a default landing on the composer's ⌃R or a menu
-		// accelerator never reaches the renderer at all.
+		// accelerator never reaches the renderer at all. Off macOS a ⌘ default
+		// turns into ⌃ and can land on another action's ⌃ default.
 		const claims = [
-			...KEYMAP_ACTIONS.flatMap(action => action.defaults.map(chord => ({ id: action.id, chord }))),
-			...RESERVED_CHORDS.map(entry => ({ id: entry.id, chord: entry.chord })),
+			...KEYMAP_ACTIONS.flatMap(action => defaultChords(action, mac).map(chord => ({ id: action.id, chord }))),
+			...reservedChords(mac).map(entry => ({ id: entry.id, chord: entry.chord })),
 		];
 		for (const claim of claims) expect(canonical(claim.chord), `"${claim.chord}"`).toBe(claim.chord);
 		const chords = claims.map(claim => claim.chord);
-		expect(new Set(chords).size).toBe(chords.length);
+		expect(chords.filter((chord, index) => chords.indexOf(chord) !== index)).toEqual([]);
 	});
 
 	it("lists each native menu chord once, in both owners' tables", () => {
