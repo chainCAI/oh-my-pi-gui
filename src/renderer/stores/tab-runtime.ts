@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import type { RpcCommand, RpcResponse, RpcResponseError } from "../../shared/rpc-types";
 import { createBtwStore } from "./btw";
 import { type ComposerStore, createComposerStore } from "./composer";
@@ -11,6 +12,7 @@ import {
 	activeTabCommand,
 	addRuntimeStore,
 	deleteSessionRuntime,
+	onSessionRuntimeListChange,
 	registerSessionRuntime,
 	type SessionRuntime,
 	sessionRuntime,
@@ -117,6 +119,16 @@ export function createTabRuntime(tabId: string): SessionRuntime {
 
 export function ensureTabRuntime(tabId: string): SessionRuntime {
 	return sessionRuntime(tabId) ?? createTabRuntime(tabId);
+}
+
+/**
+ * The tab's runtime for a provider, re-rendering when it is replaced. A session
+ * switch in place replaces it with no other change the caller watches, and a
+ * provider left on the old one serves that session's stores (gui#29).
+ */
+export function useTabRuntime(tabId: string | null): SessionRuntime | null {
+	useSyncExternalStore(onSessionRuntimeListChange, () => sessionRuntime(tabId));
+	return tabId ? ensureTabRuntime(tabId) : null;
 }
 
 /** Replace stale session state, retaining unsent input only across a process restart. */

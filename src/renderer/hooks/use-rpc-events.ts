@@ -332,6 +332,10 @@ export function useRpcEvents(heartbeatMs = 15_000): void {
 							// so the retry row hands over to the live turn. auto_retry_end
 							// can trail by the whole first reply, or never come at all.
 							useSessionStore.setState({ isStreaming: true, awaitingModelSince: Date.now(), retryInfo: null });
+							// A turn makes it a tab the user is working in: sidebar opens
+							// stop switching it in place (gui#29). Main's running status can
+							// miss a turn whose start and end arrive in one batch.
+							useTabsStore.getState().setBrowsing(tabId, false);
 							// Server-side mode changes (plan_approval accept exits plan
 							// mode, then dispatches the execution turn) carry no event —
 							// re-sync state-derived stores at turn start so the composer

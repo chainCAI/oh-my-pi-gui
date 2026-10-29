@@ -86,7 +86,7 @@ import { useSchedulerStore } from "./stores/scheduler";
 import { useSessionStore } from "./stores/session";
 import { SessionRuntimeProvider } from "./stores/session-runtime-context";
 import { useSettingsStore } from "./stores/settings";
-import { ensureTabRuntime } from "./stores/tab-runtime";
+import { useTabRuntime } from "./stores/tab-runtime";
 import { cycleTab, moveActiveTab, selectTabAt, useSessionTabs, useTabsStore } from "./stores/tabs";
 import { toast } from "./stores/toast";
 import { type PanelTab, useUiStore } from "./stores/ui";
@@ -837,7 +837,7 @@ export function App() {
 		return window.omp.events.onMenuAction((action, payload) => void run(action, payload));
 	}, [lang, setLang, t]);
 
-	const focusedRuntime = activeTabId ? ensureTabRuntime(activeTabId) : null;
+	const focusedRuntime = useTabRuntime(activeTabId);
 	const surface = (
 		<div className="flex h-screen w-screen overflow-hidden text-[var(--omp-text)]">
 			{focusedRuntime && <FocusedSessionEffects />}

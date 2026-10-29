@@ -6,6 +6,10 @@
 
 - **Notify while focused** in Settings → GUI: desktop notifications now have a companion switch for the case they always skipped, so a turn that finishes while you are looking at the window still announces itself. It stays off by default, and the master switch still silences everything.
 
+### Changed
+
+- Sessions you click in the sidebar open right away instead of after up to a few seconds. A blank tab, or a tab you opened from the sidebar and have not sent a message in, shows the next session you click instead of starting another tab ([#29](https://github.com/nornzach/oh-my-pi-gui/issues/29)).
+
 ### Fixed
 
 - On Windows and Linux, shortcuts shown with ⌘ use Ctrl. Ctrl+T and Ctrl+Shift+T open an agent or chat tab, Ctrl+W closes a tab, Ctrl+1–Ctrl+9 select one, Ctrl+Alt+Shift+← / → move it, and Ctrl+Shift+F searches conversations; before, these took the Windows key and did nothing. Show or hide thinking, which was Ctrl+T there, is now Alt+Shift+T. The shortcuts list and the new-tab buttons' tooltips show the Ctrl keys ([#30](https://github.com/nornzach/oh-my-pi-gui/issues/30)).

@@ -516,6 +516,25 @@ function seedReadyTab(tabId: string) {
 	return session;
 }
 
+describe("useRpcEvents sidebar browsing (gui#29)", () => {
+	it("a turn whose start and end arrive in one batch makes a browsed tab one the user works in", async () => {
+		const { emitTabBatch } = installTabRoutedMockOmp();
+		seedReadyTab("t-browse");
+		useTabsStore.getState().setBrowsing("t-browse", true);
+		await mount(<RpcEventsProbe />);
+
+		// Main reports no running status for such a turn: the batch is all the renderer sees.
+		await act(async () => {
+			emitTabBatch(
+				[{ type: "agent_start" }, { type: "agent_end", messages: [] }] as AgentSessionEvent[],
+				"t-browse",
+			);
+		});
+
+		expect(useTabsStore.getState().tabs.find(tab => tab.id === "t-browse")?.browsing).toBeFalsy();
+	});
+});
+
 describe("useRpcEvents context usage sync", () => {
 	it("lands the turn's usage reading from a get_state that raced a trailing event", async () => {
 		const { emitTabBatch, commandForTab } = installTabRoutedMockOmp();

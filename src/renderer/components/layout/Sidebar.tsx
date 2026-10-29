@@ -56,7 +56,7 @@ import {
 import type { SessionInfo } from "../../../shared/ipc-types";
 import { useAwaitingConfirmation } from "../../hooks/use-awaiting-confirmation";
 import { useSessionList } from "../../hooks/use-session-list";
-import { dropSessionNow } from "../../hooks/use-session-switch";
+import { dropSessionNow, openSessionFromSidebar } from "../../hooks/use-session-switch";
 import { basename, cx, formatTimeAgo } from "../../lib/format";
 import { useT } from "../../lib/i18n";
 import { isImeKeyEvent } from "../../lib/ime";
@@ -430,7 +430,7 @@ export function Sidebar() {
 			return;
 		}
 		if (session.id === sessionId) return;
-		void openTab({ cwd: session.cwd, sessionPath: session.path, kind: session.kind ?? "agent" });
+		void openSessionFromSidebar(session);
 	};
 	const startNew = () => {
 		if (mode === "work") {
