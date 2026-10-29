@@ -82,6 +82,12 @@ export interface SessionTab {
 	 * open-session-in-new-tab flow — the sidecar starts on a fresh session and
 	 * must be switched over before its transcript hydrates). */
 	pendingSessionPath?: string;
+	/**
+	 * Opened from the sidebar, and no turn has run in it since: the next
+	 * sidebar open switches this tab in place instead of starting another one
+	 * (gui#29). Renderer-only.
+	 */
+	browsing?: boolean;
 }
 
 export type SplitAxis = "columns" | "rows";
@@ -331,7 +337,11 @@ export interface TabsStore {
 		/** Full agent in the GUI-owned default Work workspace. */
 		work?: boolean;
 		worktree?: IpcTabWorktree;
+		/** Opened from the sidebar: marks the tab `browsing`. */
+		browsing?: boolean;
 	}) => Promise<string | null>;
+	/** Set a tab's `browsing` mark: the sidebar switched it in place, or a turn started in it. */
+	setBrowsing: (id: string, browsing: boolean) => void;
 	/** Focus this tab, with its partner beside it when it is one of a pair. */
 	switchTab: (id: string) => Promise<void>;
 	/** Pair `id` with `anchorTabId` (the active tab by default) and show the pair, focused on `id`.
@@ -484,6 +494,7 @@ export const useTabsStore = create<TabsStore>()((set, get) => {
 								? existing?.attention
 								: (info.attention ?? undefined),
 						pendingSessionPath: existing?.pendingSessionPath,
+						browsing: info.status === "running" ? undefined : existing?.browsing,
 					};
 				});
 				// Entries the reply doesn't know (a spawn reply raced this reconcile)
@@ -583,11 +594,19 @@ export const useTabsStore = create<TabsStore>()((set, get) => {
 			set(state => {
 				const existing = state.tabs.find(tab => tab.id === tabId);
 				if (existing) {
-					if (!args?.sessionPath || existing.pendingSessionPath === args.sessionPath) return state;
+					const bind = Boolean(args?.sessionPath) && existing.pendingSessionPath !== args?.sessionPath;
+					const browse = args?.browsing === true && !existing.browsing;
+					if (!bind && !browse) return state;
 					return {
 						tabs: state.tabs.map(tab =>
 							tab.id === tabId
-								? { ...tab, sessionPath: args.sessionPath, pendingSessionPath: args.sessionPath }
+								? {
+										...tab,
+										...(bind
+											? { sessionPath: args?.sessionPath, pendingSessionPath: args?.sessionPath }
+											: {}),
+										...(browse ? { browsing: true } : {}),
+									}
 								: tab,
 						),
 					};
@@ -602,11 +621,19 @@ export const useTabsStore = create<TabsStore>()((set, get) => {
 					unreadDone: false,
 					sessionPath: args?.sessionPath,
 					pendingSessionPath: args?.sessionPath,
+					...(args?.browsing ? { browsing: true } : {}),
 				};
 				return { tabs: [...state.tabs, tab] };
 			});
 			await get().switchTab(tabId);
 			return tabId;
+		},
+
+		setBrowsing: (id, browsing) => {
+			if (Boolean(get().tabs.find(tab => tab.id === id)?.browsing) === browsing) return;
+			set(state => ({
+				tabs: state.tabs.map(tab => (tab.id === id ? { ...tab, browsing: browsing || undefined } : tab)),
+			}));
 		},
 
 		switchTab: async id => {
@@ -778,6 +805,8 @@ export const useTabsStore = create<TabsStore>()((set, get) => {
 							? previous?.attention
 							: (payload.attention ?? undefined),
 					pendingSessionPath: previous?.pendingSessionPath,
+					// A turn makes it a tab the user is working in.
+					browsing: payload.status === "running" ? undefined : previous?.browsing,
 				};
 				if (index === -1) return { tabs: [...current.tabs, next] };
 				const tabs = [...current.tabs];

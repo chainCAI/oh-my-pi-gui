@@ -32,7 +32,7 @@ import { usePlanApprovalStore } from "../stores/plan-approval";
 import { useQueueStore } from "../stores/queue";
 import { useSessionStore } from "../stores/session";
 import { useSubagentsStore } from "../stores/subagents";
-import { useTabsStore } from "../stores/tabs";
+import { type SessionTab, useTabsStore } from "../stores/tabs";
 import { toast } from "../stores/toast";
 import { useTodoStore } from "../stores/todo";
 import { useToolsStore } from "../stores/tools";
@@ -236,6 +236,43 @@ export async function switchSessionNow(session: SessionInfo, model?: SessionMode
 		toast({ variant: "error", title: translate("sidebar.openFailed"), message: String(error) });
 		return false;
 	}
+}
+
+/**
+ * Whether the focused `tab` may switch onto `session` in place for a sidebar
+ * open: idle, of the session's kind and workspace, holding no unsent input,
+ * and unused — opened from the sidebar with no turn run since, or blank.
+ */
+function canBrowseInPlace(tab: SessionTab, session: SessionInfo): boolean {
+	if (tab.kind !== (session.kind === "chat" ? "chat" : "agent") || tab.worktree || tab.pendingSessionPath)
+		return false;
+	const state = useSessionStore.getState();
+	if (tab.status !== "ready" || state.isStreaming || state.isCompacting || state.switchPending) return false;
+	if (session.cwd !== state.cwd && session.cwd !== tab.cwd) return false;
+	const composer = useComposerStore.getState();
+	if (composer.sending || composer.draft.trim() !== "" || composer.images.length > 0) return false;
+	if (tab.browsing) return true;
+	// Blank: hydrated (it has an id) with nothing in its transcript.
+	return state.sessionId !== "" && state.messageCount === 0 && useMessagesStore.getState().messages.length === 0;
+}
+
+/**
+ * Open `session` from the sidebar (gui#29). A new tab boots an omp process for
+ * it — instant only when the warm spare is idle, seconds otherwise and tens of
+ * seconds on slow Windows hosts — so an unused focused tab switches onto the
+ * session in place instead, and browsing history keeps to one tab. Otherwise
+ * the session opens in a new tab, which later sidebar opens reuse until a
+ * turn runs in it.
+ */
+export async function openSessionFromSidebar(session: SessionInfo): Promise<void> {
+	const tabs = useTabsStore.getState();
+	const tabId = focusedSessionRuntime()?.tabId ?? tabs.activeTabId;
+	const tab = tabs.tabs.find(candidate => candidate.id === tabId);
+	if (tab && canBrowseInPlace(tab, session)) {
+		if (await switchSessionNow(session)) useTabsStore.getState().setBrowsing(tab.id, true);
+		return;
+	}
+	await tabs.openTab({ cwd: session.cwd, sessionPath: session.path, kind: session.kind ?? "agent", browsing: true });
 }
 
 /**
